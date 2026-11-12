@@ -434,3 +434,25 @@ async fn sample_data_and_live_updates() {
     let ok = tokio::time::timeout(Duration::from_secs(5), reader).await.expect("event in time").unwrap();
     assert!(ok);
 }
+
+#[tokio::test]
+async fn openapi_document_is_public_and_cacheable() {
+    let app = spawn().await;
+    let c = reqwest::Client::new();
+    for base in ["/api", "/api/v1"] {
+        let r = c.get(format!("{}{base}/openapi.json", app.base)).send().await.unwrap();
+        assert_eq!(r.status(), 200, "no sign-in needed under {base}");
+        assert!(r.headers()["content-type"].to_str().unwrap().starts_with("application/json"));
+        assert!(r.headers()["cache-control"].to_str().unwrap().contains("max-age"));
+        let etag = r.headers()["etag"].to_str().unwrap().to_string();
+        let doc: Value = r.json().await.unwrap();
+        assert_eq!(doc["openapi"], "3.1.0");
+        assert!(doc["paths"]["/issues/{key}"]["get"].is_object());
+        let r = c.get(format!("{}{base}/openapi.json", app.base)).header("if-none-match", &etag).send().await.unwrap();
+        assert_eq!(r.status(), 304, "revalidated by its ETag");
+    }
+    let r = c.get(app.url("/openapi.yaml")).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert!(r.headers()["content-type"].to_str().unwrap().starts_with("application/yaml"));
+    assert!(r.text().await.unwrap().contains("\nopenapi: 3.1.0\n"));
+}

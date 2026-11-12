@@ -22,7 +22,7 @@ The first release.
 - **Sign-in**: passwords, OpenID Connect, GitHub, LDAP / Active Directory, SAML; two-factor
   authentication and passkeys.
 - **Integrations**: WikiCraft, Git (commits, branches, pull requests by key), an MCP server for
-  assistants, a REST API with tokens.
+  assistants, a REST API with tokens, described in OpenAPI 3.1 (`/api/openapi.yaml`).
 - **Import** from CSV exports of other tools; **backup and restore** in one file.
 - **Operations**: one binary and PostgreSQL, S3-compatible storage, several replicas, Docker
   Compose and Kubernetes manifests.

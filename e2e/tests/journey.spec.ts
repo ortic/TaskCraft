@@ -327,6 +327,19 @@ test('service desk: a public request form, the portal, answers both ways', async
   await visitor.close()
 })
 
+test('API reference', async ({ page }) => {
+  await login(page)
+  await page.goto('/settings')
+  await page.getByRole('link', { name: /API reference/ }).click()
+  await expect(page.getByRole('heading', { name: 'API reference' })).toBeVisible()
+  await page.getByLabel('Filter operations').fill('issues key')
+  const op = page.locator('details.ar-op', { hasText: '/issues/{key}' }).first()
+  await op.locator('summary').click()
+  await expect(op.getByRole('heading', { name: 'Responses' })).toBeVisible()
+  await expect(op.locator('pre')).toContainText('/api/v1/issues/{key}')
+  await a11y(page, 'main')
+})
+
 test('command palette finds issues', async ({ page }) => {
   await login(page)
   await page.keyboard.press('Control+k')

@@ -32,35 +32,57 @@ interface Op {
   operationId?: string
   parameters?: Param[]
   requestBody?: { required?: boolean; description?: string; content?: Record<string, Content> }
-  responses?: Record<string, { description?: string; content?: Record<string, Content> }>
+  responses?: Record<string, Response>
   security?: Record<string, unknown>[]
 }
 interface Spec {
   info: { title: string; version: string; description?: string }
   tags?: { name: string; description?: string }[]
   paths: Record<string, Record<string, Op>>
-  components?: { schemas?: Record<string, Schema> }
+  components?: { schemas?: Record<string, Schema>; responses?: Record<string, Response> }
 }
+interface Response { $ref?: string; description?: string; content?: Record<string, Content> }
 
 const METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 const refName = (ref: string) => ref.split('/').pop() ?? ref
 
-/** `code`, [links](url) and paragraphs — enough for the descriptions in the document. */
+/** Inline marks: `code`, **bold** and [links](url). */
+function Inline({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*\s][^*\n]*\*|\[[^\]]+\]\([^)\s]+\))/g).map((part, j) => {
+        if (part.startsWith('`') && part.endsWith('`')) return <code key={j}>{part.slice(1, -1)}</code>
+        if (part.startsWith('**') && part.endsWith('**')) return <strong key={j}>{part.slice(2, -2)}</strong>
+        if (part.length > 2 && part.startsWith('*') && part.endsWith('*')) return <em key={j}>{part.slice(1, -1)}</em>
+        const link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(part)
+        if (link) return <a key={j} href={link[2]} target={link[2].startsWith('http') ? '_blank' : undefined} rel="noreferrer">{link[1]}</a>
+        return <Fragment key={j}>{part}</Fragment>
+      })}
+    </>
+  )
+}
+
+/** The Markdown the document's descriptions use: paragraphs, `#` headings and `-` lists. */
 function Prose({ text }: { text?: string }) {
   if (!text) return null
   return (
     <>
-      {text.split(/\n{2,}/).map((para, i) => (
-        <p key={i}>
-          {para.split(/(`[^`]+`|\[[^\]]+\]\([^)\s]+\))/g).map((part, j) => {
-            if (part.startsWith('`') && part.endsWith('`')) return <code key={j}>{part.slice(1, -1)}</code>
-            const link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(part)
-            if (link) return <a key={j} href={link[2]} target={link[2].startsWith('http') ? '_blank' : undefined} rel="noreferrer">{link[1]}</a>
-            return <Fragment key={j}>{part}</Fragment>
-          })}
-        </p>
-      ))}
+      {text.split(/\n{2,}/).map((block, i) => {
+        const heading = /^(#{1,4})\s+(.*)$/.exec(block.trim())
+        if (heading && !block.trim().includes('\n')) return <h3 key={i} className="ar-prose-h"><Inline text={heading[2]} /></h3>
+        const lines = block.split('\n')
+        if (lines.every((l) => /^\s*[-*]\s+/.test(l) || /^\s{2,}\S/.test(l))) {
+          // continuation lines (indented) belong to the item above
+          const items: string[] = []
+          for (const l of lines) {
+            if (/^\s*[-*]\s+/.test(l)) items.push(l.replace(/^\s*[-*]\s+/, ''))
+            else items[items.length - 1] += ' ' + l.trim()
+          }
+          return <ul key={i}>{items.map((it, j) => <li key={j}><Inline text={it} /></li>)}</ul>
+        }
+        return <p key={i}><Inline text={block} /></p>
+      })}
     </>
   )
 }
@@ -240,12 +262,16 @@ function Operation({ method, path, op, spec, base }: { method: string; path: str
           <>
             <h4>{t('Responses')}</h4>
             <dl className="ar-responses">
-              {Object.entries(op.responses).map(([code, r]) => (
+              {Object.entries(op.responses).map(([code, raw]) => {
+                // shared responses (BadRequest, NotFound, …) live under components.responses
+                const r: Response = raw.$ref ? (spec.components?.responses?.[refName(raw.$ref)] ?? raw) : raw
+                return (
                 <div key={code} className="ar-response">
-                  <dt><span className={`ar-code ar-code-${code[0]}`}>{code}</span> {r.description}</dt>
+                  <dt><span className={`ar-code ar-code-${code[0]}`}>{code}</span> <Inline text={r.description ?? ''} /></dt>
                   <dd><SchemaBlock content={r.content} spec={spec} /></dd>
                 </div>
-              ))}
+                )
+              })}
             </dl>
           </>
         )}

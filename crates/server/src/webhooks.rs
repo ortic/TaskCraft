@@ -153,8 +153,8 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
                 sqlx::query("DELETE FROM webhook_outbox WHERE id = $1").bind(id).execute(&mut *tx).await?;
             }
             Err(_) => {
-                // 30 s, 2 min, 8 min, … about 8 hours in all
-                let wait = 30i64 * 4i64.pow(attempts.clamp(0, 6) as u32).min(4 * 3600);
+                // 30 s, 2 min, 8 min, 32 min, 2 h, then 4 h at most: about 11 hours in all
+                let wait = (30i64 * 4i64.pow(attempts.clamp(0, 6) as u32)).min(4 * 3600);
                 sqlx::query("UPDATE webhook_outbox SET attempts = attempts + 1, next_at = now() + make_interval(secs => $2) WHERE id = $1")
                     .bind(id)
                     .bind(wait as f64)

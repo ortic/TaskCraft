@@ -45,9 +45,9 @@
 .ar-response dt { font-size: 13px; }
 .ar-response dd { margin: 2px 0 0 0; }
 .ar-code { font: 700 12px var(--mono); padding: 1px 6px; border-radius: 4px; background: var(--bg-hover); }
-.ar-code-2 { color: var(--success); }
-.ar-code-4 { color: var(--warning); }
-.ar-code-5 { color: var(--danger); }
+.ar-code-2 { background: var(--success); color: var(--bg); }
+.ar-code-4 { background: var(--warning); color: var(--bg); }
+.ar-code-5 { background: var(--danger); color: var(--bg); }
 .ar-example { position: relative; }
 .ar-example pre { margin: 0; padding: 10px 40px 10px 12px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 6px; overflow-x: auto; font-size: 12.5px; }
 .ar-copy { position: absolute; top: 6px; right: 6px; }
@@ -56,3 +56,6 @@
   .ar-nav { position: static; max-height: none; }
   .ar-nav ul { display: flex; flex-wrap: wrap; gap: 4px; }
 }
+.ar-prose-h { font-size: 14.5px; margin: 16px 0 6px; color: var(--text); }
+.ar-intro ul, .ar-desc ul { margin: 0 0 10px; padding-left: 20px; }
+.ar-intro li, .ar-desc li { margin: 2px 0; }

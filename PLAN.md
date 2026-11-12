@@ -55,7 +55,7 @@
 
 - [~] Releases: container image on GHCR (amd64 + arm64) and Linux binaries on tagged releases, a changelog — the workflow is ready and checked; the first release is a `v0.1.0` tag away
 - [x] Operations: Prometheus metrics (requests by route with durations, database pool, outboxes, e-mail in, live connections, counts), protected by a token
-- [ ] API description: OpenAPI document of the REST API and a browsable reference
+- [x] API description: OpenAPI 3.1 document of the REST API (209 operations, generated, a test keeps it complete) and a browsable reference in the app
 - [x] Full migration from another tracker's XML site backup: people, projects, issues with their numbers, comments, time logs, attachments, links, watchers, components and versions, and the status history the reports replay (uploaded, checked and imported in the background from Administration → Import, or `taskcraft import-backup`; a second import skips what's there)
 - [x] Service desk portal: requesters follow and answer their requests on a small portal (sign-in by e-mailed link), public request forms per project
 - [ ] Chat notifications: post to Slack, Microsoft Teams, Mattermost or Matrix from automation rules and per project
