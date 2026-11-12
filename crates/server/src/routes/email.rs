@@ -63,6 +63,9 @@ pub async fn forgot(State(state): State<AppState>, Json(req): Json<ForgotRequest
     if !state.mailer.enabled() {
         return Err(ApiError::bad("e-mail isn't set up here; ask an administrator for a password-reset link"));
     }
+    if !crate::sso::passwords_enabled(&state) {
+        return Err(ApiError::bad("password sign-in is turned off; use single sign-on"));
+    }
     let Ok(email) = super::auth::validate_email(&req.email) else { return Ok(StatusCode::NO_CONTENT) };
     let user: Option<(Uuid, Uuid, String, String)> = sqlx::query_as(
         "SELECT id, workspace_id, name, email FROM users WHERE lower(email) = $1 AND status = 'active' AND password_hash IS NOT NULL ORDER BY created_at LIMIT 1",

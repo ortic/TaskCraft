@@ -467,6 +467,55 @@ async fn password_sign_in_can_be_turned_off() {
     assert!(users.as_array().unwrap().iter().all(|u| u["signIn"]["password"] == false), "passwords don't count: {users}");
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn second_factor_applies_after_single_sign_on() {
+    use taskcraft::mfa;
+    let idp = idp().await;
+    let app = spawn_with_providers(json!([oidc("corp", &idp, json!({}))])).await;
+    let owner = app.setup(false).await;
+    let (st, setup) = send(&owner, Method::POST, app.url("/me/mfa/setup"), json!({})).await;
+    assert_eq!(st, 200, "{setup}");
+    let secret = mfa::base32_decode(setup["secret"].as_str().unwrap()).unwrap();
+    let (st, _) = send(&owner, Method::POST, app.url("/me/mfa/enable"), json!({"code": mfa::code_at(&secret, mfa::current_step())})).await;
+    assert_eq!(st, 200);
+    // the provider vouches for the owner, but the session waits for the second step
+    idp.sign_in_as(person("olivia-1", "owner@example.com", "Olivia Owner"));
+    let b = browser();
+    let end = sign_in(&app, &b, "corp", "/projects").await;
+    assert_eq!(end.path(), "/login", "{end}");
+    assert!(end.query().unwrap_or_default().contains("mfa=1"), "{end}");
+    assert!(me(&app, &b).await.is_null(), "no session before the second step");
+    let r =
+        b.post(app.url("/auth/mfa")).header("x-taskcraft", "1").json(&json!({"code": mfa::code_at(&secret, mfa::current_step() + 1)})).send().await.unwrap();
+    assert_eq!(r.status(), 200, "{:?}", r.text().await);
+    assert_eq!(me(&app, &b).await["role"], "owner");
+}
+
+#[tokio::test]
+async fn passkeys_and_resets_follow_single_sign_on_only() {
+    let idp = idp().await;
+    let providers = json!([oidc("corp", &idp, json!({}))]);
+    let app = spawn_with(|c| {
+        c.sso.auth_providers = Some(providers.to_string());
+        c.sso.disable_password_login = true;
+    })
+    .await;
+    let owner = app.setup(false).await;
+    // a passkey alone stands in for the password, so it's off too
+    let (s, _) = send(&client(), Method::POST, app.url("/auth/passkey/options"), json!({})).await;
+    assert_eq!(s, 400);
+    // no password-reset links or new passwords; invitations still work
+    let (s, _) = send(&owner, Method::POST, app.url("/users"), json!({"name": "Pat", "email": "pat@acme.test", "password": "password123"})).await;
+    assert_eq!(s, 400);
+    let invited = post(&owner, app.url("/users"), json!({"name": "Ina", "email": "ina@acme.test"})).await;
+    let id = invited["id"].as_str().unwrap();
+    let (s, _) = send(&owner, Method::POST, app.url(&format!("/users/{id}/link")), json!({})).await;
+    assert_eq!(s, 200, "a new invitation link");
+    let me_id = me(&app, &owner).await["id"].as_str().unwrap().to_string();
+    let (s, _) = send(&owner, Method::POST, app.url(&format!("/users/{me_id}/link")), json!({})).await;
+    assert_eq!(s, 400, "no password-reset link");
+}
+
 #[tokio::test]
 async fn invalid_provider_configuration_stops_the_start() {
     let config = |json: &str| taskcraft::sso::SsoConfig { auth_providers: Some(json.into()), ..Default::default() };

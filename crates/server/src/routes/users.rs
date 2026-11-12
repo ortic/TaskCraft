@@ -90,6 +90,9 @@ pub async fn create(State(state): State<AppState>, CurrentUser(user): CurrentUse
     if name.is_empty() {
         return Err(ApiError::bad("a name is required"));
     }
+    if req.password.is_some() && !crate::sso::passwords_enabled(&state) {
+        return Err(ApiError::bad("password sign-in is turned off; invite people to sign in through single sign-on"));
+    }
     let hash = match &req.password {
         Some(p) if !p.is_empty() => {
             super::auth::validate_password(p)?;
@@ -177,6 +180,9 @@ pub async fn reset_link(State(state): State<AppState>, CurrentUser(user): Curren
         .await?
         .ok_or(ApiError::NotFound("user"))?;
     let invite = status == "invited";
+    if !invite && !crate::sso::passwords_enabled(&state) {
+        return Err(ApiError::bad("password sign-in is turned off; people sign in through single sign-on"));
+    }
     let url = super::auth::user_link(&state, id, if invite { "invite" } else { "reset" }).await?;
     let emailed = match email.as_deref().filter(|_| status != "deactivated") {
         Some(to) if invite => super::email::send_invitation(&state, &user, to, &name, &url).await,

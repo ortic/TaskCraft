@@ -11,7 +11,7 @@ import { Avatar, Confirm, Empty, ErrorBox, Loading, Modal, PopButton, Tabs, useM
 import { PROJECT_COLORS } from '../icons'
 import { CopyField, Switch } from './Settings'
 import { DeleteTeam, TeamDialog, TeamMembers, useTeams, type Team } from './People'
-import { SignInBadges, type SignInMethods } from '../components/Sso'
+import { SignInBadges, useSignInOptions, type SignInMethods } from '../components/Sso'
 import { ResetTwoFactor, TwoFactorPolicy, canResetTwoFactor, useTwoFactorPolicy } from '../components/Security'
 import './Admin.css'
 
@@ -314,6 +314,8 @@ function StatusBadge({ status }: { status: AdminUser['status'] }) {
 
 function UsersTab({ me }: { me: Me }) {
   const qc = useQueryClient()
+  // with sign-in through single sign-on only, passwords (and links to reset them) don't work
+  const passwords = useSignInOptions().data?.passwordLogin !== false
   const toast = useToast()
   const users = useQuery({ queryKey: ['admin', 'users'], queryFn: () => api.get<AdminUser[]>('/users') })
   const [q, setQ] = useState('')
@@ -446,9 +448,11 @@ function UsersTab({ me }: { me: Me }) {
                       <PopButton className="icon-btn" label={<Ellipsis size={16} />} title={t('Actions for {name}', { name: u.name })} align="end" width={240}>
                         {(close) => (
                           <div className="choices-list">
-                            <button type="button" className="menu-item" onClick={() => { close(); makeLink(u) }}>
-                              <Link size={15} /> {u.status === 'invited' ? t('New invitation link') : t('Password-reset link')}
-                            </button>
+                            {(passwords || u.status === 'invited') && (
+                              <button type="button" className="menu-item" onClick={() => { close(); makeLink(u) }}>
+                                <Link size={15} /> {u.status === 'invited' ? t('New invitation link') : t('Password-reset link')}
+                              </button>
+                            )}
                             {canResetTwoFactor(me, u, enrolled) && (
                               <button type="button" className="menu-item" onClick={() => { close(); setResetting(u) }}>
                                 <ShieldOff size={15} /> {t('Reset two-factor authentication')}
@@ -517,6 +521,7 @@ function LinkResult({ name, url, invite, emailedTo }: { name: string; url: strin
 
 function AddPerson({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const toast = useToast()
+  const passwords = useSignInOptions().data?.passwordLogin !== false
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<'admin' | 'member' | 'guest'>('member')
@@ -592,10 +597,12 @@ function AddPerson({ onClose, onCreated }: { onClose: () => void; onCreated: () 
           <span className="field-label" id="adm-new-mode">{t('Signing in')}</span>
           <div className="seg adm-seg" role="radiogroup" aria-labelledby="adm-new-mode">
             <button type="button" role="radio" aria-checked={mode === 'invite'} className={mode === 'invite' ? 'active' : ''} onClick={() => setMode('invite')}>{t('Invitation link')}</button>
-            <button type="button" role="radio" aria-checked={mode === 'password'} className={mode === 'password' ? 'active' : ''} onClick={() => setMode('password')}>{t('Set a password now')}</button>
+            {passwords && <button type="button" role="radio" aria-checked={mode === 'password'} className={mode === 'password' ? 'active' : ''} onClick={() => setMode('password')}>{t('Set a password now')}</button>}
           </div>
           <span className="field-hint">
-            {mode === 'invite'
+            {!passwords
+              ? t('They sign in through single sign-on; the invitation link takes them there.')
+              : mode === 'invite'
               ? mail
                 ? t('They get an e-mail with a link to choose their own password; you see the link too.')
                 : t('You get a link to send them; they choose their own password. No e-mail is sent.')

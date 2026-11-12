@@ -1484,6 +1484,7 @@
  "There’s no other unreleased version; create one first to move them there.",
  "They get an e-mail with a link to choose their own password; you see the link too.",
  "They move to their projects’ trash, where they can be restored.",
+ "They sign in through single sign-on; the invitation link takes them there.",
  "This browser",
  "This browser can’t use passkeys here (they need a secure https connection).",
  "This browser can’t use passkeys here. Sign in on a device that can, or ask an admin to reset your second factor.",

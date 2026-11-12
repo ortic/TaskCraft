@@ -643,8 +643,9 @@ pub fn browser_cookie(value: &str, max_age: i64, cross_site_post: bool, secure: 
 
 /// After a successful sign-in: a session and the redirect to `next`.
 pub async fn finish(state: &AppState, user: Uuid, headers: &HeaderMap, next: &str) -> Result<Response, SignInError> {
-    let cookie = crate::auth::create_session(state, user, headers).await.map_err(|e| anyhow::anyhow!("{e}"))?;
-    let mut res = Redirect::to(next).into_response();
+    // two-factor authentication: people with a second factor continue on `/login?mfa=1`
+    let (cookie, to) = crate::mfa::session_or_second_step(state, user, headers, next).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let mut res = Redirect::to(&to).into_response();
     let h = res.headers_mut();
     h.append(header::SET_COOKIE, HeaderValue::from_str(&cookie).map_err(anyhow::Error::from)?);
     // the pending sign-in is done

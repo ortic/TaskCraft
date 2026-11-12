@@ -126,6 +126,20 @@ test('reports and timeline render', async ({ page }) => {
   await expect(page.locator('main')).toBeVisible()
 })
 
+test('dashboards and portfolio', async ({ page }) => {
+  await login(page)
+  await page.goto('/dashboards')
+  await page.getByLabel('New dashboard name').fill('Journey dashboard')
+  await page.getByLabel('New dashboard name').press('Enter')
+  await expect(page.getByRole('heading', { name: 'Journey dashboard' })).toBeVisible()
+  await expect(page.locator('.dash-widget').first()).toBeVisible()
+  await a11y(page, 'main')
+  await page.goto('/portfolio')
+  await expect(page.getByRole('table', { name: 'Portfolio timeline' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Checkout redesign/ }).first()).toBeVisible()
+  await a11y(page, 'main')
+})
+
 test('command palette finds issues', async ({ page }) => {
   await login(page)
   await page.keyboard.press('Control+k')

@@ -279,7 +279,14 @@ pub async fn verify(state: &AppState, challenge: &[u8], a: &Assertion, for_user:
 }
 
 /// `POST /auth/passkey/options` — starts a sign-in without a password.
+/// Signing in with a passkey alone stands in for the password, so it's off when sign-in goes
+/// through single sign-on only (passkeys still work as the second step there).
+fn passkey_login_allowed(state: &AppState) -> ApiResult<()> {
+    if crate::sso::passwords_enabled(state) { Ok(()) } else { Err(ApiError::bad("sign-in with a passkey alone is turned off; use single sign-on")) }
+}
+
 pub async fn login_options(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    passkey_login_allowed(&state)?;
     let challenge = webauthn::challenge();
     let token = mfa::put_step(&state, mfa::PASSKEY_LOGIN, None, Some(&challenge), None).await?;
     Ok(Json(json!({"token": token, "publicKey": request_options(&state, None, &challenge).await?})))
@@ -293,6 +300,7 @@ pub struct PasskeyLogin {
 
 /// `POST /auth/passkey {token, credential}` — signs in with a passkey that verified the person.
 pub async fn login(State(state): State<AppState>, headers: HeaderMap, Json(req): Json<PasskeyLogin>) -> ApiResult<Response> {
+    passkey_login_allowed(&state)?;
     let (_, challenge) = mfa::take_step(&state, mfa::PASSKEY_LOGIN, &req.token).await?;
     let challenge = challenge.ok_or_else(|| ApiError::bad("invalid sign-in"))?;
     let (user, verified) = verify(&state, &challenge, &req.credential, None).await?;
