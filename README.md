@@ -83,6 +83,14 @@ schedule a template creates its issue by itself.
 show the time left, a queue lists the most urgent first, and the assignee (else the project lead)
 is told when a goal is missed.
 
+**Dashboards**: pages people put together from widgets — an issue list or a count for any query
+or saved filter, a breakdown by status / category / assignee / priority / type / project / label /
+sprint, the sprint burndown, velocity, cumulative flow, created vs resolved, recent activity, your
+own open work and notes. Private or shared with everyone; every number opens the issues behind it.
+
+**Portfolio**: the epics and releases of several projects on one timeline (bars filled as their
+issues get done, late ones marked), and how much open work each team member carries across them.
+
 **Releases**: versions with progress, release dates and a release action that moves unfinished
 issues on.
 
@@ -195,6 +203,7 @@ on writes.
 | Projects | `GET/POST /projects`, `GET/PATCH/DELETE /projects/{KEY}`, members, statuses, transitions, types, versions, components, fields, automation, templates (`/projects/{KEY}/templates`, `POST /templates/{id}/create`), service-level queue (`/projects/{KEY}/sla`), CSV import (`POST /projects/{KEY}/import/preview`, `/import` with `mapping`, `dryRun`), boards, `GET /projects/{KEY}/backlog`, `/sprints`, `/trash`, `/reports/{overview,velocity,cumulative-flow,cycle-time,created-resolved,workload}` |
 | Sprints & boards | `GET /boards/{id}`, `POST /sprints/{id}/start`, `/complete`, `GET /sprints/{id}/burndown` |
 | WikiCraft | `GET /issues/{KEY}/wiki-pages`, `POST /issues/{KEY}/wiki-page`, `POST /sprints/{id}/wiki-page`, `POST /versions/{id}/wiki-page`, `GET /projects/{KEY}/wiki`, `GET /wiki-links?url=` (issues linking a page) |
+| Dashboards | `GET/POST /dashboards`, `GET/PATCH/DELETE /dashboards/{id}`, `GET /search/groups?q=<TQL>&by=status\|category\|assignee\|priority\|type\|project\|labels\|sprint`, `GET /portfolio?projects=KEY,KEY` |
 | Live | `GET /events` (Server-Sent Events) |
 | Account & admin | `/me`, `/me/tokens`, `/notifications`, `/views`, `/timesheet`, `/people`, `/teams`, `/users`, `/admin/{workspace,stats,audit,webhooks}` |
 

@@ -4,7 +4,7 @@ import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate, useSearchPar
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Search, House, FolderKanban, Plus, Moon, Shield, Menu, LogOut, UserCog, Bell, ListFilter, Timer, Users, Kanban, ListTodo, Table, ChartGantt, Calendar, ChartColumn,
-  Package, BookOpen, Settings, Star, X, ExternalLink,
+  Package, BookOpen, Settings, Star, X, ExternalLink, LayoutDashboard, Briefcase,
 } from 'lucide-react'
 import { api, ago, type Notification, type SavedView } from '../api'
 import { Avatar, BotAvatar, Logo, Popover, useMe, useProject, useProjects, useHotkeys } from '../ui'
@@ -140,6 +140,8 @@ export default function Layout() {
               <NavLink to="/" end className="nav-item"><House size={16} /> <span className="nav-label">{t('Your work')}</span></NavLink>
               <NavLink to="/projects" className="nav-item"><FolderKanban size={16} /> <span className="nav-label">{t('Projects')}</span></NavLink>
               <NavLink to="/search" className="nav-item"><ListFilter size={16} /> <span className="nav-label">{t('Filters')}</span></NavLink>
+              <NavLink to="/dashboards" className="nav-item"><LayoutDashboard size={16} /> <span className="nav-label">{t('Dashboards')}</span></NavLink>
+              <NavLink to="/portfolio" className="nav-item"><Briefcase size={16} /> <span className="nav-label">{t('Portfolio')}</span></NavLink>
               <NavLink to="/timesheet" className="nav-item"><Timer size={16} /> <span className="nav-label">{t('Timesheet')}</span></NavLink>
               <NavLink to="/people" className="nav-item"><Users size={16} /> <span className="nav-label">{t('People & teams')}</span></NavLink>
               {isAdmin && <NavLink to="/admin" className="nav-item"><Shield size={16} /> <span className="nav-label">{t('Administration')}</span></NavLink>}

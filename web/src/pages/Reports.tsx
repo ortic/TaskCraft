@@ -306,7 +306,7 @@ function OverviewReport({ project }: { project: Project }) {
 
 // ---------- burndown ----------
 
-function BurndownReport({ project }: { project: Project }) {
+export function BurndownReport({ project }: { project: Project }) {
   const [params, setParams] = useSearchParams()
   const open = useOpenIssue()
   const sprints = useQuery({
@@ -483,7 +483,7 @@ function BurndownView({ b, onOpen }: { b: Burndown; onOpen: (key: string) => voi
 
 // ---------- velocity ----------
 
-function VelocityReport({ project }: { project: Project }) {
+export function VelocityReport({ project }: { project: Project }) {
   const q = useReport<Velocity>(project.key, 'velocity', { count: 8 })
   const [mode, setMode] = useState<Unit>('points')
   return (
@@ -560,7 +560,7 @@ function VelocityReport({ project }: { project: Project }) {
 
 // ---------- cumulative flow ----------
 
-function FlowReport({ project }: { project: Project }) {
+export function FlowReport({ project }: { project: Project }) {
   const [days, setDays] = useRange([14, 30, 90], 30)
   const q = useReport<Flow>(project.key, 'cumulative-flow', { days })
   return (
@@ -775,7 +775,7 @@ function CycleReport({ project }: { project: Project }) {
 
 // ---------- created vs resolved ----------
 
-function CreatedReport({ project }: { project: Project }) {
+export function CreatedReport({ project }: { project: Project }) {
   const [days, setDays] = useRange([14, 30, 90], 30)
   const q = useReport<CreatedResolved>(project.key, 'created-resolved', { days })
   return (

@@ -3,6 +3,7 @@ pub mod attachments;
 pub mod auth;
 pub mod boards;
 pub mod comments;
+pub mod dashboards;
 pub mod import;
 pub mod integrations;
 pub mod issues;
@@ -132,6 +133,10 @@ pub fn api() -> Router<AppState> {
         // search, views, activity, notifications
         .route("/search", get(issues::search))
         .route("/search.csv", get(issues::search_csv))
+        .route("/search/groups", get(dashboards::groups))
+        .route("/dashboards", get(dashboards::list).post(dashboards::create))
+        .route("/dashboards/{id}", get(dashboards::get).patch(dashboards::update).delete(dashboards::delete))
+        .route("/portfolio", get(dashboards::portfolio))
         .route("/quick", get(issues::quick))
         .route("/query/validate", post(issues::validate))
         .route("/query/suggest", get(issues::suggest))
