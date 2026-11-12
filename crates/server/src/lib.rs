@@ -12,6 +12,7 @@ pub mod events;
 pub mod git;
 pub mod issues;
 pub mod mail;
+pub mod mail_in;
 pub mod mcp;
 pub mod mfa;
 pub mod notify;

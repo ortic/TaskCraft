@@ -8,6 +8,8 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow = "1.0.104"
+# e-mail in (crate::mail_in): IMAP polling
+async-imap = { version = "0.12.0", default-features = false, features = ["runtime-tokio"] }
 argon2 = "0.6.0"
 axum = { version = "0.8.9", features = ["multipart", "macros"] }
 base64 = "0.23.1"
@@ -21,6 +23,8 @@ comrak = { version = "0.59.0", default-features = false }
 csv = "1.4.0"
 futures = "0.3.34"
 hex = "0.4.3"
+# e-mail in: parsing received messages
+mail-parser = "0.11.9"
 lettre = { version = "0.11.23", default-features = false, features = ["builder", "smtp-transport", "pool", "hostname", "tokio1", "tokio1-rustls", "ring", "webpki-roots"] }
 hmac = "0.13.0"
 # single sign-on (crate::sso): LDAP / Active Directory, OpenID Connect, SAML (feature `saml`)
@@ -44,11 +48,13 @@ sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio
 taskcraft-tql = { version = "0.1.0", path = "../tql" }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["full"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12", "logging"] }
 tokio-stream = { version = "0.1.19", features = ["sync"] }
 tower = "0.5.3"
 tower-http = { version = "0.7.1", features = ["fs", "trace", "compression-gzip", "limit", "set-header", "timeout", "request-id", "util", "catch-panic", "propagate-header"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+webpki-roots = "1.0.12"
 uuid = { version = "1.29.2", features = ["v7", "v4", "serde"] }
 
 [dev-dependencies]

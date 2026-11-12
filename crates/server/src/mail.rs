@@ -16,8 +16,10 @@
 use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 
-use lettre::message::{Mailbox, MultiPart, header::ContentType};
+use lettre::message::header::{ContentType, HeaderName, HeaderValue};
+use lettre::message::{Mailbox, MultiPart};
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -116,11 +118,56 @@ impl Mailer {
         self.target.as_ref()
     }
 
+    /// The address e-mails come from (lower case), e.g. to recognize our own e-mails coming back.
+    pub fn from_email(&self) -> String {
+        self.from.email.to_string().to_lowercase()
+    }
+
+    /// The domain of Message-IDs: the sender's.
+    fn id_domain(&self) -> &str {
+        self.from.email.domain()
+    }
+
+    /// The thread of an issue: every e-mail about it references this id, and replies quoting it
+    /// are matched back to the issue (`crate::mail_in`).
+    pub fn thread_id(&self, issue: Uuid) -> String {
+        format!("<tc.{issue}@{}>", self.id_domain())
+    }
+
+    /// A fresh Message-ID for an e-mail about an issue (it names the issue too).
+    pub fn message_id(&self, issue: Uuid) -> String {
+        format!("<tc.{issue}.{}@{}>", Uuid::new_v4().simple(), self.id_domain())
+    }
+
     /// Sends right away (the outbox worker and the admin's test e-mail).
     pub async fn send_now(&self, to: &str, subject: &str, text: &str, html: Option<&str>) -> anyhow::Result<()> {
+        self.send_with(to, subject, text, html, &Headers::default()).await
+    }
+
+    /// Sends right away, with threading and reply headers.
+    pub async fn send_with(&self, to: &str, subject: &str, text: &str, html: Option<&str>, h: &Headers) -> anyhow::Result<()> {
         let transport = self.transport.as_ref().ok_or_else(|| anyhow::anyhow!("e-mail is not configured (TASKCRAFT_SMTP_URL)"))?;
         let to: Mailbox = to.parse().map_err(|e| anyhow::anyhow!("invalid recipient {to:?}: {e}"))?;
-        let builder = Message::builder().from(self.from.clone()).to(to).subject(header_text(subject));
+        let from = match h.from_name.as_deref().map(header_text).filter(|n| !n.is_empty()) {
+            Some(name) => Mailbox::new(Some(name), self.from.email.clone()),
+            None => self.from.clone(),
+        };
+        let mut builder = Message::builder().from(from).to(to).subject(header_text(subject));
+        if let Some(id) = &h.message_id {
+            builder = builder.message_id(Some(header_text(id)));
+        }
+        if let Some(id) = &h.in_reply_to {
+            builder = builder.in_reply_to(header_text(id));
+        }
+        if let Some(ids) = &h.references {
+            builder = builder.references(header_text(ids));
+        }
+        if let Some(r) = h.reply_to.as_deref().and_then(|r| r.parse::<Mailbox>().ok()) {
+            builder = builder.reply_to(r);
+        }
+        if let Some(a) = &h.auto_submitted {
+            builder = builder.raw_header(HeaderValue::new(HeaderName::new_from_ascii_str("Auto-Submitted"), header_text(a)));
+        }
         let msg = match html {
             Some(h) => builder.multipart(MultiPart::alternative_plain_html(text.to_string(), h.to_string()))?,
             None => builder.header(ContentType::TEXT_PLAIN).body(text.to_string())?,
@@ -135,6 +182,38 @@ fn header_text(s: &str) -> String {
     s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect::<String>().trim().to_string()
 }
 
+/// Threading and reply headers of an e-mail, kept with it in the outbox. Message-IDs are given
+/// with their angle brackets.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Headers {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub in_reply_to: Option<String>,
+    /// space-separated Message-IDs
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub references: Option<String>,
+    /// where replies go (a project's inbound address)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<String>,
+    /// shown as the sender's name instead of TASKCRAFT_MAIL_FROM's (e.g. the project's name)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_name: Option<String>,
+    /// RFC 3834 `Auto-Submitted`: `auto-generated` (notifications) or `auto-replied`
+    /// (acknowledgements), so auto-responders leave them alone
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_submitted: Option<String>,
+}
+
+impl Headers {
+    /// An e-mail about one issue: a Message-ID naming the issue, in the issue's thread.
+    pub fn about_issue(mailer: &Mailer, issue: Uuid) -> Headers {
+        let thread = mailer.thread_id(issue);
+        Headers { message_id: Some(mailer.message_id(issue)), in_reply_to: Some(thread.clone()), references: Some(thread), ..Default::default() }
+    }
+}
+
 // ---- outbox ----------------------------------------------------------------------------------
 
 /// An e-mail to queue: subject, plain text and HTML alternatives.
@@ -147,14 +226,15 @@ pub struct Mail {
     pub purpose: &'static str,
 }
 
-async fn insert<'e>(db: impl sqlx::PgExecutor<'e>, m: &Mail) -> sqlx::Result<()> {
-    sqlx::query("INSERT INTO mail_outbox (id, to_address, subject, body_text, body_html, purpose) VALUES ($1, $2, $3, $4, $5, $6)")
+async fn insert<'e>(db: impl sqlx::PgExecutor<'e>, m: &Mail, headers: Option<&Headers>) -> sqlx::Result<()> {
+    sqlx::query("INSERT INTO mail_outbox (id, to_address, subject, body_text, body_html, purpose, headers) VALUES ($1, $2, $3, $4, $5, $6, $7)")
         .bind(new_id())
         .bind(&m.to)
         .bind(header_text(&m.subject))
         .bind(&m.text)
         .bind(&m.html)
         .bind(m.purpose)
+        .bind(headers.map(sqlx::types::Json))
         .execute(db)
         .await?;
     Ok(())
@@ -162,11 +242,16 @@ async fn insert<'e>(db: impl sqlx::PgExecutor<'e>, m: &Mail) -> sqlx::Result<()>
 
 /// Queues an e-mail. `false` (logged) when mail isn't configured.
 pub async fn queue(state: &AppState, mail: &Mail) -> anyhow::Result<bool> {
+    queue_with(state, mail, None).await
+}
+
+/// Queues an e-mail with threading and reply headers. `false` when mail isn't configured.
+pub async fn queue_with(state: &AppState, mail: &Mail, headers: Option<&Headers>) -> anyhow::Result<bool> {
     if !state.mailer.enabled() {
         tracing::info!(subject = %mail.subject, "e-mail not configured; not sending");
         return Ok(false);
     }
-    insert(&state.db, mail).await?;
+    insert(&state.db, mail, headers).await?;
     Ok(true)
 }
 
@@ -211,6 +296,7 @@ struct OutboxRow {
     body_text: String,
     body_html: Option<String>,
     attempts: i32,
+    headers: Option<sqlx::types::Json<Headers>>,
 }
 
 /// Sends what's due in the outbox; returns how many went out. Rows are leased (not locked in an
@@ -224,7 +310,7 @@ pub async fn drain(state: &AppState) -> anyhow::Result<usize> {
                 SELECT id FROM mail_outbox WHERE sent_at IS NULL AND attempts < $1 AND next_attempt_at <= now()
                  ORDER BY created_at LIMIT 10 FOR UPDATE SKIP LOCKED)
              UPDATE mail_outbox o SET next_attempt_at = now() + interval '2 minutes' FROM batch WHERE o.id = batch.id
-             RETURNING o.id, o.to_address, o.subject, o.body_text, o.body_html, o.attempts",
+             RETURNING o.id, o.to_address, o.subject, o.body_text, o.body_html, o.attempts, o.headers",
         )
         .bind(MAX_ATTEMPTS)
         .fetch_all(&state.db)
@@ -233,7 +319,8 @@ pub async fn drain(state: &AppState) -> anyhow::Result<usize> {
             return Ok(sent);
         }
         for r in rows {
-            match state.mailer.send_now(&r.to_address, &r.subject, &r.body_text, r.body_html.as_deref()).await {
+            let headers = r.headers.map(|h| h.0).unwrap_or_default();
+            match state.mailer.send_with(&r.to_address, &r.subject, &r.body_text, r.body_html.as_deref(), &headers).await {
                 Ok(()) => {
                     sqlx::query("UPDATE mail_outbox SET sent_at = now(), attempts = attempts + 1, last_error = NULL WHERE id = $1")
                         .bind(r.id)
@@ -366,6 +453,7 @@ pub async fn notification_mails(state: &AppState) -> anyhow::Result<usize> {
     for (user, items) in per_user {
         // access may have changed since the notification was created
         let mut issues: Vec<IssueUpdates> = Vec::new();
+        let mut projects: HashMap<Uuid, Uuid> = HashMap::new();
         for n in &items {
             let (Some(issue), Some(project)) = (n.issue_id, n.project_id) else { continue };
             let visible = match access.get(&(user, project)) {
@@ -380,7 +468,9 @@ pub async fn notification_mails(state: &AppState) -> anyhow::Result<usize> {
                 continue;
             }
             let key = n.issue_key.clone().unwrap_or_default();
-            let who = n.actor_name.clone().unwrap_or_else(|| "Automation".into());
+            projects.insert(issue, project);
+            // people without an account (requesters writing by e-mail) are named in the data
+            let who = n.actor_name.clone().or_else(|| n.data.get("by").and_then(Value::as_str).map(String::from)).unwrap_or_else(|| "Automation".into());
             let excerpt = match n.kind.as_str() {
                 "commented" | "mentioned" => n
                     .comment_text
@@ -415,7 +505,20 @@ pub async fn notification_mails(state: &AppState) -> anyhow::Result<usize> {
             html,
             purpose: if cadence == Cadence::Instant { "notification" } else { "digest" },
         };
-        insert(&mut *tx, &mail).await?;
+        // an e-mail about one issue is part of its thread; replies to it become comments when
+        // the project takes e-mail (`crate::mail_in`)
+        let mut headers = match issues.as_slice() {
+            [one] => {
+                let mut h = Headers::about_issue(&state.mailer, one.id);
+                if let Some(project) = projects.get(&one.id) {
+                    h.reply_to = crate::mail_in::reply_address(state, *project).await;
+                }
+                h
+            }
+            _ => Headers::default(),
+        };
+        headers.auto_submitted = Some("auto-generated".into());
+        insert(&mut *tx, &mail, Some(&headers)).await?;
         mails += 1;
     }
     tx.commit().await?;

@@ -92,6 +92,11 @@ pub struct Config {
     /// Sender of e-mails.
     #[arg(long, env = "TASKCRAFT_MAIL_FROM", default_value = "TaskCraft <taskcraft@localhost>")]
     pub mail_from: String,
+
+    /// E-mail in: `TASKCRAFT_IMAP_URL` (a mailbox to read), `TASKCRAFT_MAIL_IN_TOKEN` (the HTTP
+    /// endpoint for mail servers).
+    #[command(flatten)]
+    pub mail_in: crate::mail_in::MailInConfig,
 }
 
 impl Config {

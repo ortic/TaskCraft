@@ -114,9 +114,9 @@ export default function Home() {
             <div className="panel-body" style={{ maxHeight: 520, overflowY: 'auto', padding: '4px 14px' }}>
               {(activity.data ?? []).slice(0, 30).map((e) => (
                 <div key={e.id} className="activity-item small">
-                  {e.actor ? <Avatar name={e.actor.name} id={e.actor.id} size={22} /> : <BotAvatar size={22} />}
+                  {e.actor ? <Avatar name={e.actor.name} id={e.actor.id} size={22} /> : e.new?.by ? <Avatar name={e.new.by} size={22} /> : <BotAvatar size={22} />}
                   <div className="ai-body">
-                    <strong>{e.actor?.name ?? t('Automation')}</strong> {describeEvent(e)}{' '}
+                    <strong>{e.actor?.name ?? e.new?.by ?? t('Automation')}</strong> {describeEvent(e)}{' '}
                     <a href={`?issue=${e.key}`} onClick={(ev) => { ev.preventDefault(); open(e.key!) }}><span className="issue-key">{e.key}</span></a>
                     <div className="faint" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title} · {ago(e.at)}</div>
                   </div>

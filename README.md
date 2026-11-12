@@ -84,6 +84,14 @@ schedule a template creates its issue by itself.
 show the time left, a queue lists the most urgent first, and the assignee (else the project lead)
 is told when a goal is missed.
 
+**E-mail in**: projects take e-mail — a message to `support@acme.com` (or `tasks+SUP@acme.com`)
+becomes an issue, a reply becomes a comment (matched by the conversation or `[SUP-12]` in the
+subject, quoted text and signatures left out), files become attachments. People act with their own
+permissions; support trackers can let anyone write: the sender becomes the issue's **requester**,
+gets an acknowledgement, and comments marked for them go out by e-mail, so the conversation goes
+on by mail. Auto-replies, bulk mail, bounces and loops are kept out. TaskCraft reads an IMAP
+mailbox or takes messages from your mail server. See [E-mail in](#e-mail-in).
+
 **Dashboards**: pages people put together from widgets — an issue list or a count for any query
 or saved filter, a breakdown by status / category / assignee / priority / type / project / label /
 sprint, the sprint burndown, velocity, cumulative flow, created vs resolved, recent activity, your
@@ -311,9 +319,10 @@ taskcraft healthcheck  # probe a running server (container HEALTHCHECK)
 | `TASKCRAFT_MICROSOFT_CLIENT_ID` / `_CLIENT_SECRET` / `_TENANT` / `_ALLOWED_DOMAINS` | — | "Continue with Microsoft" (Entra ID; the tenant id is required) |
 | `TASKCRAFT_OIDC_ISSUER` / `_CLIENT_ID` / `_CLIENT_SECRET` / `_NAME` / `_ALLOWED_DOMAINS` / `_AUTO_CREATE` | — | one OpenID Connect provider (id `oidc`) |
 | `TASKCRAFT_DISABLE_PASSWORD_LOGIN` | `false` | sign in through providers only (LDAP accounts still use the password form) |
-
 | `TASKCRAFT_SMTP_URL` | — | outgoing mail: `smtps://user:pass@mail.example.com` (TLS, port 465), `smtp://user:pass@mail.example.com:587?tls=required` (STARTTLS) or `smtp://relay:25` (unencrypted, local relays only); URL-encode special characters in the password. Enables e-mailed invitations, "forgot password" and notification e-mails |
-| `TASKCRAFT_MAIL_FROM` | `TaskCraft <taskcraft@localhost>` | sender of e-mails |
+| `TASKCRAFT_MAIL_FROM` | `TaskCraft <taskcraft@localhost>` | sender of e-mails (its domain also names their Message-IDs) |
+| `TASKCRAFT_IMAP_URL` | — | e-mail in: a mailbox TaskCraft reads every minute — `imaps://user:pass@imap.example.com/INBOX` (TLS, port 993), `imap://user:pass@imap.example.com/INBOX?tls=starttls` or `imap://…` (unencrypted, local servers only); `?move=Folder` moves handled messages there instead of marking them read |
+| `TASKCRAFT_MAIL_IN_TOKEN` | — | e-mail in: the secret mail servers and services send to `POST /api/integrations/mail-in` (the endpoint is off without it) |
 
 ### Sign-in: SSO, LDAP / Active Directory, SAML
 
@@ -372,6 +381,71 @@ grouped by issue), **immediately** (a burst of changes within about two minutes 
 nothing is sent for what they've read or while they're using the app) or **off**. Notification
 kinds they switched off aren't e-mailed either, and every e-mail links to these settings.
 
+### E-mail in
+
+A project admin turns e-mail on under *Project settings → E-mail*: the project then takes mail at
+an address of its own (`support@acme.com`) and at any address with `+KEY` before the `@`
+(`tasks+SUP@acme.com`), matched against To, Cc, Delivered-To and X-Original-To. TaskCraft gets the
+mail one of two ways:
+
+- **It reads a mailbox** every minute (`TASKCRAFT_IMAP_URL`; one replica at a time). Give TaskCraft
+  a mailbox of its own and deliver or forward the projects' addresses to it. Handled messages are
+  marked read (or moved, `?move=Folder`); messages that failed for a passing reason stay unread and
+  are tried again. When the mailbox's user name is an e-mail address, its `+KEY` addresses are
+  shown in the settings.
+- **Your mail server hands messages over** to `POST /api/integrations/mail-in` with the token from
+  `TASKCRAFT_MAIL_IN_TOKEN`. It answers 200 whatever became of a message (also when it was refused,
+  so nothing bounces back to senders) and 503 when it should be sent again later. With Postfix:
+
+  ```text
+  # /etc/postfix/master.cf
+  taskcraft unix  -       n       n       -       -       pipe
+    flags=DORq user=taskcraft argv=/usr/local/bin/taskcraft-mail-in
+
+  # /etc/postfix/transport (postmap it; main.cf: transport_maps = hash:/etc/postfix/transport)
+  support@acme.com    taskcraft:
+  ```
+
+  ```sh
+  #!/bin/sh
+  # /usr/local/bin/taskcraft-mail-in (readable only by the pipe's user: it holds the token)
+  # On trouble, exit 75 (EX_TEMPFAIL): Postfix keeps the message and tries again later.
+  curl -sS --fail --max-time 120 -H 'Authorization: Bearer <token>' -H 'Content-Type: message/rfc822' \
+    --data-binary @- https://tasks.example.com/api/integrations/mail-in > /dev/null || exit 75
+  ```
+
+  Mail services that post the raw message as a form (an "email" or "body-mime" field) work too;
+  give them the address with `?token=<token>`.
+
+What happens to a message:
+
+- **Replies become comments.** The issue is found by the conversation — TaskCraft's e-mails carry
+  Message-IDs naming the issue, and notification e-mails about one issue name the project's address
+  as Reply-To — or by `[SUP-12]` in the subject. Quoted text ("On … wrote:", `>` lines, Outlook's
+  From/Sent block) and signatures (`-- `) are left out; attached files go to the issue.
+- **Other messages become issues** of the project's default type: the subject is the title, the
+  text the description (HTML mail is turned into plain text and never shown as HTML), files become
+  attachments (each up to `TASKCRAFT_MAX_UPLOAD_MB`; small inline images such as logos are skipped).
+- **Who may write**: people with an account write from its address and act as themselves, with
+  their permissions (members open issues, viewers comment). For support trackers, *Anyone* also
+  lets in people without an account: the sender becomes the issue's **requester** (shown on the
+  issue), gets an acknowledgement with the key, and their answers become comments. Comments stay
+  internal unless *E-mail this comment to the requester* is ticked (API: `emailRequester: true`);
+  those go out under the project's name with its address as Reply-To, so the conversation goes on
+  by e-mail. Replies team members send by e-mail stay internal. The assignee (else the project
+  lead) follows issues requesters open; for service levels, a team member's comment is the first
+  response, the requester's own aren't.
+- **Kept out**: automatic replies (`Auto-Submitted`, `X-Autoreply`, …), bulk and list mail
+  (`Precedence: bulk/list/junk` — forward with an alias, not through a mailing list), bounces,
+  mail from TaskCraft's own address or a project's address, senders your mail server found forged
+  (`dmarc=fail` in its `Authentication-Results`), more than 30 messages per sender and hour,
+  messages over 40 MB, and anything received before (same Message-ID). Acknowledgements are sent
+  at most 5 times per address and hour and marked `Auto-Submitted: auto-replied`; notification
+  e-mails are marked `auto-generated`.
+
+*Project settings → E-mail* lists the latest messages and what became of each (workspace admins
+also see those that reached no project); the log is kept for 90 days.
+
 ## API
 
 Everything the web app does is available under `/api/v1` (the app itself uses `/api`).
@@ -388,6 +462,7 @@ on writes.
 | WikiCraft | `GET /issues/{KEY}/wiki-pages`, `POST /issues/{KEY}/wiki-page`, `POST /sprints/{id}/wiki-page`, `POST /versions/{id}/wiki-page`, `GET /projects/{KEY}/wiki`, `GET /wiki-links?url=` (issues linking a page) |
 | Dashboards | `GET/POST /dashboards`, `GET/PATCH/DELETE /dashboards/{id}`, `GET /search/groups?q=<TQL>&by=status\|category\|assignee\|priority\|type\|project\|labels\|sprint`, `GET /portfolio?projects=KEY,KEY` |
 | Git | `GET/POST /projects/{KEY}/git` (connected repositories; the secret comes back once), `PUT /projects/{KEY}/git/rules`, `DELETE /git-integrations/{id}`, `POST /git-integrations/{id}/secret`, `GET /issues/{KEY}/development`, webhooks `POST /integrations/git/{github,gitlab,generic}/{key}` |
+| E-mail in | `POST /integrations/mail-in` (one raw RFC 822 message as the body, or the form field `email` / `body-mime`; `Authorization: Bearer <TASKCRAFT_MAIL_IN_TOKEN>`, `X-TaskCraft-Token` or `?token=`; answers what became of it), `GET/PUT /projects/{KEY}/mail-in` (`enabled`, `address`, `senders`: `members` / `anyone`; with the latest messages), `POST /issues/{KEY}/comments` with `emailRequester: true` e-mails the comment to the issue's requester |
 | MCP | `POST /mcp` (streamable HTTP, see above) |
 | Live | `GET /events` (Server-Sent Events) |
 | Account & admin | `/me`, `/me/tokens`, `/notifications`, `/views`, `/timesheet`, `/people`, `/teams`, `/users`, `/auth/forgot`, `/admin/{workspace,stats,audit,webhooks,mail}`, `POST /admin/mail/test` |
@@ -436,7 +511,7 @@ web/              React 19 + Vite, TanStack Query, Tiptap (rich text), hand-draw
 crates/tql        the query language: lexer, parser and syntax tree (no I/O)
 crates/server     axum 0.8 HTTP API, sqlx / PostgreSQL, TQL → SQL, history replay for reports,
                   automation, webhooks, live updates (SSE + LISTEN/NOTIFY), WikiCraft client, Git webhooks,
-                  MCP server → single binary
+                  MCP server, e-mail in (IMAP / HTTP) → single binary
 ```
 
 Every change to an issue is written to `issue_events`; the activity stream, notifications,

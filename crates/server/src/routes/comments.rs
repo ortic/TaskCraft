@@ -18,8 +18,23 @@ use crate::issues::{self, Actor, Change};
 
 pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>) -> ApiResult<Json<Value>> {
     let (id, _, _) = issue_for(&state, &user, &key, Role::Viewer).await?;
-    let rows: Vec<(Uuid, Option<Uuid>, Option<String>, Value, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>, bool)> = sqlx::query_as(
-        "SELECT c.id, c.author_id, u.name, c.body, c.created_at, c.updated_at, c.edited FROM comments c LEFT JOIN users u ON u.id = c.author_id
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: Uuid,
+        author_id: Option<Uuid>,
+        name: Option<String>,
+        body: Value,
+        created_at: chrono::DateTime<chrono::Utc>,
+        updated_at: chrono::DateTime<chrono::Utc>,
+        edited: bool,
+        author_email: Option<String>,
+        author_name: Option<String>,
+        via_email: bool,
+        to_requester_at: Option<chrono::DateTime<chrono::Utc>>,
+    }
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT c.id, c.author_id, u.name, c.body, c.created_at, c.updated_at, c.edited, c.author_email, c.author_name, c.via_email, c.to_requester_at
+           FROM comments c LEFT JOIN users u ON u.id = c.author_id
           WHERE c.issue_id = $1 ORDER BY c.created_at",
     )
     .bind(id)
@@ -33,15 +48,18 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser,
     .await?;
     Ok(Json(json!(
         rows.into_iter()
-            .map(|(cid, aid, an, body, created, updated, edited)| {
+            .map(|c| {
                 let mut by_kind: std::collections::BTreeMap<String, Vec<Value>> = Default::default();
                 for (rc, kind, uid, un) in &reactions {
-                    if *rc == cid {
+                    if *rc == c.id {
                         by_kind.entry(kind.clone()).or_default().push(json!({"id": uid, "name": un}));
                     }
                 }
+                // someone without an account (an issue's requester, by e-mail)
+                let external = c.author_email.as_ref().filter(|_| c.author_id.is_none()).map(|e| json!({"email": e, "name": c.author_name}));
                 json!({
-                    "id": cid, "author": aid.map(|a| json!({"id": a, "name": an})), "body": body, "createdAt": created, "updatedAt": updated, "edited": edited,
+                    "id": c.id, "author": c.author_id.map(|a| json!({"id": a, "name": c.name})), "external": external, "body": c.body,
+                    "createdAt": c.created_at, "updatedAt": c.updated_at, "edited": c.edited, "viaEmail": c.via_email, "emailedAt": c.to_requester_at,
                     "reactions": by_kind.into_iter().map(|(k, people)| json!({"reaction": k, "people": people})).collect::<Vec<_>>()
                 })
             })
@@ -49,8 +67,22 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser,
     )))
 }
 
+/// How a comment came about, beyond its author.
+#[derive(Debug, Clone, Default)]
+pub struct CommentOpts {
+    /// it came in by e-mail
+    pub via_email: bool,
+    /// written by someone without an account (an issue's requester): e-mail address and name
+    pub external: Option<(String, Option<String>)>,
+}
+
 /// Adds a comment as `actor` (people and automation rules).
 pub async fn add(state: &AppState, actor: &Actor, issue: Uuid, body: Value) -> ApiResult<Uuid> {
+    add_with(state, actor, issue, body, &CommentOpts::default()).await
+}
+
+/// Adds a comment as `actor`, by e-mail or by a requester.
+pub async fn add_with(state: &AppState, actor: &Actor, issue: Uuid, body: Value, opts: &CommentOpts) -> ApiResult<Uuid> {
     crate::doc::validate(&body).map_err(ApiError::BadRequest)?;
     let text = crate::doc::text(&body);
     if text.trim().is_empty() {
@@ -58,32 +90,36 @@ pub async fn add(state: &AppState, actor: &Actor, issue: Uuid, body: Value) -> A
     }
     let project: Uuid = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1").bind(issue).fetch_one(&state.db).await?;
     let id = new_id();
+    let (author_email, author_name) = opts.external.clone().unzip();
+    // a requester is named where there's no person to point to (history, notifications)
+    let by = opts.external.as_ref().map(|(e, n)| n.clone().unwrap_or_else(|| e.clone()));
     let mut tx = state.db.begin().await?;
-    sqlx::query("INSERT INTO comments (id, issue_id, author_id, body, body_text) VALUES ($1, $2, $3, $4, $5)")
-        .bind(id)
-        .bind(issue)
-        .bind(actor.user)
-        .bind(&body)
-        .bind(&text)
-        .execute(&mut *tx)
-        .await?;
-    let excerpt: String = text.chars().take(200).collect();
-    issues::record(
-        &mut tx,
-        issue,
-        project,
-        actor.user,
-        "comment",
-        Some(&Change { field: "comment", old: Value::Null, new: json!({"id": id, "excerpt": excerpt}) }),
+    sqlx::query(
+        "INSERT INTO comments (id, issue_id, author_id, body, body_text, author_email, author_name, via_email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
     )
+    .bind(id)
+    .bind(issue)
+    .bind(actor.user)
+    .bind(&body)
+    .bind(&text)
+    .bind(author_email)
+    .bind(author_name.flatten())
+    .bind(opts.via_email)
+    .execute(&mut *tx)
     .await?;
+    let excerpt: String = text.chars().take(200).collect();
+    let mut new = json!({"id": id, "excerpt": excerpt});
+    if let Some(by) = &by {
+        new["by"] = json!(by);
+    }
+    issues::record(&mut tx, issue, project, actor.user, "comment", Some(&Change { field: "comment", old: Value::Null, new })).await?;
     if let Some(u) = actor.user {
         issues::watch(&mut tx, issue, u).await?;
     }
     sqlx::query("UPDATE issues SET updated_at = now() WHERE id = $1").bind(issue).execute(&mut *tx).await?;
     tx.commit().await?;
     let s = issues::summary(state, issues::load(state, issue).await?);
-    crate::notify::comment(state, actor, &s, id, &body).await;
+    crate::notify::comment(state, actor, &s, id, &body, by.as_deref()).await;
     let mut e = Event::new(actor.workspace, "comment").project(project).issue(issue, &s.key);
     e.actor_id = actor.user;
     events::publish(state, e).await;
@@ -100,9 +136,13 @@ pub async fn add(state: &AppState, actor: &Actor, issue: Uuid, body: Value) -> A
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CommentReq {
     body: Option<Value>,
     markdown: Option<String>,
+    /// also e-mail it to the issue's requester (people who can edit the issue)
+    #[serde(default)]
+    email_requester: bool,
 }
 
 impl CommentReq {
@@ -122,9 +162,24 @@ pub async fn create(
     Path(key): Path<String>,
     Json(req): Json<CommentReq>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    let (issue, _, _) = issue_for(&state, &user, &key, Role::Viewer).await?;
-    let id = add(&state, &Actor::of(&user), issue, req.doc()?).await?;
-    Ok((StatusCode::CREATED, Json(json!({"id": id}))))
+    let (issue, _, role) = issue_for(&state, &user, &key, Role::Viewer).await?;
+    let to_requester = req.email_requester;
+    if to_requester {
+        if role < Role::Member {
+            return Err(ApiError::Denied("only people who can edit the issue may write to its requester".into()));
+        }
+        if crate::mail_in::requester(&state, issue).await?.is_none() {
+            return Err(ApiError::bad("this issue has no requester to e-mail"));
+        }
+    }
+    let body = req.doc()?;
+    let id = add(&state, &Actor::of(&user), issue, body.clone()).await?;
+    let emailed = to_requester
+        && crate::mail_in::mail_requester(&state, issue, id, &body, &user.name).await.unwrap_or_else(|e| {
+            tracing::warn!("e-mailing the requester failed: {e:#}");
+            false
+        });
+    Ok((StatusCode::CREATED, Json(json!({"id": id, "emailed": emailed}))))
 }
 
 async fn comment_issue(state: &AppState, id: Uuid) -> ApiResult<(Uuid, Option<Uuid>)> {

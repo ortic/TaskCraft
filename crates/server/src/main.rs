@@ -75,6 +75,7 @@ async fn main() -> anyhow::Result<()> {
             taskcraft::webhooks::spawn_worker(&state);
             taskcraft::schedule::spawn(&state);
             taskcraft::mail::spawn_worker(&state);
+            taskcraft::mail_in::spawn(&state);
             let app = taskcraft::routes::router(state.clone());
             let listener = tokio::net::TcpListener::bind(bind).await?;
             tracing::info!("TaskCraft listening on http://{bind}; web app: {}", taskcraft::web_assets::source(&state.config.static_dir));

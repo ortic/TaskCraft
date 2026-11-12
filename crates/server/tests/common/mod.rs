@@ -68,6 +68,7 @@ pub async fn spawn_with(tweak: impl FnOnce(&mut Config)) -> TestApp {
         sso: Default::default(),
         smtp_url: None,
         mail_from: "TaskCraft <taskcraft@localhost>".into(),
+        mail_in: Default::default(),
     };
     tweak(&mut config);
     let state = AppState::new(config).await.expect("app state");

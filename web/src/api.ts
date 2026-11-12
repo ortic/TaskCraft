@@ -160,6 +160,8 @@ export interface IssueDetail extends Issue {
   permissions: { edit: boolean; comment: boolean; admin: boolean }
   /** service-level goals (projects with service levels) */
   sla: import('./components/SlaBadges').SlaGoal[]
+  /** who it was opened for by e-mail (no account); `mail`: comments can be e-mailed to them */
+  requester: { email: string; name: string | null; mail: boolean } | null
 }
 
 export interface Status extends StatusRef {
@@ -265,10 +267,16 @@ export interface BoardData {
 export interface Comment {
   id: string
   author: Named | null
+  /** written by someone without an account (an issue's requester, by e-mail) */
+  external?: { email: string; name: string | null } | null
   body: any
   createdAt: string
   updatedAt: string
   edited: boolean
+  /** it came in by e-mail */
+  viaEmail?: boolean
+  /** when it was e-mailed to the requester */
+  emailedAt?: string | null
   reactions: { reaction: string; people: Named[] }[]
 }
 
@@ -288,7 +296,7 @@ export interface Notification {
   id: string
   actor: Named | null
   kind: 'assigned' | 'mentioned' | 'commented' | 'status' | string
-  data: { key: string; title: string; from?: string; to?: string; excerpt?: string; commentId?: string; message?: string; goal?: string }
+  data: { key: string; title: string; from?: string; to?: string; excerpt?: string; commentId?: string; message?: string; goal?: string; by?: string }
   createdAt: string
   read: boolean
 }
