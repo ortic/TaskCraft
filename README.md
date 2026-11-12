@@ -127,8 +127,10 @@ issues on.
 through Postgres so it works with several replicas).
 
 **Interface**: English, German, French and Italian (more languages are a JSON catalog away, see
-below; each person picks theirs, else the workspace default, else the browser's), light, dark and
-high-contrast themes, phone layout, checked with axe against WCAG 2.2 AA in the browser tests.
+below; each person picks theirs, else the workspace default, else the browser's), and e-mails in
+the same language (`crates/server/locales/`; requesters without an account get the workspace
+default), light, dark and high-contrast themes, phone layout, checked with axe against WCAG 2.2 AA
+in the browser tests.
 
 **Git**: commits, branches and pull / merge requests from GitHub, GitLab (or any server, through a
 small JSON format) appear on the issues whose keys they mention, with state badges on the issue and

@@ -34,6 +34,7 @@ use crate::access::{self, Role};
 use crate::app::{AppState, new_id};
 use crate::auth::{USER_COLUMNS, User};
 use crate::error::ApiError;
+use crate::i18n::tr;
 use crate::issues::{self, Actor, NewIssue, Summary};
 use crate::mail::{Headers, Mail, esc};
 use parse::Inbound;
@@ -697,7 +698,8 @@ pub async fn acknowledge(
         return Ok(false);
     }
     let follow = FollowUp { portal: &crate::portal::request_url(state, &s.key), by_mail: reply_to.is_some() };
-    let (subject, text, html) = acknowledgement_mail(&s.key, &s.title, name, project_name, &follow);
+    let l = crate::i18n::of_project(&state.db, s.project_id).await;
+    let (subject, text, html) = acknowledgement_mail(l, &s.key, &s.title, name, project_name, &follow);
     let mut headers = requester_headers(state, s.id, project_name, reply_to.map(str::to_string), their_id);
     headers.auto_submitted = Some("auto-replied".into());
     crate::mail::queue_with(state, &Mail { to: to.to_string(), subject, text, html, purpose: "mail-in-ack" }, Some(&headers)).await
@@ -722,36 +724,36 @@ fn button(url: &str, label: &str) -> String {
 }
 
 /// (subject, text, html) of an acknowledgement.
-pub fn acknowledgement_mail(key: &str, title: &str, name: Option<&str>, project: &str, follow: &FollowUp) -> (String, String, String) {
+pub fn acknowledgement_mail(l: &str, key: &str, title: &str, name: Option<&str>, project: &str, follow: &FollowUp) -> (String, String, String) {
     let subject = format!("[{key}] {title}");
     let greeting = match name {
-        Some(n) => format!("Hi {n},"),
-        None => "Hi,".to_string(),
+        Some(n) => tr(l, "Hi {name},", &[("name", n)]),
+        None => tr(l, "Hi,", &[]),
     };
-    let intro = format!("thanks for your message. It's filed as {key}, and we'll get back to you.");
-    let online = "Follow your request and answer online:";
+    let intro = tr(l, "thanks for your message. It's filed as {key}, and we'll get back to you.", &[("key", key)]);
+    let online = tr(l, "Follow your request and answer online:", &[]);
     let how = if follow.by_mail {
-        format!("To add anything, you can also reply to this e-mail and keep [{key}] in the subject.")
+        tr(l, "To add anything, you can also reply to this e-mail and keep [{key}] in the subject.", &[("key", key)])
     } else {
-        "Replies to this e-mail don't reach us: please answer on that page.".to_string()
+        tr(l, "Replies to this e-mail don't reach us: please answer on that page.", &[])
     };
     let text = format!("{greeting}\n\n{intro}\n\n{online}\n{}\n\n{how}\n\n— {project}\n", follow.portal);
     let p = |s: &str| format!("<p style=\"margin:0 0 12px\">{}</p>", esc(s));
     let html = conversation_html(
         &subject,
-        &format!("{}{}{}{}", p(&greeting), p(&intro), button(follow.portal, "View your request"), p(&how)),
+        &format!("{}{}{}{}", p(&greeting), p(&intro), button(follow.portal, &tr(l, "View your request", &[])), p(&how)),
         &format!("— {}", esc(project)),
     );
     (subject, text, html)
 }
 
 /// (subject, text, html) of a comment e-mailed to the requester; the comment as Markdown.
-pub fn reply_mail(key: &str, title: &str, markdown: &str, author: &str, project: &str, follow: &FollowUp) -> (String, String, String) {
+pub fn reply_mail(l: &str, key: &str, title: &str, markdown: &str, author: &str, project: &str, follow: &FollowUp) -> (String, String, String) {
     let subject = format!("Re: [{key}] {title}");
     let how = if follow.by_mail {
-        format!("Reply to this e-mail to answer; please keep [{key}] in the subject. Or answer online: {}", follow.portal)
+        tr(l, "Reply to this e-mail to answer; please keep [{key}] in the subject. Or answer online: {address}", &[("key", key), ("address", follow.portal)])
     } else {
-        format!("Answer online: {} (replies to this e-mail don't reach us)", follow.portal)
+        tr(l, "Answer online: {address} (replies to this e-mail don't reach us)", &[("address", follow.portal)])
     };
     let text = format!("{}\n\n— {author}, {project}\n\n{how}\n", markdown.trim());
     let mut options = comrak::Options::default();
@@ -759,13 +761,13 @@ pub fn reply_mail(key: &str, title: &str, markdown: &str, author: &str, project:
     options.extension.autolink = true;
     let body = comrak::markdown_to_html(markdown, &options);
     let footer = if follow.by_mail {
-        format!("Reply to this e-mail to answer; please keep [{}] in the subject.", esc(key))
+        esc(&tr(l, "Reply to this e-mail to answer; please keep [{key}] in the subject.", &[("key", key)]))
     } else {
-        "Replies to this e-mail don't reach us: please answer online.".to_string()
+        esc(&tr(l, "Replies to this e-mail don't reach us: please answer online.", &[]))
     };
     let html = conversation_html(
         &subject,
-        &format!("{body}<p style=\"margin:16px 0 0\">— {}, {}</p>{}", esc(author), esc(project), button(follow.portal, "View your request")),
+        &format!("{body}<p style=\"margin:16px 0 0\">— {}, {}</p>{}", esc(author), esc(project), button(follow.portal, &tr(l, "View your request", &[]))),
         &footer,
     );
     (subject, text, html)
@@ -784,7 +786,8 @@ pub async fn mail_requester(state: &AppState, issue: Uuid, comment: Uuid, body: 
     let settings = Settings::of(&p.settings);
     let reply_to = if settings.enabled { settings.address.or(r.reply_to.clone()).or_else(|| plus_address(state, &p.key)) } else { None };
     let follow = FollowUp { portal: &crate::portal::request_url(state, &s.key), by_mail: reply_to.is_some() };
-    let (subject, text, html) = reply_mail(&s.key, &s.title, &markdown, author, &p.name, &follow);
+    let l = crate::i18n::of_workspace(&state.db, p.workspace_id).await;
+    let (subject, text, html) = reply_mail(l, &s.key, &s.title, &markdown, author, &p.name, &follow);
     let headers = requester_headers(state, issue, &p.name, reply_to, r.last_message_id.as_deref());
     let queued = crate::mail::queue_with(state, &Mail { to: r.email.clone(), subject, text, html, purpose: "requester" }, Some(&headers)).await?;
     if queued {
@@ -867,7 +870,7 @@ mod tests {
 
         let url = "https://tasks.acme.com/portal/requests/SUP-12";
         let by_mail = FollowUp { portal: url, by_mail: true };
-        let (subject, text, html) = acknowledgement_mail("SUP-12", "Printer <on> fire", Some("Jane & Co"), "Customer Support", &by_mail);
+        let (subject, text, html) = acknowledgement_mail("en", "SUP-12", "Printer <on> fire", Some("Jane & Co"), "Customer Support", &by_mail);
         assert_eq!(subject, "[SUP-12] Printer <on> fire");
         assert!(text.starts_with("Hi Jane & Co,\n\nthanks for your message. It's filed as SUP-12"), "{text}");
         assert!(text.contains("keep [SUP-12] in the subject") && text.ends_with("— Customer Support\n"));
@@ -875,15 +878,15 @@ mod tests {
         assert!(html.contains("Hi Jane &amp; Co,") && html.contains("Printer &lt;on&gt; fire") && !html.contains("<on>"), "{html}");
         assert!(html.contains(&format!("href=\"{url}\"")), "{html}");
         let online = FollowUp { portal: url, by_mail: false };
-        let (_, text, _) = acknowledgement_mail("SUP-12", "Printer", None, "Customer Support", &online);
+        let (_, text, _) = acknowledgement_mail("en", "SUP-12", "Printer", None, "Customer Support", &online);
         assert!(text.starts_with("Hi,\n\n") && !text.contains("keep [SUP-12]") && text.contains("don't reach us"), "{text}");
 
-        let (subject, text, html) = reply_mail("SUP-12", "Printer", "We **restarted** it. <script>x</script>", "Mira", "Customer Support", &by_mail);
+        let (subject, text, html) = reply_mail("en", "SUP-12", "Printer", "We **restarted** it. <script>x</script>", "Mira", "Customer Support", &by_mail);
         assert_eq!(subject, "Re: [SUP-12] Printer");
         assert!(text.starts_with("We **restarted** it."), "{text}");
         assert!(text.contains("— Mira, Customer Support") && text.contains(url));
         assert!(html.contains("<strong>restarted</strong>") && !html.contains("<script>") && html.contains(url), "{html}");
-        let (_, text, _) = reply_mail("SUP-12", "Printer", "Done.", "Mira", "Customer Support", &online);
+        let (_, text, _) = reply_mail("en", "SUP-12", "Printer", "Done.", "Mira", "Customer Support", &online);
         assert!(text.contains(&format!("Answer online: {url}")) && !text.contains("Reply to this e-mail"), "{text}");
     }
 }

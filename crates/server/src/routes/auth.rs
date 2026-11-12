@@ -147,10 +147,28 @@ pub async fn me(
     State(state): State<AppState>,
     MaybeUser(user): MaybeUser,
     enroll: Option<axum::Extension<crate::mfa::MustEnrollTwoFactor>>,
+    headers: axum::http::HeaderMap,
 ) -> ApiResult<Json<Value>> {
     let Some(user) = user else {
         return Ok(Json(json!({ "user": null, "workspace": null })));
     };
+    // the browser's language: e-mails use it when neither the person nor the workspace chose one
+    if let Some(lang) = headers
+        .get(axum::http::header::ACCEPT_LANGUAGE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split([',', ';']).next())
+        .map(|l| l.trim().chars().take(20).collect::<String>())
+        .filter(|l| !l.is_empty() && l != "*")
+    {
+        let _ = sqlx::query(
+            "UPDATE users SET preferences = jsonb_set(preferences, '{browserLanguage}', to_jsonb($2::text))
+              WHERE id = $1 AND preferences->>'browserLanguage' IS DISTINCT FROM $2",
+        )
+        .bind(user.id)
+        .bind(&lang)
+        .execute(&state.db)
+        .await;
+    }
     let (ws_name, settings): (String, Value) =
         sqlx::query_as("SELECT name, settings FROM workspaces WHERE id = $1").bind(user.workspace_id).fetch_one(&state.db).await?;
     let (title, locale, timezone, prefs): (Option<String>, Option<String>, Option<String>, Value) =

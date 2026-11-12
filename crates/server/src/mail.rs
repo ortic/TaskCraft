@@ -23,6 +23,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::i18n::tr;
+
 use crate::app::{AppState, new_id};
 use crate::config::Config;
 
@@ -372,13 +374,13 @@ claimed AS (
 )
 SELECT c.user_id, d.mode, c.kind, c.data, c.read_at IS NOT NULL AS read,
        c.created_at < now() - make_interval(hours => $2) AS stale,
-       to_char(c.created_at AT TIME ZONE d.tz, 'Dy HH24:MI') AS at_local,
+       (c.created_at AT TIME ZONE d.tz) AS at_local,
        a.name AS actor_name,
        i.id AS issue_id, i.project_id, pr.key || '-' || i.number AS issue_key, i.title AS issue_title,
        i.deleted_at IS NOT NULL AS deleted,
        left(cm.body_text, 400) AS comment_text,
        COALESCE((u.preferences->'muted') ? c.kind, false) AS muted,
-       u.email, u.name AS user_name, u.status, w.name AS workspace,
+       u.email, u.name AS user_name, u.status, w.name AS workspace, u.locale, w.settings->>'defaultLanguage' AS default_language, u.preferences->>'browserLanguage' AS browser_language,
        EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = u.id AND s.expires_at > now() AND s.last_seen_at > now() - make_interval(secs => $4)) AS active
   FROM claimed c
   JOIN due d ON d.id = c.id
@@ -399,7 +401,7 @@ struct Claimed {
     data: Value,
     read: bool,
     stale: bool,
-    at_local: String,
+    at_local: chrono::NaiveDateTime,
     actor_name: Option<String>,
     issue_id: Option<Uuid>,
     project_id: Option<Uuid>,
@@ -412,6 +414,9 @@ struct Claimed {
     user_name: String,
     status: String,
     workspace: String,
+    locale: Option<String>,
+    default_language: Option<String>,
+    browser_language: Option<String>,
     active: bool,
 }
 
@@ -451,6 +456,7 @@ pub async fn notification_mails(state: &AppState) -> anyhow::Result<usize> {
     let mut access: HashMap<(Uuid, Uuid), bool> = HashMap::new();
     let mut mails = 0;
     for (user, items) in per_user {
+        let l = crate::i18n::lang([items[0].locale.as_deref(), items[0].default_language.as_deref(), items[0].browser_language.as_deref()]);
         // access may have changed since the notification was created
         let mut issues: Vec<IssueUpdates> = Vec::new();
         let mut projects: HashMap<Uuid, Uuid> = HashMap::new();
@@ -471,7 +477,7 @@ pub async fn notification_mails(state: &AppState) -> anyhow::Result<usize> {
             let key = n.issue_key.clone().unwrap_or_default();
             projects.insert(issue, project);
             // people without an account (requesters writing by e-mail) are named in the data
-            let who = n.actor_name.clone().or_else(|| n.data.get("by").and_then(Value::as_str).map(String::from)).unwrap_or_else(|| "Automation".into());
+            let who = n.actor_name.clone().or_else(|| n.data.get("by").and_then(Value::as_str).map(String::from)).unwrap_or_else(|| tr(l, "Automation", &[]));
             let excerpt = match n.kind.as_str() {
                 "commented" | "mentioned" => n
                     .comment_text
@@ -481,7 +487,7 @@ pub async fn notification_mails(state: &AppState) -> anyhow::Result<usize> {
                     .filter(|t| !t.is_empty()),
                 _ => None,
             };
-            let update = Update { line: describe(&n.kind, &n.data, &who), excerpt, at: n.at_local.clone() };
+            let update = Update { line: describe(l, &n.kind, &n.data, &who), excerpt, at: crate::i18n::day_time(l, n.at_local) };
             match issues.iter_mut().find(|i| i.id == issue) {
                 Some(i) => i.items.push(update),
                 None => issues.push(IssueUpdates {
@@ -498,7 +504,7 @@ pub async fn notification_mails(state: &AppState) -> anyhow::Result<usize> {
         }
         let first = &items[0];
         let cadence = if first.mode == "instant" { Cadence::Instant } else { Cadence::Digest };
-        let (subject, text, html) = notification_mail(&base, cadence, &first.user_name, &first.workspace, &issues);
+        let (subject, text, html) = notification_mail(l, &base, cadence, &first.user_name, &first.workspace, &issues);
         let mail = Mail {
             to: first.email.clone().unwrap_or_default(),
             subject,
@@ -554,10 +560,6 @@ pub fn excerpt(s: &str, max: usize) -> String {
     format!("{}…", cut.trim_end())
 }
 
-fn plural(n: usize, one: &str, many: &str) -> String {
-    if n == 1 { format!("1 {one}") } else { format!("{n} {many}") }
-}
-
 const ACCENT: &str = "#4f5fe0";
 
 /// The HTML frame of every e-mail: light, inline styles, readable without images.
@@ -575,14 +577,15 @@ pub fn layout(title: &str, body: &str, footer: &str) -> String {
 }
 
 /// An e-mail with one call to action (invitation, password reset): (text, html).
-pub fn action_mail(greeting: &str, intro: &str, button: &str, url: &str, outro: &str) -> (String, String) {
+pub fn action_mail(l: &str, greeting: &str, intro: &str, button: &str, url: &str, outro: &str) -> (String, String) {
     let text = format!("{greeting}\n\n{intro}\n\n{button}:\n{url}\n\n{outro}\n");
     let html = layout(
         button,
         &format!(
             "<p style=\"margin:0 0 12px\">{greeting}</p><p style=\"margin:0 0 12px\">{intro}</p>\
              <p style=\"margin:24px 0\"><a href=\"{url}\" style=\"background:{ACCENT};color:#ffffff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block\">{button}</a></p>\
-             <p style=\"color:#57606a;font-size:13px;margin:0\">Or open this link:<br><a href=\"{url}\" style=\"color:{ACCENT};word-break:break-all\">{url}</a></p>",
+             <p style=\"color:#57606a;font-size:13px;margin:0\">{or}<br><a href=\"{url}\" style=\"color:{ACCENT};word-break:break-all\">{url}</a></p>",
+            or = esc(&tr(l, "Or open this link:", &[])),
             greeting = esc(greeting),
             intro = esc(intro),
             url = esc(url),
@@ -594,34 +597,36 @@ pub fn action_mail(greeting: &str, intro: &str, button: &str, url: &str, outro: 
 }
 
 /// The invitation for someone an admin added: (subject, text, html).
-pub fn invitation_mail(inviter: &str, workspace: &str, name: &str, url: &str) -> (String, String, String) {
-    let subject = format!("{inviter} invited you to {workspace} on TaskCraft");
+pub fn invitation_mail(l: &str, inviter: &str, workspace: &str, name: &str, url: &str) -> (String, String, String) {
+    let args = [("inviter", inviter), ("workspace", workspace), ("name", name)];
+    let subject = tr(l, "{inviter} invited you to {workspace} on TaskCraft", &args);
     let (text, html) = action_mail(
-        &format!("Hi {name},"),
-        &format!("{inviter} invited you to join {workspace} on TaskCraft, where your team plans and tracks its work. Choose a password to get started."),
-        "Accept the invitation",
+        l,
+        &tr(l, "Hi {name},", &args),
+        &tr(l, "{inviter} invited you to join {workspace} on TaskCraft, where your team plans and tracks its work. Choose a password to get started.", &args),
+        &tr(l, "Accept the invitation", &[]),
         url,
-        "The link works once and expires in 7 days.",
+        &tr(l, "The link works once and expires in 7 days.", &[]),
     );
     (subject, text, html)
 }
 
 /// A link to choose a new password, asked for by the person (`by_admin` None, valid for an
 /// hour) or made by an admin (valid for 7 days): (subject, text, html).
-pub fn reset_mail(name: &str, email: &str, url: &str, by_admin: Option<&str>) -> (String, String, String) {
+pub fn reset_mail(l: &str, name: &str, email: &str, url: &str, by_admin: Option<&str>) -> (String, String, String) {
     let (subject, intro, outro) = match by_admin {
         None => (
-            "Reset your TaskCraft password".to_string(),
-            format!("Someone (hopefully you) asked to reset the password of your TaskCraft account {email}."),
-            "The link works once and expires in an hour. If you didn't ask for this, ignore this e-mail: your password stays the same.",
+            tr(l, "Reset your TaskCraft password", &[]),
+            tr(l, "Someone (hopefully you) asked to reset the password of your TaskCraft account {email}.", &[("email", email)]),
+            tr(l, "The link works once and expires in an hour. If you didn't ask for this, ignore this e-mail: your password stays the same.", &[]),
         ),
         Some(admin) => (
-            "Choose a new TaskCraft password".to_string(),
-            format!("{admin} sent you a link to choose a new password for your TaskCraft account {email}."),
-            "The link works once and expires in 7 days. Choosing a new password signs you out on your other devices.",
+            tr(l, "Choose a new TaskCraft password", &[]),
+            tr(l, "{admin} sent you a link to choose a new password for your TaskCraft account {email}.", &[("admin", admin), ("email", email)]),
+            tr(l, "The link works once and expires in 7 days. Choosing a new password signs you out on your other devices.", &[]),
         ),
     };
-    let (text, html) = action_mail(&format!("Hi {name},"), &intro, "Choose a new password", url, outro);
+    let (text, html) = action_mail(l, &tr(l, "Hi {name},", &[("name", name)]), &intro, &tr(l, "Choose a new password", &[]), url, &outro);
     (subject, text, html)
 }
 
@@ -652,51 +657,63 @@ pub struct Update {
 }
 
 /// One notification as a sentence, `who` being the person who did it.
-pub fn describe(kind: &str, data: &Value, who: &str) -> String {
+pub fn describe(l: &str, kind: &str, data: &Value, who: &str) -> String {
     let s = |k: &str| data.get(k).and_then(Value::as_str).filter(|v| !v.is_empty());
+    let w = [("who", who)];
     match kind {
-        "assigned" => format!("{who} assigned it to you"),
-        "mentioned" if data.get("commentId").is_some_and(|c| !c.is_null()) => format!("{who} mentioned you in a comment"),
-        "mentioned" => format!("{who} mentioned you in the description"),
-        "commented" => format!("{who} commented"),
+        "assigned" => tr(l, "{who} assigned it to you", &w),
+        "mentioned" if data.get("commentId").is_some_and(|c| !c.is_null()) => tr(l, "{who} mentioned you in a comment", &w),
+        "mentioned" => tr(l, "{who} mentioned you in the description", &w),
+        "commented" => tr(l, "{who} commented", &w),
         "status" => match (s("from"), s("to")) {
-            (Some(from), Some(to)) => format!("{who} changed the status from {from} to {to}"),
-            (None, Some(to)) => format!("{who} changed the status to {to}"),
-            _ => format!("{who} changed the status"),
+            (Some(from), Some(to)) => tr(l, "{who} changed the status from {from} to {to}", &[("who", who), ("from", from), ("to", to)]),
+            (None, Some(to)) => tr(l, "{who} changed the status to {to}", &[("who", who), ("to", to)]),
+            _ => tr(l, "{who} changed the status", &w),
         },
-        _ => format!("{who} updated it"),
+        "sla" if s("goal") == Some("response") => tr(l, "The goal for the first response was missed", &[]),
+        "sla" => tr(l, "The goal for resolving it was missed", &[]),
+        "automation" => match s("message") {
+            Some(m) => tr(l, "Automation: {message}", &[("message", m)]),
+            None => tr(l, "{who} updated it", &w),
+        },
+        _ => tr(l, "{who} updated it", &w),
     }
 }
 
 /// A notification e-mail (instant bundle or daily digest), grouped by issue:
 /// (subject, text, html).
-pub fn notification_mail(base: &str, cadence: Cadence, name: &str, workspace: &str, issues: &[IssueUpdates]) -> (String, String, String) {
+pub fn notification_mail(l: &str, base: &str, cadence: Cadence, name: &str, workspace: &str, issues: &[IssueUpdates]) -> (String, String, String) {
     let updates: usize = issues.iter().map(|i| i.items.len()).sum();
     let title = |i: &IssueUpdates| excerpt(&i.title, 80);
+    let n_updates = |n: usize| if n == 1 { tr(l, "1 update", &[]) } else { tr(l, "{n} updates", &[("n", &n.to_string())]) };
+    let n_issues = |n: usize| if n == 1 { tr(l, "1 issue", &[]) } else { tr(l, "{n} issues", &[("n", &n.to_string())]) };
     let subject = match cadence {
-        Cadence::Digest => format!("TaskCraft daily summary: {} on {}", plural(updates, "update", "updates"), plural(issues.len(), "issue", "issues")),
+        Cadence::Digest => tr(l, "TaskCraft daily summary: {updates} on {issues}", &[("updates", &n_updates(updates)), ("issues", &n_issues(issues.len()))]),
         Cadence::Instant if issues.len() == 1 => {
             let i = &issues[0];
-            let what = if updates == 1 { i.items[0].line.clone() } else { format!("{updates} updates") };
+            let what = if updates == 1 { i.items[0].line.clone() } else { n_updates(updates) };
             format!("[{}] {} — {what}", i.key, title(i))
         }
         Cadence::Instant if issues.len() <= 3 => {
-            format!("{updates} updates on {}", issues.iter().map(|i| i.key.as_str()).collect::<Vec<_>>().join(", "))
+            let keys = issues.iter().map(|i| i.key.as_str()).collect::<Vec<_>>().join(", ");
+            tr(l, "{updates} on {issues}", &[("updates", &n_updates(updates)), ("issues", &keys)])
         }
-        Cadence::Instant => format!("{updates} updates on {} issues", issues.len()),
+        Cadence::Instant => tr(l, "{updates} on {issues}", &[("updates", &n_updates(updates)), ("issues", &n_issues(issues.len()))]),
     };
     let intro = match cadence {
-        Cadence::Digest => format!("Here's what happened on your issues in {workspace}."),
-        Cadence::Instant => format!("New on your issues in {workspace}:"),
+        Cadence::Digest => tr(l, "Here's what happened on your issues in {workspace}.", &[("workspace", workspace)]),
+        Cadence::Instant => tr(l, "New on your issues in {workspace}:", &[("workspace", workspace)]),
     };
     let settings = format!("{base}/settings#notifications");
     let why = match cadence {
-        Cadence::Digest => "You get a daily summary of your TaskCraft notifications.",
-        Cadence::Instant => "You get an e-mail for each TaskCraft notification you haven't seen in the app.",
+        Cadence::Digest => tr(l, "You get a daily summary of your TaskCraft notifications.", &[]),
+        Cadence::Instant => tr(l, "You get an e-mail for each TaskCraft notification you haven't seen in the app.", &[]),
     };
+    let change = tr(l, "Change this or turn e-mails off", &[]);
+    let hi = tr(l, "Hi {name},", &[("name", name)]);
 
-    let mut text = format!("Hi {name},\n\n{intro}\n");
-    let mut html = format!("<p style=\"margin:0 0 6px\">Hi {},</p><p style=\"margin:0 0 8px\">{}</p>", esc(name), esc(&intro));
+    let mut text = format!("{hi}\n\n{intro}\n");
+    let mut html = format!("<p style=\"margin:0 0 6px\">{}</p><p style=\"margin:0 0 8px\">{}</p>", esc(&hi), esc(&intro));
     for i in issues {
         text.push_str(&format!("\n[{}] {}\n{}\n", i.key, i.title, i.url));
         html.push_str(&format!(
@@ -723,13 +740,13 @@ pub fn notification_mail(base: &str, cadence: Cadence, name: &str, workspace: &s
             html.push_str("</li>");
         }
         html.push_str(&format!(
-            "</ul><p style=\"margin:4px 0 0\"><a href=\"{}\" style=\"color:{ACCENT};text-decoration:none;font-size:13px\">Open {} →</a></p></div>",
+            "</ul><p style=\"margin:4px 0 0\"><a href=\"{}\" style=\"color:{ACCENT};text-decoration:none;font-size:13px\">{} →</a></p></div>",
             esc(&i.url),
-            esc(&i.key)
+            esc(&tr(l, "Open {key}", &[("key", &i.key)]))
         ));
     }
-    text.push_str(&format!("\n--\n{why} Change this or turn e-mails off: {settings}\n"));
-    let footer = format!("{} <a href=\"{}\" style=\"color:#6b7280\">Change this or turn e-mails off</a>.", esc(why), esc(&settings));
+    text.push_str(&format!("\n--\n{why} {change}: {settings}\n"));
+    let footer = format!("{} <a href=\"{}\" style=\"color:#6b7280\">{}</a>.", esc(&why), esc(&settings), esc(&change));
     let html = layout(&subject, &html, &footer);
     (subject, text, html)
 }
@@ -790,16 +807,16 @@ mod tests {
 
     #[test]
     fn action_mails() {
-        let (subject, text, html) = invitation_mail("Olivia <Owner>", "Acme & Co", "Max", "http://tc.test/welcome?token=a&b");
+        let (subject, text, html) = invitation_mail("en", "Olivia <Owner>", "Acme & Co", "Max", "http://tc.test/welcome?token=a&b");
         assert_eq!(subject, "Olivia <Owner> invited you to Acme & Co on TaskCraft");
         assert!(text.contains("Hi Max,") && text.contains("http://tc.test/welcome?token=a&b"), "{text}");
         assert!(html.contains("Olivia &lt;Owner&gt; invited you to join Acme &amp; Co"), "{html}");
         assert!(html.contains("href=\"http://tc.test/welcome?token=a&amp;b\""));
         assert!(!html.contains("<Owner>"));
-        let (subject, text, _) = reset_mail("Max", "max@example.com", "http://tc.test/welcome?token=r", None);
+        let (subject, text, _) = reset_mail("en", "Max", "max@example.com", "http://tc.test/welcome?token=r", None);
         assert_eq!(subject, "Reset your TaskCraft password");
         assert!(text.contains("expires in an hour") && text.contains("max@example.com"));
-        let (subject, text, _) = reset_mail("Max", "max@example.com", "http://tc.test/welcome?token=r", Some("Olivia"));
+        let (subject, text, _) = reset_mail("en", "Max", "max@example.com", "http://tc.test/welcome?token=r", Some("Olivia"));
         assert_eq!(subject, "Choose a new TaskCraft password");
         assert!(text.contains("Olivia sent you a link"));
     }
@@ -814,15 +831,15 @@ mod tests {
 
     #[test]
     fn notification_mails() {
-        assert_eq!(describe("commented", &json!({}), "Mira"), "Mira commented");
-        assert_eq!(describe("status", &json!({"from": "To do", "to": "Done"}), "Mira"), "Mira changed the status from To do to Done");
-        assert_eq!(describe("mentioned", &json!({"commentId": null}), "Mira"), "Mira mentioned you in the description");
-        assert_eq!(describe("mentioned", &json!({"commentId": "0190"}), "Mira"), "Mira mentioned you in a comment");
-        assert_eq!(describe("assigned", &json!({}), "Automation"), "Automation assigned it to you");
+        assert_eq!(describe("en", "commented", &json!({}), "Mira"), "Mira commented");
+        assert_eq!(describe("en", "status", &json!({"from": "To do", "to": "Done"}), "Mira"), "Mira changed the status from To do to Done");
+        assert_eq!(describe("en", "mentioned", &json!({"commentId": null}), "Mira"), "Mira mentioned you in the description");
+        assert_eq!(describe("en", "mentioned", &json!({"commentId": "0190"}), "Mira"), "Mira mentioned you in a comment");
+        assert_eq!(describe("en", "assigned", &json!({}), "Automation"), "Automation assigned it to you");
 
         // one update: the subject says what happened
         let one = [issue("WEB-12", "Login <times> out", vec![update("Mira commented", Some("Looks like the cookie & the <proxy>"))])];
-        let (subject, text, html) = notification_mail("http://tc.test", Cadence::Instant, "Max", "Acme", &one);
+        let (subject, text, html) = notification_mail("en", "http://tc.test", Cadence::Instant, "Max", "Acme", &one);
         assert_eq!(subject, "[WEB-12] Login <times> out — Mira commented");
         assert!(
             text.contains("[WEB-12] Login <times> out\nhttp://tc.test/issues/WEB-12\n  • Mira commented\n    “Looks like the cookie & the <proxy>”"),
@@ -836,18 +853,18 @@ mod tests {
 
         // a burst on one issue, then several issues
         let burst = [issue("WEB-12", "Login", vec![update("Mira commented", None), update("Mira changed the status to Done", None)])];
-        assert_eq!(notification_mail("http://tc.test", Cadence::Instant, "Max", "Acme", &burst).0, "[WEB-12] Login — 2 updates");
+        assert_eq!(notification_mail("en", "http://tc.test", Cadence::Instant, "Max", "Acme", &burst).0, "[WEB-12] Login — 2 updates");
         let several = [issue("WEB-12", "Login", vec![update("a", None), update("b", None)]), issue("WEB-14", "Signup", vec![update("c", None)])];
-        assert_eq!(notification_mail("http://tc.test", Cadence::Instant, "Max", "Acme", &several).0, "3 updates on WEB-12, WEB-14");
+        assert_eq!(notification_mail("en", "http://tc.test", Cadence::Instant, "Max", "Acme", &several).0, "3 updates on WEB-12, WEB-14");
 
         // the digest lists everything grouped by issue, with times
-        let (subject, text, html) = notification_mail("http://tc.test", Cadence::Digest, "Max", "Acme", &several);
+        let (subject, text, html) = notification_mail("en", "http://tc.test", Cadence::Digest, "Max", "Acme", &several);
         assert_eq!(subject, "TaskCraft daily summary: 3 updates on 2 issues");
         assert!(text.contains("Here's what happened on your issues in Acme."));
         let (a, b) = (text.find("[WEB-12] Login").unwrap(), text.find("[WEB-14] Signup").unwrap());
         assert!(a < b && text[a..b].contains("  • a (Mon 14:05)\n  • b (Mon 14:05)"), "{text}");
         assert!(html.contains("Open WEB-14"));
         let single = [issue("WEB-1", "x", vec![update("a", None)])];
-        assert_eq!(notification_mail("http://tc.test", Cadence::Digest, "Max", "Acme", &single).0, "TaskCraft daily summary: 1 update on 1 issue");
+        assert_eq!(notification_mail("en", "http://tc.test", Cadence::Digest, "Max", "Acme", &single).0, "TaskCraft daily summary: 1 update on 1 issue");
     }
 }

@@ -11,7 +11,25 @@ use uuid::Uuid;
 use crate::app::{AppState, audit};
 use crate::auth::{CurrentUser, User, require_admin};
 use crate::error::{ApiError, ApiResult};
+use crate::i18n::tr;
 use crate::mail::Mail;
+
+/// The language of an e-mail to an address in a workspace: its person's, else the workspace's
+/// default, else (for someone new) the language of whoever sends it.
+async fn lang_for(state: &AppState, workspace: Uuid, email: &str, sender: Option<Uuid>) -> &'static str {
+    let row: (Option<String>, Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT (SELECT COALESCE(locale, preferences->>'browserLanguage') FROM users WHERE workspace_id = $1 AND lower(email) = lower($2) LIMIT 1),
+                (SELECT settings->>'defaultLanguage' FROM workspaces WHERE id = $1),
+                (SELECT locale FROM users WHERE id = $3)",
+    )
+    .bind(workspace)
+    .bind(email)
+    .bind(sender)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or((None, None, None));
+    crate::i18n::lang([row.0.as_deref(), row.1.as_deref(), row.2.as_deref()])
+}
 
 /// Self-service reset links are valid this long (admin-made links 7 days).
 const RESET_HOURS: i32 = 1;
@@ -39,7 +57,8 @@ pub async fn send_invitation(state: &AppState, admin: &User, to: &str, name: &st
         return false;
     }
     let workspace = workspace_name(state, admin.workspace_id).await;
-    let (subject, text, html) = crate::mail::invitation_mail(&admin.name, &workspace, name, url);
+    let l = lang_for(state, admin.workspace_id, to, Some(admin.id)).await;
+    let (subject, text, html) = crate::mail::invitation_mail(l, &admin.name, &workspace, name, url);
     queue(state, Mail { to: to.to_string(), subject, text, html, purpose: "invite" }).await
 }
 
@@ -48,7 +67,8 @@ pub async fn send_reset_link(state: &AppState, admin: &User, to: &str, name: &st
     if !state.mailer.enabled() {
         return false;
     }
-    let (subject, text, html) = crate::mail::reset_mail(name, to, url, Some(&admin.name));
+    let l = lang_for(state, admin.workspace_id, to, None).await;
+    let (subject, text, html) = crate::mail::reset_mail(l, name, to, url, Some(&admin.name));
     queue(state, Mail { to: to.to_string(), subject, text, html, purpose: "reset" }).await
 }
 
@@ -84,7 +104,8 @@ pub async fn forgot(State(state): State<AppState>, Json(req): Json<ForgotRequest
         return Ok(StatusCode::NO_CONTENT);
     }
     let url = super::auth::user_link_valid(&state, id, "reset", RESET_HOURS).await?;
-    let (subject, text, html) = crate::mail::reset_mail(&name, &to, &url, None);
+    let l = crate::i18n::of_user(&state.db, id).await;
+    let (subject, text, html) = crate::mail::reset_mail(l, &name, &to, &url, None);
     crate::mail::queue(&state, &Mail { to, subject, text, html, purpose: "reset" }).await?;
     audit(&state, workspace, Some(id), "auth.reset_requested", None, json!({})).await;
     Ok(StatusCode::NO_CONTENT)
@@ -127,17 +148,17 @@ pub async fn test(State(state): State<AppState>, CurrentUser(user): CurrentUser)
         return Err(ApiError::bad("e-mail isn't configured: set TASKCRAFT_SMTP_URL"));
     }
     let to = user.email.clone().filter(|e| !e.is_empty()).ok_or_else(|| ApiError::bad("your account has no e-mail address"))?;
-    let text = format!("Hi {},\n\nE-mail from TaskCraft works: this test was sent from {}.\n", user.name, state.config.base());
+    let l = crate::i18n::of_user(&state.db, user.id).await;
+    let hi = tr(l, "Hi {name},", &[("name", &user.name)]);
+    let works = tr(l, "E-mail from TaskCraft works: this test was sent from {address}.", &[("address", state.config.base())]);
+    let text = format!("{hi}\n\n{works}\n");
+    let subject = tr(l, "TaskCraft test e-mail", &[]);
     let html = crate::mail::layout(
-        "Test e-mail",
-        &format!(
-            "<p style=\"margin:0 0 12px\">Hi {},</p><p style=\"margin:0\">E-mail from TaskCraft works: this test was sent from <a href=\"{base}\" style=\"color:#4f5fe0\">{base}</a>.</p>",
-            crate::mail::esc(&user.name),
-            base = crate::mail::esc(state.config.base())
-        ),
-        "Sent from Administration → Overview.",
+        &subject,
+        &format!("<p style=\"margin:0 0 12px\">{}</p><p style=\"margin:0\">{}</p>", crate::mail::esc(&hi), crate::mail::esc(&works)),
+        &crate::mail::esc(&tr(l, "Sent from Administration → Overview.", &[])),
     );
-    state.mailer.send_now(&to, "TaskCraft test e-mail", &text, Some(&html)).await.map_err(|e| ApiError::bad(format!("sending failed: {e:#}")))?;
+    state.mailer.send_now(&to, &subject, &text, Some(&html)).await.map_err(|e| ApiError::bad(format!("sending failed: {e:#}")))?;
     audit(&state, user.workspace_id, Some(user.id), "mail.test", Some(to.clone()), json!({})).await;
     Ok(Json(json!({ "ok": true, "to": to })))
 }

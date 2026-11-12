@@ -476,3 +476,29 @@ async fn without_smtp_links_are_shown_instead() {
     assert_eq!(pending(&app).await, 0);
     assert_eq!(taskcraft::mail::notification_mails(&app.state).await.unwrap(), 0);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn emails_speak_each_persons_language() {
+    let (app, sink) = with_mail().await;
+    let owner = app.setup(false).await;
+    // someone new: the workspace's language
+    let (s, _) = send(&owner, Method::PUT, app.url("/admin/workspace"), json!({"defaultLanguage": "fr"})).await;
+    assert!(s < 300);
+    post(&owner, app.url("/users"), json!({"name": "Zoé", "email": "zoe@example.com"})).await;
+    taskcraft::mail::drain(&app.state).await.unwrap();
+    let m = sink.wait("zoe@example.com", "vous a invité").await;
+    assert!(m.text.contains("Bonjour Zoé,") && m.text.contains("Accepter l’invitation"), "{}", m.text);
+    // someone with a language of their own
+    let (pia, _) = app.user(&owner, "Pia", "pia@example.com", "member").await;
+    let (s, _) = send(&pia, Method::PUT, app.url("/me/profile"), json!({"locale": "de-CH"})).await;
+    assert!(s < 300);
+    assert_eq!(send(&client(), Method::POST, app.url("/auth/forgot"), json!({"email": "pia@example.com"})).await.0, 204);
+    taskcraft::mail::drain(&app.state).await.unwrap();
+    let m = sink.wait("pia@example.com", "TaskCraft-Passwort zurücksetzen").await;
+    assert!(m.text.contains("Hallo Pia,") && m.html.contains("Neues Passwort wählen"), "{}", m.text);
+    // and English as asked for
+    let (s, _) = send(&owner, Method::PUT, app.url("/me/profile"), json!({"locale": "en"})).await;
+    assert!(s < 300);
+    post(&owner, app.url("/admin/mail/test"), json!({})).await;
+    sink.wait("owner@example.com", "TaskCraft test e-mail").await;
+}

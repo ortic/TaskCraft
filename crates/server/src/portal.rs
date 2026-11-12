@@ -355,7 +355,13 @@ pub async fn send_link(state: &AppState, email: &str, request: Option<&str>) -> 
         url.push_str(&format!("&request={}", key.to_ascii_uppercase()));
     }
     let workspace = workspace_name(state).await;
-    let (subject, text, html) = sign_in_mail(&url, &workspace);
+    let default: Option<String> = sqlx::query_scalar("SELECT settings->>'defaultLanguage' FROM workspaces ORDER BY created_at LIMIT 1")
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()
+        .flatten();
+    let (subject, text, html) = sign_in_mail(crate::i18n::lang([default.as_deref()]), &url, &workspace);
     let from_name = (!workspace.is_empty()).then_some(workspace);
     let headers = Headers { from_name, ..Default::default() };
     crate::mail::queue_with(state, &Mail { to: email.to_string(), subject, text, html, purpose: "portal-link" }, Some(&headers)).await
@@ -363,21 +369,26 @@ pub async fn send_link(state: &AppState, email: &str, request: Option<&str>) -> 
 
 /// (subject, text, html) of a sign-in link e-mail (no TaskCraft branding: requesters don't
 /// know it).
-pub fn sign_in_mail(url: &str, workspace: &str) -> (String, String, String) {
-    let subject = "Your sign-in link".to_string();
-    let intro = "Here is your link to sign in and follow your requests:";
-    let outro = format!("It works once, within {LINK_MINUTES} minutes. If you didn't ask for it, ignore this e-mail.");
+pub fn sign_in_mail(l: &str, url: &str, workspace: &str) -> (String, String, String) {
+    use crate::i18n::tr;
+    let subject = tr(l, "Your sign-in link", &[]);
+    let intro = tr(l, "Here is your link to sign in and follow your requests:", &[]);
+    let outro = tr(l, "It works once, within {minutes} minutes. If you didn't ask for it, ignore this e-mail.", &[("minutes", &LINK_MINUTES.to_string())]);
+    let hi = tr(l, "Hi,", &[]);
     let signature = if workspace.is_empty() { String::new() } else { format!("\n— {workspace}\n") };
-    let text = format!("Hi,\n\n{intro}\n{url}\n\n{outro}\n{signature}");
+    let text = format!("{hi}\n\n{intro}\n{url}\n\n{outro}\n{signature}");
     let html = format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>{subject}</title></head>\
          <body style=\"margin:0;padding:16px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1f2328;font-size:15px;line-height:1.55\">\
-         <div style=\"max-width:640px\"><p style=\"margin:0 0 12px\">Hi,</p><p style=\"margin:0 0 12px\">{intro}</p>\
-         <p style=\"margin:16px 0\"><a href=\"{url}\" style=\"background:#4f5fe0;color:#ffffff;padding:9px 16px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block\">Sign in</a></p>\
-         <p style=\"color:#57606a;font-size:13px;margin:0 0 12px\">Or open this link:<br><a href=\"{url}\" style=\"color:#3241b5;word-break:break-all\">{url}</a></p>\
+         <div style=\"max-width:640px\"><p style=\"margin:0 0 12px\">{hi}</p><p style=\"margin:0 0 12px\">{intro}</p>\
+         <p style=\"margin:16px 0\"><a href=\"{url}\" style=\"background:#4f5fe0;color:#ffffff;padding:9px 16px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block\">{sign_in}</a></p>\
+         <p style=\"color:#57606a;font-size:13px;margin:0 0 12px\">{or}<br><a href=\"{url}\" style=\"color:#3241b5;word-break:break-all\">{url}</a></p>\
          <p style=\"color:#6b7280;font-size:13px;margin:24px 0 0\">{outro}{sig}</p></div></body></html>",
         subject = esc(&subject),
-        intro = esc(intro),
+        hi = esc(&hi),
+        sign_in = esc(&tr(l, "Sign in", &[])),
+        or = esc(&tr(l, "Or open this link:", &[])),
+        intro = esc(&intro),
         url = esc(url),
         outro = esc(&outro),
         sig = if workspace.is_empty() { String::new() } else { format!("<br>— {}", esc(workspace)) },
@@ -572,7 +583,7 @@ mod tests {
         assert_eq!(out["content"][1]["attrs"], json!({"level": 2}));
         assert!(!out.to_string().contains("0190f0e4"));
 
-        let (subject, text, html) = sign_in_mail("https://t.example/portal/sign-in?token=a&request=SUP-1", "Acme & Co");
+        let (subject, text, html) = sign_in_mail("en", "https://t.example/portal/sign-in?token=a&request=SUP-1", "Acme & Co");
         assert_eq!(subject, "Your sign-in link");
         assert!(text.contains("https://t.example/portal/sign-in?token=a&request=SUP-1\n") && text.contains("— Acme & Co"), "{text}");
         assert!(html.contains("token=a&amp;request=SUP-1") && html.contains("Acme &amp; Co"), "{html}");

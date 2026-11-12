@@ -2086,7 +2086,7 @@
   "The new password must be at least 8 characters.": "Le nouveau mot de passe doit comporter au moins 8 caractères.",
   "The new passwords don’t match.": "Les nouveaux mots de passe ne correspondent pas.",
   "The owner can’t be changed": "Le propriétaire ne peut pas être modifié",
-  "The page reloads in the new language when you save.": "La page se recharge dans la nouvelle langue à l’enregistrement.",
+  "The page reloads in the new language when you save. E-mails come in it too.": "La page se recharge dans la nouvelle langue à l’enregistrement. Les e-mails arrivent aussi dans cette langue.",
   "The page starts from the issue’s description with sections for goals, approach and open questions, and is linked to the issue.": "La page part de la description du ticket, avec des sections pour les objectifs, l’approche et les questions ouvertes, et est liée au ticket.",
   "the parent": "le parent",
   "The password must be at least 8 characters.": "Le mot de passe doit comporter au moins 8 caractères.",

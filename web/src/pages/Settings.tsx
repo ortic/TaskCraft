@@ -225,7 +225,7 @@ function ProfileSection({ me }: { me: Me }) {
               ))}
               {lang && !AVAILABLE.some((l) => l.code === lang) && <option value={lang}>{LANGUAGES.find((l) => l.code === lang)?.name ?? lang}</option>}
             </select>
-            <span className="field-hint">{t('The page reloads in the new language when you save.')}</span>
+            <span className="field-hint">{t('The page reloads in the new language when you save. E-mails come in it too.')}</span>
           </div>
           <div className="field">
             <label htmlFor="st-tz">{t('Time zone')}</label>

@@ -80,7 +80,7 @@
 - [x] Time tracking: remaining estimate next to the original (follows the time logged or set by hand; logging reduces, keeps or sets it), time categories with a billable default, time reports grouped by person / project / issue / category / day / week / month (twice), filtered, with a CSV of every log
 - [x] Fields per issue type: which fields a type shows, hides and requires (enforced on create, type change and edits; the create dialog asks for them)
 - [ ] Subprojects: a project hierarchy with views and reports across a project and its subprojects
-- [ ] E-mails in each person's language (they're English only)
+- [x] E-mails in each person's language: their own, else the workspace's default, else their browser's (German, French, Italian; requesters get the workspace's)
 - [ ] Voting on issues; issue lists and issues as Excel and PDF, a print view
 - [ ] Portal: suggest WikiCraft articles while a requester types, before the request is sent
 - [x] Importers from other trackers' APIs (GitHub / GitLab issues and similar), next to CSV and XML site backups: three sources, read with a token into the same check, choices, background import and report (Administration → Import, and `taskcraft import-…` on the command line)
