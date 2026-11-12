@@ -199,8 +199,9 @@ function warningText(w: Warning): string {
     case 'file-too-large': return t('Attachments larger than the upload limit ({mb} MB) are left out', { mb: p.mb })
     case 'unreadable-file': return t('An attachment couldn’t be read: {error}', { error: p.error })
     case 'empty-comment': return t('Empty comments are left out')
-    case 'restricted-comments': return t('Comments only a group or role could see are visible to everyone who can see the project')
-    case 'confidential': return t('Confidential issues are visible to everyone who can see the project')
+    case 'restricted-comments': return t('Comments only a group or role could see are for the project’s members here (not viewers or guests)')
+    case 'time-category': return t('The activity “{name}” becomes a time category (not billable until an admin says so)', { name: p.name })
+    case 'security-level': return t('Private issues in {project} get the security level “{level}”: the project’s members see them (not viewers or guests); who exactly can be changed in the project’s settings', { project: p.project, level: p.level })
     case 'link-type': return t('Links of the type “{name}” are imported as “relates to”', { name: p.name })
     case 'subtask-parent': return t('Sub-tasks can’t have children here: such parent links are left out')
     case 'parent-cycle': return t('Parent links that would go round in a circle are left out')
@@ -819,7 +820,7 @@ const COUNTS: [string, () => string][] = [
   ['statuses', () => t('New statuses')],
   ['types', () => t('New issue types')],
   ['fields', () => t('Custom fields')],
-  ['confidential', () => t('Confidential issues')],
+  ['private', () => t('Private issues')],
   ['history', () => t('History entries')],
 ]
 

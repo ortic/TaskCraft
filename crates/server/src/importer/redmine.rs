@@ -319,21 +319,15 @@ pub async fn fetch(http: &Http, asked: &[String], markup: Option<Format>, progre
                 elsewhere += 1;
                 continue;
             };
-            let activity = text(&e["activity"]["name"]);
-            let comment = text(&e["comments"]);
-            let note = match (activity, comment) {
-                (Some(a), Some(c)) => Some(format!("{a}: {c}")),
-                (Some(a), None) => Some(a),
-                (None, c) => c,
-            };
             target.worklogs.push(Worklog {
                 id: eid,
                 author: people.key(&e["user"]),
-                note: note.map(|n| Text::new(n, Format::Plain)),
+                note: text(&e["comments"]).map(|n| Text::new(n, Format::Plain)),
                 created: time(&e["created_on"]),
                 started: None,
                 date: day(&e["spent_on"]),
                 seconds: e["hours"].as_f64().unwrap_or(0.0) * 3600.0,
+                category: text(&e["activity"]["name"]),
             });
         }
     }
@@ -673,6 +667,7 @@ fn read_issue(
         custom,
         rank: None,
         confidential: it["is_private"].as_bool() == Some(true),
+        security: (it["is_private"].as_bool() == Some(true)).then(|| "Private".to_string()),
         comments,
         worklogs: vec![],
         attachments,

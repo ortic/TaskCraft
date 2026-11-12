@@ -191,16 +191,17 @@ async fn gitlab_issues_come_over_with_notes_time_and_history() {
     assert_eq!(web.counts["comments"].imported, 2, "{text}");
     assert_eq!(web.counts["worklogs"].imported, 3, "{text}");
     assert_eq!(web.counts["links"].imported, 1, "one link, seen from both sides: {text}");
-    assert_eq!(web.counts["confidential"].imported, 1, "{text}");
+    assert_eq!(web.counts["private"].imported, 1, "the confidential issue: {text}");
     assert_eq!(web.counts["attachments"].imported, 1, "{text}");
     assert_eq!(r.people.get("matched"), Some(&1), "{text}");
     assert_eq!(r.people.get("invited"), Some(&1), "{text}");
     assert_eq!(r.people.get("deactivated"), Some(&1), "a blocked account: {text}");
-    assert!(r.warnings.iter().any(|w| w.code == "confidential"), "{text}");
+    assert!(r.warnings.iter().any(|w| w.code == "security-level"), "{text}");
     assert!(r.warnings.iter().any(|w| w.code == "restricted-comments"), "internal notes: {text}");
     assert_eq!(*m.anonymous.lock().unwrap(), 0);
     assert_eq!(m.hits.lock().unwrap()["/api/v4/projects/77/issues/1/notes"], 2, "waited for the rate limit, then asked again");
 
+    assert_eq!(get(&c, app.url("/issues/WEB-2")).await["security"]["name"], "Confidential", "confidential stays private");
     let login = get(&c, app.url("/issues/WEB-1")).await;
     assert_eq!(login["title"], "Login fails");
     assert_eq!(login["type"]["name"], "Bug");

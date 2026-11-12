@@ -368,9 +368,12 @@ Trackers that write an **XML site backup** — a `.zip` with `entities.xml`, oft
 completely: people, projects, issues with their numbers, descriptions and comments (wiki markup
 converted, mentions pointing to the people, embedded images to the imported files), time logs,
 attachments, links (blocks, relates, duplicates, clones; sub-task and epic links become parents),
-watchers, labels, components, fix versions, sprints, estimates and story points, and the history of
-status, assignee, priority, sprint, estimate and points changes with their times and authors, so
-burndown, velocity, cumulative flow, cycle time and created vs resolved show the past as it was.
+watchers, labels, components, fix versions, sprints, original and remaining estimates and story
+points, issue security levels (private issues stay private; the levels are seen by the project's
+members until you change them), comments restricted to a group or role (for the project's members
+here), and the history of status, assignee, priority, sprint, estimate and points changes with
+their times and authors, so burndown, velocity, cumulative flow, cycle time and created vs resolved
+show the past as it was.
 
 **In the browser**: *Administration → Import*, *Jira (XML backup)*.
 
@@ -456,8 +459,8 @@ list a group's, a user's or the token's own projects.
 | assignees, author | the first assignee; the others watch; reporter |
 | milestone (project or group), weight, due date | release, story points, due date |
 | time estimate, time spent | estimate; a time log per *added … of time spent* note (its author and day), and the rest the notes don't explain for the assignee on the closing day |
-| comments; internal notes | comments; internal ones are visible to everyone who can see the project (the report says so) |
-| confidential issues | issues (counted in the check and the report: they're visible to everyone who can see the project) |
+| comments; internal notes | comments; internal ones are for the project's members (not viewers or guests) |
+| confidential issues | private issues with the security level *Confidential* (created when missing; the project's members see them, which you can change in its settings) |
 | issue links (relates to, blocks, is blocked by) | links |
 | epic (where the server has them) | a parent issue of the type *Epic* |
 | state, label and milestone events; notes about assignees and titles | history, as the reports replay it |
@@ -488,13 +491,13 @@ can change it before importing (`--markup` on the command line).
 | parent task | parent (across projects too) |
 | start and due date, estimated time | start and due date, estimate |
 | custom fields (string, text, integer, float, date, boolean, list, enumeration, key/value, user, link) | custom fields of the project, created by name and kind when missing (lists as selects, multiple ones as multi-selects, versions as text) |
-| journal notes; private notes | comments; private ones are visible to everyone who can see the project (the report says so) |
+| journal notes; private notes | comments; private ones are for the project's members (not viewers or guests) |
 | journal details (status, assignee, priority, tracker, subject, description, due date, estimate, category, version, parent) | history, as the reports replay it |
-| time entries (user, hours, day, activity, comment) | time logs by their authors on their days, the activity before the comment (`Development: …`) until TaskCraft has time categories |
+| time entries (user, hours, day, activity, comment) | time logs by their authors on their days; the activity becomes their time category (created when missing, not billable until an admin says so) |
 | attachments | attachments, downloaded with the API key |
 | relations: relates, duplicates, blocks, precedes / follows, copied to / from | links: relates, duplicates, blocks (precedes counts as blocks), clones |
 | watchers (with an administrator's key) | watchers |
-| private issues | issues (counted in the check and the report: visible to everyone who can see the project) |
+| private issues | private issues with the security level *Private* (created when missing; the project's members see them, which you can change in its settings) |
 
 Not imported: the percentage done (the report counts the issues that had one), time logged on a
 project rather than an issue, changes of custom fields in the history, wiki, forums, news,

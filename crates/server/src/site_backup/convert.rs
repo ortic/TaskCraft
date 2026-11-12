@@ -323,7 +323,8 @@ pub fn to_model(b: &Backup) -> Model {
             watchers: watchers.get(iid).into_iter().flatten().filter_map(|u| canon(Some(u))).collect(),
             custom: vec![],
             rank: b.ranks.get(iid).cloned(),
-            confidential: false,
+            confidential: i.security.is_some(),
+            security: i.security.as_ref().and_then(|s| b.security_levels.get(s)).filter(|n| !n.trim().is_empty()).cloned(),
             comments: cs
                 .into_iter()
                 .map(|c| model::Comment {
@@ -345,6 +346,7 @@ pub fn to_model(b: &Backup) -> Model {
                     started: w.started,
                     date: None,
                     seconds: w.seconds,
+                    category: None,
                 })
                 .collect(),
             attachments: atts

@@ -219,10 +219,10 @@ async fn redmine_projects_come_over_with_journals_time_and_fields() {
     assert_eq!(shop.counts["fields"], Count { imported: 4, existing: 1 }, "the template's Severity is used: {text}");
     assert_eq!(shop.counts["watchers"].imported, 2, "{text}");
     assert_eq!(shop.counts["links"].imported + api.counts["links"].imported, 2, "{text}");
-    assert_eq!(shop.counts["confidential"].imported, 1, "a private issue: {text}");
+    assert_eq!(shop.counts["private"].imported, 1, "a private issue: {text}");
     assert_eq!(r.people.get("matched"), Some(&1), "Jane by her e-mail address: {text}");
     assert_eq!(r.people.get("deactivated"), Some(&1), "Max's account is locked: {text}");
-    for code in ["restricted-comments", "time-without-issue", "done-ratio", "confidential"] {
+    for code in ["restricted-comments", "time-without-issue", "done-ratio", "security-level", "time-category"] {
         assert!(r.warnings.iter().any(|w| w.code == code), "{code}: {text}");
     }
     assert!(m.hits.lock().unwrap()["/projects.json"] >= 3, "pages by offset");
@@ -271,13 +271,19 @@ async fn redmine_projects_come_over_with_journals_time_and_fields() {
     let comments = get(&c, app.url("/issues/SHOP-1/comments")).await;
     let comments = comments.as_array().unwrap();
     assert_eq!(comments.len(), 3);
+    assert_eq!((comments[1]["visibility"].as_str(), comments[0]["visibility"].as_str()), (Some("members"), None), "private notes stay private");
     assert_eq!(comments[0]["author"]["id"], jane_id.as_str());
     assert!(comments[2]["body"].to_string().contains(att["url"].as_str().unwrap()), "attachment: links: {}", comments[2]["body"]);
     let logs = get(&c, app.url("/issues/SHOP-1/worklogs")).await;
-    assert_eq!((logs[0]["minutes"].as_i64(), logs[0]["note"].as_str()), (Some(90), Some("Development: Debugging")));
+    assert_eq!(
+        (logs[0]["minutes"].as_i64(), logs[0]["note"].as_str(), logs[0]["category"]["name"].as_str()),
+        (Some(90), Some("Debugging"), Some("Development")),
+        "the activity is the time category"
+    );
     assert_eq!(logs[0]["date"], m.day(26));
     // closed but rejected: done as Won't do, in a status of its own; open but resolved stays open
     let two = get(&c, app.url("/issues/SHOP-2")).await;
+    assert_eq!(two["security"]["name"], "Private", "a private issue stays private");
     assert_eq!(
         (two["status"]["name"].as_str(), two["status"]["category"].as_str(), two["resolution"].as_str()),
         (Some("Rejected"), Some("done"), Some("Won't do"))

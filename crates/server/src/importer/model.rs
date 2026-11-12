@@ -178,6 +178,9 @@ pub struct Worklog {
     /// the day of the work when the source gives a day rather than a moment
     pub date: Option<NaiveDate>,
     pub seconds: f64,
+    /// what kind of work it was (the source's activity): a time category here
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -316,6 +319,10 @@ pub struct Issue {
     pub rank: Option<String>,
     /// only some could see it in the source
     pub confidential: bool,
+    /// the source's name for who could see it (a security level); confidential issues without one
+    /// get one called Confidential
+    #[serde(default)]
+    pub security: Option<String>,
     pub comments: Vec<Comment>,
     pub worklogs: Vec<Worklog>,
     pub attachments: Vec<Attachment>,

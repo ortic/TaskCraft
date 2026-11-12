@@ -55,6 +55,7 @@ fn backup(base: DateTime<Utc>) -> (String, String) {
     <Priority id="4" name="Low" sequence="4"/>
     <Priority id="5" name="Lowest" sequence="5"/>
     <Resolution id="1" name="Fixed" sequence="1"/>
+    <IssueSecurityLevel id="10100" name="Staff only" description="" scheme="10000"/>
     <Issue id="100" projectKey="SHOP" number="1" project="10000" reporter="ukey-alice" creator="ukey-alice" type="3" summary="Checkout" priority="3" status="3" created="{e}" updated="{e}"/>
     <Issue id="101" projectKey="SHOP" number="2" project="10000" reporter="ukey-alice" assignee="ukey-bob" creator="ukey-alice" type="2" summary="Pay by   card" priority="2" status="6" resolution="1" resolutiondate="{r}" created="{c}" updated="{r}" duedate="{due}" timeoriginalestimate="7200" timeestimate="1800" timespent="5400">
         <description><![CDATA[h2. Goal
@@ -62,7 +63,7 @@ Pay with a card, asked by [~ukey-alice].
 !card.png|thumbnail!
 See [the spec|https://example.com/spec] and [^gone.pdf].]]></description>
     </Issue>
-    <Issue id="102" projectKey="SHOP" number="3" project="10000" reporter="ukey-bob" assignee="ukey-carol" creator="ukey-bob" type="1" summary="Card form loses input" priority="1" status="10001" created="{c3}" updated="{c4}"/>
+    <Issue id="102" projectKey="SHOP" number="3" project="10000" reporter="ukey-bob" assignee="ukey-carol" creator="ukey-bob" type="1" summary="Card form loses input" priority="1" status="10001" security="10100" created="{c3}" updated="{c4}"/>
     <Issue id="103" projectKey="SHOP" number="5" project="10000" reporter="ukey-bob" creator="ukey-bob" type="4" summary="Card form layout" priority="3" status="1" created="{c3}" updated="{c3}"/>
     <Issue id="104" projectKey="WEB" number="6" project="10000" reporter="ukey-bob" creator="ukey-bob" type="5" summary="Faster checkout" priority="4" status="1" created="{c4}" updated="{c4}"/>
     <Issue id="200" projectKey="OPS" number="1" project="10001" reporter="ukey-bob" creator="ukey-bob" type="1" summary="Payment gateway timeouts" priority="2" status="1" created="{c}" updated="{c}"/>
@@ -280,6 +281,7 @@ async fn backup_import_brings_everything_over() {
     assert_eq!(pay["sprint"]["state"], "closed");
     assert_eq!(pay["storyPoints"], 5.0);
     assert_eq!(pay["estimateMinutes"], 120, "the original estimate");
+    assert_eq!((pay["remainingMinutes"].as_i64(), pay["remainingSet"].as_bool()), (Some(30), Some(true)), "and the remaining one");
     assert_eq!(pay["spentMinutes"], 90);
     assert_eq!(pay["parent"]["key"], "WEB-1", "epic links become parents");
     assert_eq!(pay["dueDate"], (base + Duration::hours(240)).date_naive().to_string());
@@ -312,6 +314,7 @@ async fn backup_import_brings_everything_over() {
     assert!(comments[0]["body"].to_string().contains("& team"));
     assert_eq!(comments[1]["author"]["name"], "Carol Former");
     assert_eq!(comments[1]["edited"], true);
+    assert_eq!(comments[1]["visibility"], "members", "a comment for a role stays restricted");
     let logs = get(&c, app.url("/issues/WEB-2/worklogs")).await;
     assert_eq!(logs[0]["minutes"], 90);
     assert_eq!(logs[0]["user"]["name"], "Bob Builder");
@@ -327,6 +330,7 @@ async fn backup_import_brings_everything_over() {
     assert_eq!(wip["priority"], "urgent");
     assert_eq!(wip["sprint"]["name"], "Sprint 2", "the latest sprint");
     assert_eq!(wip["parent"]["key"], "WEB-1");
+    assert_eq!(wip["security"]["name"], "Staff only", "its security level comes along");
     let mut links: Vec<String> =
         wip["links"].as_array().unwrap().iter().map(|l| format!("{} {}", l["label"].as_str().unwrap(), l["issue"]["key"].as_str().unwrap())).collect();
     links.sort();

@@ -346,6 +346,7 @@ async fn read_issue(
                     started: None,
                     date: date.or_else(|| at.map(|t| t.date_naive())),
                     seconds: secs,
+                    category: None,
                 });
             } else if let Some((a, u)) = assignee_note(&body) {
                 assignee_notes.push((at, who, a, u));
@@ -382,6 +383,7 @@ async fn read_issue(
                 started: None,
                 date: time(&it["closed_at"]).or(updated).map(|t| t.date_naive()),
                 seconds: spent - logged,
+                category: None,
             });
         } else {
             m.warnings.push(Warning::new("time-subtracted", "time subtracted in the source is left out: some issues show more time spent there"));
@@ -609,6 +611,7 @@ async fn read_issue(
         custom: vec![],
         rank: None,
         confidential: it["confidential"].as_bool() == Some(true),
+        security: None,
         comments,
         worklogs: kept,
         attachments,

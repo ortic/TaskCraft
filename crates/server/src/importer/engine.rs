@@ -108,6 +108,8 @@ struct Proj<'a> {
     sprints: HashMap<String, (Uuid, String, f64)>,
     /// source field id → (id, name, kind, options)
     fields: HashMap<String, (Uuid, String, String, Value)>,
+    /// lower-case security level name → id
+    levels: HashMap<String, Uuid>,
     report: ProjectReport,
 }
 
@@ -153,6 +155,8 @@ struct Run<'a> {
     /// files stored so far (removed again when the import fails)
     written: Vec<String>,
     max_file: u64,
+    /// lower-case time category name → id
+    categories: HashMap<String, Uuid>,
 }
 
 impl Names for Run<'_> {
@@ -440,6 +444,7 @@ impl<'a> Run<'a> {
             versions: HashMap::new(),
             sprints: HashMap::new(),
             fields: HashMap::new(),
+            levels: HashMap::new(),
             report: ProjectReport {
                 source: src.key.clone(),
                 key,
@@ -1138,6 +1143,78 @@ impl<'a> Run<'a> {
     }
 
     /// One issue with its comments, time logs, attachments, watchers, labels and history.
+    /// The project's security level of that name (any case), created when it's missing: seen by
+    /// the project's members, which project admins can change afterwards.
+    async fn security_level(&mut self, tx: &mut Tx, p: &mut Proj<'a>, name: &str) -> anyhow::Result<Uuid> {
+        let name: String = name.trim().chars().take(60).collect();
+        let k = name.to_lowercase();
+        if let Some(id) = p.levels.get(&k) {
+            return Ok(*id);
+        }
+        let found: Option<Uuid> = sqlx::query_scalar("SELECT id FROM security_levels WHERE project_id = $1 AND lower(name) = $2")
+            .bind(p.id)
+            .bind(&k)
+            .fetch_optional(&mut **tx)
+            .await?;
+        let id = match found {
+            Some(id) => id,
+            None => {
+                let id = new_id();
+                sqlx::query(
+                    "INSERT INTO security_levels (id, project_id, name, min_rank, position)
+                     VALUES ($1, $2, $3, 2, (SELECT COALESCE(max(position), 0) + 1 FROM security_levels WHERE project_id = $2))",
+                )
+                .bind(id)
+                .bind(p.id)
+                .bind(&name)
+                .execute(&mut **tx)
+                .await?;
+                self.w.add(
+                    "security-level",
+                    "private issues in {project} get the security level “{level}”: the project's members see them (not viewers or guests); who exactly can be changed in the project's settings",
+                    &[("project", p.key.clone()), ("level", name.clone())],
+                );
+                id
+            }
+        };
+        p.levels.insert(k, id);
+        Ok(id)
+    }
+
+    /// The workspace's time category of that name (any case), created when it's missing (not
+    /// billable: admins decide).
+    async fn time_category(&mut self, tx: &mut Tx, name: &str) -> anyhow::Result<Uuid> {
+        let name: String = name.trim().chars().take(60).collect();
+        let k = name.to_lowercase();
+        if let Some(id) = self.categories.get(&k) {
+            return Ok(*id);
+        }
+        let found: Option<Uuid> = sqlx::query_scalar("SELECT id FROM time_categories WHERE workspace_id = $1 AND lower(name) = $2")
+            .bind(self.user.workspace_id)
+            .bind(&k)
+            .fetch_optional(&mut **tx)
+            .await?;
+        let id = match found {
+            Some(id) => id,
+            None => {
+                let id = new_id();
+                sqlx::query(
+                    "INSERT INTO time_categories (id, workspace_id, name, position)
+                     VALUES ($1, $2, $3, (SELECT COALESCE(max(position), 0) + 1 FROM time_categories WHERE workspace_id = $2))",
+                )
+                .bind(id)
+                .bind(self.user.workspace_id)
+                .bind(&name)
+                .execute(&mut **tx)
+                .await?;
+                self.w.add("time-category", "the activity “{name}” becomes a time category (not billable until an admin says so)", &[("name", name.clone())]);
+                id
+            }
+        };
+        self.categories.insert(k, id);
+        Ok(id)
+    }
+
     async fn import_issue(&mut self, tx: &mut Tx, files: &mut dyn Files, p: &mut Proj<'a>, i: &'a Issue, rank: f64) -> anyhow::Result<()> {
         let t = self.targets[&i.id].clone();
         let id = t.id;
@@ -1159,6 +1236,16 @@ impl<'a> Run<'a> {
         let sprint = p.sprint_of(i.sprints.iter().map(String::as_str));
         let points = i.points.filter(|n| n.is_finite());
         let estimate = i.original_estimate.filter(|s| *s > 0.0).or(i.remaining_estimate.filter(|s| *s > 0.0)).map(|s| (s / 60.0).round() as i32);
+        // the source's remaining estimate, next to an original one (else it follows the time logged)
+        let remaining = i.remaining_estimate.filter(|s| *s >= 0.0 && i.original_estimate.is_some_and(|o| o > 0.0)).map(|s| (s / 60.0).round() as i32);
+        // private in the source: private here
+        let level = match i.security.clone().or_else(|| i.confidential.then(|| "Confidential".to_string())) {
+            Some(name) => {
+                p.count("private", 1, 0);
+                Some(self.security_level(tx, p, &name).await?)
+            }
+            None => None,
+        };
         let cur = Current {
             status: status.clone(),
             assignee: self.person(i.assignee.as_deref()),
@@ -1238,8 +1325,8 @@ impl<'a> Run<'a> {
         sqlx::query(
             "INSERT INTO issues (id, workspace_id, project_id, number, title, description, description_text, type_id, status_id, priority, assignee_id, reporter_id,
                                  sprint_id, version_id, component_id, story_points, estimate_minutes, start_date, due_date, rank, resolved_at, status_changed_at,
-                                 created_by, created_at, updated_at, resolution, custom)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)",
+                                 created_by, created_at, updated_at, resolution, custom, remaining_minutes, security_level_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)",
         )
         .bind(id)
         .bind(self.user.workspace_id)
@@ -1278,13 +1365,11 @@ impl<'a> Run<'a> {
                 .unwrap_or_else(|| "Done".into())
         }))
         .bind(Value::Object(custom))
+        .bind(remaining)
+        .bind(level)
         .execute(&mut **tx)
         .await
         .with_context(|| format!("issue {}", t.key))?;
-        if i.confidential {
-            p.count("confidential", 1, 0);
-            self.w.add("confidential", "confidential issues are visible to everyone who can see the project", &[]);
-        }
         // labels and watchers
         let mut labels: Vec<String> = i.labels.iter().map(|l| normalize_label(l)).filter(|l| !l.is_empty()).collect();
         labels.sort();
@@ -1328,8 +1413,10 @@ impl<'a> Run<'a> {
             let at = c.created.unwrap_or(created);
             let edited_at = c.updated.unwrap_or(at).max(at);
             let author = self.person(c.author.as_deref());
+            // only a group, a role or the team could read it: here the project's members
             sqlx::query(
-                "INSERT INTO comments (id, issue_id, author_id, body, body_text, created_at, updated_at, edited) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                "INSERT INTO comments (id, issue_id, author_id, body, body_text, created_at, updated_at, edited, visibility)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
             )
             .bind(cid)
             .bind(id)
@@ -1339,6 +1426,7 @@ impl<'a> Run<'a> {
             .bind(at)
             .bind(edited_at)
             .bind(edited_at - at > Duration::minutes(1))
+            .bind(c.restricted.then_some("members"))
             .execute(&mut **tx)
             .await?;
             let excerpt: String = body_text.chars().take(200).collect();
@@ -1347,7 +1435,7 @@ impl<'a> Run<'a> {
         }
         self.w.add_n(
             "restricted-comments",
-            "comments that only a group or role could see in the source are visible to everyone who can see the project",
+            "comments that only a group or role could see in the source are for the project's members here (not viewers or guests)",
             &[],
             restricted,
         );
@@ -1370,16 +1458,23 @@ impl<'a> Run<'a> {
             let author = self.person(wl.author.as_deref());
             let note = wl.note.as_ref().map(|n| self.plain(n)).filter(|n| !n.trim().is_empty());
             let at = wl.created.unwrap_or(created);
-            sqlx::query("INSERT INTO worklogs (id, issue_id, user_id, minutes, work_date, note, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)")
-                .bind(new_id())
-                .bind(id)
-                .bind(author)
-                .bind(minutes)
-                .bind(day)
-                .bind(&note)
-                .bind(at)
-                .execute(&mut **tx)
-                .await?;
+            let category = match wl.category.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+                Some(c) => Some(self.time_category(tx, c).await?),
+                None => None,
+            };
+            sqlx::query(
+                "INSERT INTO worklogs (id, issue_id, user_id, minutes, work_date, note, created_at, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            )
+            .bind(new_id())
+            .bind(id)
+            .bind(author)
+            .bind(minutes)
+            .bind(day)
+            .bind(&note)
+            .bind(at)
+            .bind(category)
+            .execute(&mut **tx)
+            .await?;
             spent += i64::from(minutes);
             evs.push(Ev { kind: "worklog", field: Some("worklog"), old: Value::Null, new: json!({"minutes": minutes, "date": day}), actor: author, at });
             p.count("worklogs", 1, 0);
@@ -1588,6 +1683,7 @@ pub async fn run(state: &AppState, user: &User, files: &mut dyn Files, m: &Model
         priorities: priorities(m),
         written: Vec::new(),
         max_file: state.config.max_upload_mb.saturating_mul(1024 * 1024),
+        categories: HashMap::new(),
     };
     let mut tx: Tx = state.db.begin().await?;
     // one import at a time (a second one waits, then finds what the first brought in)

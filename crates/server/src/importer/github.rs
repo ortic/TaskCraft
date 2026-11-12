@@ -479,6 +479,7 @@ async fn read_issue(
         custom: vec![],
         rank: None,
         confidential: false,
+        security: None,
         comments,
         worklogs: vec![],
         attachments,

@@ -253,6 +253,8 @@ pub struct Issue {
     pub original_estimate: Option<f64>,
     pub remaining_estimate: Option<f64>,
     pub subtask_parent: Option<String>,
+    /// its security level's id (see `security_levels`)
+    pub security: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -414,6 +416,8 @@ pub struct Backup {
     pub statuses: HashMap<String, Status>,
     pub priorities: HashMap<String, Priority>,
     pub resolutions: HashMap<String, String>,
+    /// issue security level id → name
+    pub security_levels: HashMap<String, String>,
     /// by lower-case user name
     pub people: HashMap<String, Person>,
     /// user key → lower-case user name
@@ -457,6 +461,7 @@ const ENTITIES: &[&str] = &[
     "Status",
     "Priority",
     "Resolution",
+    "IssueSecurityLevel",
     "User",
     "ApplicationUser",
     "Action",
@@ -553,6 +558,7 @@ impl Backup {
                         original_estimate: r.num("timeoriginalestimate"),
                         remaining_estimate: r.num("timeestimate"),
                         subtask_parent: r.text("subtaskParentId"),
+                        security: r.text("security").filter(|s| !s.trim().is_empty()),
                     });
                 }
                 "IssueType" => {
@@ -573,6 +579,9 @@ impl Backup {
                 }
                 "Resolution" => {
                     b.resolutions.insert(r.id("id"), r.text("name").unwrap_or_default());
+                }
+                "IssueSecurityLevel" => {
+                    b.security_levels.insert(r.id("id"), r.text("name").unwrap_or_default());
                 }
                 "User" => {
                     let lower = r.text("lowerUserName").or_else(|| r.text("userName")).unwrap_or_default().to_lowercase();
