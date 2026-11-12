@@ -201,9 +201,12 @@ pub fn api() -> Router<AppState> {
         .route("/admin/webhooks/{id}", patch(admin::update_webhook).delete(admin::delete_webhook))
         .route("/admin/webhooks/{id}/test", post(admin::test_webhook))
         // migration from another tracker's XML site backup (upload, check, import in the background)
-        .route("/admin/backup-imports", get(crate::site_backup::jobs::list).post(crate::site_backup::jobs::upload))
-        .route("/admin/backup-imports/{id}", get(crate::site_backup::jobs::get).delete(crate::site_backup::jobs::discard))
-        .route("/admin/backup-imports/{id}/run", post(crate::site_backup::jobs::start))
+        .route("/admin/backup-imports", get(crate::importer::jobs::list).post(crate::importer::jobs::upload))
+        .route("/admin/backup-imports/{id}", get(crate::importer::jobs::get).delete(crate::importer::jobs::discard))
+        .route("/admin/backup-imports/{id}/run", post(crate::importer::jobs::start))
+        // ... or from another tracker's API (connect, read and check in the background)
+        .route("/admin/backup-imports/connect", post(crate::importer::jobs::connect))
+        .route("/admin/backup-imports/browse", post(crate::importer::jobs::browse))
         // single sign-on: /auth/providers, /auth/sso/{id}/…, /me/sign-in
         .merge(crate::sso::routes())
         // two-factor authentication, passkeys, sessions

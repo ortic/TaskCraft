@@ -42,3 +42,21 @@
 .bi-earlier h3 { font-size: 13.5px; margin: 0 0 6px; }
 .bi-earlier ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .bi-earlier li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bi-sources { border: 0; padding: 0; margin: 0; max-width: 980px; }
+.bi-sources legend { font-weight: 600; font-size: 13.5px; margin-bottom: 8px; padding: 0; }
+.bi-source-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.bi-source { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13.5px; background: var(--bg); }
+.bi-source:hover { background: var(--bg-hover); }
+.bi-source.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
+.bi-source input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.bi-source:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bi-connect { max-width: 640px; }
+.bi-projects { border: 0; padding: 0; margin: 4px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.bi-projects legend { font-weight: 500; font-size: 13px; color: var(--text-soft); margin-bottom: 4px; padding: 0; }
+.bi-chosen { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.bi-chosen li { display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 8px; border: 1px solid var(--border); border-radius: 6px; }
+.bi-chosen .issue-key { color: var(--text); }
+.bi-add { display: flex; gap: 8px; flex-wrap: wrap; }
+.bi-add .input { flex: 1 1 220px; min-width: 0; }
+.bi-available { list-style: none; margin: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.bi-markup { margin: 14px 0 0; max-width: 420px; }

@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 
+use crate::importer::model::{Attachment, BoxFuture, File as Download, Files, TooLarge};
+
 trait ReadSeek: Read + Seek + Send + Sync {}
 impl<T: Read + Seek + Send + Sync> ReadSeek for T {}
 
@@ -164,7 +166,7 @@ impl Source {
             (Loc::Entry(_), Kind::Dir { .. }) => return Ok(None),
         }
         if data.len() as u64 > max {
-            bail!("larger than the upload limit");
+            return Err(TooLarge.into());
         }
         Ok(Some(data))
     }
@@ -176,6 +178,26 @@ impl Source {
             (Loc::Entry(i), Kind::Zip { archive, .. }) => archive.by_index_raw(*i).ok().map(|f| f.size()),
             _ => None,
         }
+    }
+}
+
+/// The attachments' files of the backup, by attachment id.
+impl Files for Source {
+    fn has(&self, a: &Attachment) -> bool {
+        self.has_file(&a.id)
+    }
+
+    fn count(&self) -> u64 {
+        self.file_count() as u64
+    }
+
+    fn size(&mut self, a: &Attachment) -> Option<u64> {
+        self.file_size(&a.id)
+    }
+
+    fn read<'a>(&'a mut self, a: &'a Attachment, max: u64) -> BoxFuture<'a, anyhow::Result<Option<Download>>> {
+        let got = self.read_file(&a.id, max);
+        Box::pin(async move { Ok(got?.map(|data| Download { data, mime: None, name: None })) })
     }
 }
 

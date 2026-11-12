@@ -11,6 +11,7 @@ pub mod doc;
 pub mod error;
 pub mod events;
 pub mod git;
+pub mod importer;
 pub mod issues;
 pub mod mail;
 pub mod mail_in;
