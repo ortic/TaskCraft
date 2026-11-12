@@ -72,3 +72,16 @@
 - [ ] AI (optional, with your own model): similar issues and duplicates while typing, summaries of long threads, semantic search
 - [ ] Guides in `docs/`: user guide, admin guide, migrating from another tracker, translating
 
+## Next (round 4): what established trackers have and TaskCraft doesn't
+
+- [ ] Workflow rules per transition: who may make it (project role), fields it requires (e.g. a resolution), a screen to fill them, and a resolution field (Done / Won't do / Duplicate)
+- [ ] Finer permissions: custom project roles with a permission set (delete issues, edit others' comments, log time for others, manage sprints, …); private issues (security levels) and comments restricted to a role
+- [ ] Several fix versions, affected versions and components per issue
+- [ ] Time tracking: remaining estimate next to the original, time categories (activity, billable), time reports grouped by person / project / issue / category with export
+- [ ] Fields per issue type: which fields a type shows and which it requires
+- [ ] Subprojects: a project hierarchy with views and reports across a project and its subprojects
+- [ ] E-mails in each person's language (they're English only)
+- [ ] Voting on issues; issue lists and issues as Excel and PDF, a print view
+- [ ] Portal: suggest WikiCraft articles while a requester types, before the request is sent
+- [ ] Importers from other trackers' APIs (GitHub / GitLab issues and similar), next to CSV and XML site backups
+
