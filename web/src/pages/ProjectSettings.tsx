@@ -8,7 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   SlidersHorizontal, Users, Workflow, Shapes, TextCursorInput, Kanban, Bot, Plug, Trash, Shield, GripVertical, Plus, Pencil, X, Check, ArrowRight,
   Archive, ArchiveArrowUp, TriangleExclamationPoint, Type, Hash, CircleDot, ListChecks, Calendar, User, SquareCheck, Link as LinkIcon, Puzzle, Search,
-  ExternalLink, BookOpen, Undo2, Info, Lock, LockOpen, Columns3, Funnel, ChevronDown, ChevronRight, FileStack, Timer, Upload,
+  ExternalLink, BookOpen, Undo2, Info, Lock, LockOpen, Columns3, Funnel, ChevronDown, ChevronRight, FileStack, Timer, Upload, Mail,
 } from 'lucide-react'
 import {
   api, ago, dateTime, PRIORITIES, type Category, type CustomField, type FieldOption, type IssueType, type Named, type Priority, type Project, type Role,
@@ -21,6 +21,7 @@ import { useOpenIssue } from '../components/Layout'
 import { ServiceLevelsSection, TemplatesSection } from '../components/TemplateSettings'
 import { ImportSection } from '../components/ImportSettings'
 import GitSettings from './GitSettings'
+import MailInSettings from './MailInSettings'
 import './ProjectSettings.css'
 
 // ---- local types (server shapes) ----
@@ -163,6 +164,7 @@ const SECTIONS = [
   { id: 'templates', icon: FileStack, label: () => t('Templates') },
   { id: 'automation', icon: Bot, label: () => t('Automation') },
   { id: 'sla', icon: Timer, label: () => t('Service levels') },
+  { id: 'email', icon: Mail, label: () => t('E-mail') },
   { id: 'integrations', icon: Plug, label: () => t('Integrations') },
   { id: 'import', icon: Upload, label: () => t('Import') },
   { id: 'trash', icon: Trash, label: () => t('Trash') },
@@ -250,6 +252,7 @@ export default function ProjectSettings() {
             {active.id === 'templates' && <TemplatesSection project={p} />}
             {active.id === 'automation' && <AutomationSection />}
             {active.id === 'sla' && <ServiceLevelsSection key={JSON.stringify(p.settings.sla ?? null)} project={p} onSaved={refresh} />}
+            {active.id === 'email' && <MailInSettings project={p} onSaved={refresh} />}
             {active.id === 'integrations' && <IntegrationsSection />}
             {active.id === 'import' && <ImportSection project={p} />}
             {active.id === 'integrations' && <GitSettings project={p} />}

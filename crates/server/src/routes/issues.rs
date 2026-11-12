@@ -139,6 +139,9 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
     );
     v["children"] = json!(children);
     v["sla"] = json!(crate::sla::for_issues(&state, &[id]).await?.remove(&id).unwrap_or_default());
+    // who it was opened for by e-mail (no account); `mail`: comments can be e-mailed to them
+    v["requester"] =
+        crate::mail_in::requester(&state, id).await?.map(|r| json!({"email": r.email, "name": r.name, "mail": state.mailer.enabled()})).unwrap_or(Value::Null);
     v["permissions"] = json!({"edit": role >= Role::Member, "comment": role >= Role::Viewer, "admin": role >= Role::Admin});
     Ok(Json(v))
 }

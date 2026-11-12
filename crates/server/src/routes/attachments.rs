@@ -40,39 +40,50 @@ pub async fn upload(
                 return Err(ApiError::TooLarge);
             }
         }
-        let id = new_id();
-        let storage_key = format!("attachments/{issue}/{id}");
-        let size = data.len() as i64;
-        state.blobs.put(&ObjPath::from(storage_key.clone()), data.into()).await.map_err(|e| ApiError::Internal(anyhow::anyhow!("storage: {e}")))?;
-        let mut tx = state.db.begin().await?;
-        sqlx::query("INSERT INTO attachments (id, issue_id, name, mime, size, storage_key, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6, $7)")
-            .bind(id)
-            .bind(issue)
-            .bind(&name)
-            .bind(&mime)
-            .bind(size)
-            .bind(&storage_key)
-            .bind(user.id)
-            .execute(&mut *tx)
-            .await?;
-        issues::record(
-            &mut tx,
-            issue,
-            project,
-            Some(user.id),
-            "attachment",
-            Some(&Change { field: "attachment", old: Value::Null, new: json!({"name": name}) }),
-        )
-        .await?;
-        sqlx::query("UPDATE issues SET updated_at = now() WHERE id = $1").bind(issue).execute(&mut *tx).await?;
-        tx.commit().await?;
-        out.push(json!({"id": id, "name": name, "mime": mime, "size": size, "url": format!("/api/attachments/{id}")}));
+        out.push(store(&state, issue, project, Some(user.id), None, &name, &mime, data).await?);
     }
     if out.is_empty() {
         return Err(ApiError::bad("no file in the upload"));
     }
     events::publish(&state, Event::new(user.workspace_id, "issue").project(project).actor(user.id)).await;
     Ok((StatusCode::CREATED, Json(json!(out))))
+}
+
+/// Stores a file on an issue (the caller checked the permission and size) with a history
+/// entry; `by` names an uploader without an account (a requester writing by e-mail).
+pub async fn store(
+    state: &AppState,
+    issue: Uuid,
+    project: Uuid,
+    uploader: Option<Uuid>,
+    by: Option<&str>,
+    name: &str,
+    mime: &str,
+    data: Vec<u8>,
+) -> ApiResult<Value> {
+    let id = new_id();
+    let storage_key = format!("attachments/{issue}/{id}");
+    let size = data.len() as i64;
+    state.blobs.put(&ObjPath::from(storage_key.clone()), data.into()).await.map_err(|e| ApiError::Internal(anyhow::anyhow!("storage: {e}")))?;
+    let mut tx = state.db.begin().await?;
+    sqlx::query("INSERT INTO attachments (id, issue_id, name, mime, size, storage_key, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6, $7)")
+        .bind(id)
+        .bind(issue)
+        .bind(name)
+        .bind(mime)
+        .bind(size)
+        .bind(&storage_key)
+        .bind(uploader)
+        .execute(&mut *tx)
+        .await?;
+    let mut new = json!({"name": name});
+    if let Some(by) = by {
+        new["by"] = json!(by);
+    }
+    issues::record(&mut tx, issue, project, uploader, "attachment", Some(&Change { field: "attachment", old: Value::Null, new })).await?;
+    sqlx::query("UPDATE issues SET updated_at = now() WHERE id = $1").bind(issue).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(json!({"id": id, "name": name, "mime": mime, "size": size, "url": format!("/api/attachments/{id}")}))
 }
 
 async fn attachment(state: &AppState, id: Uuid) -> ApiResult<(Uuid, String, String, String, i64)> {

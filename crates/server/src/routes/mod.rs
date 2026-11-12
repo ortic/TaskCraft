@@ -9,6 +9,7 @@ pub mod git;
 pub mod import;
 pub mod integrations;
 pub mod issues;
+pub mod mail_in;
 pub mod moves;
 pub mod passkeys;
 pub mod projects;
@@ -163,6 +164,9 @@ pub fn api() -> Router<AppState> {
         .route("/git-integrations/{id}", delete(git::delete))
         .route("/git-integrations/{id}/secret", post(git::rotate))
         .route("/issues/{key}/development", get(git::development))
+        // e-mail in: messages from mail servers, a project's e-mail settings
+        .route("/integrations/mail-in", post(mail_in::receive))
+        .route("/projects/{key}/mail-in", get(mail_in::settings).put(mail_in::put_settings))
         // administration
         .route("/admin/workspace", put(admin::put_workspace))
         .route("/admin/audit", get(admin::audit_log))

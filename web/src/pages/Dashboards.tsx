@@ -359,9 +359,9 @@ function ActivityWidget({ project }: { project?: string }) {
     <div style={{ padding: '4px 14px', maxHeight: 420, overflowY: 'auto' }}>
       {(q.data ?? []).slice(0, 20).map((e) => (
         <div key={e.id} className="activity-item small">
-          {e.actor ? <Avatar name={e.actor.name} id={e.actor.id} size={22} /> : <BotAvatar size={22} />}
+          {e.actor ? <Avatar name={e.actor.name} id={e.actor.id} size={22} /> : e.new?.by ? <Avatar name={e.new.by} size={22} /> : <BotAvatar size={22} />}
           <div className="ai-body">
-            <strong>{e.actor?.name ?? t('Automation')}</strong> {describeEvent(e)}{' '}
+            <strong>{e.actor?.name ?? e.new?.by ?? t('Automation')}</strong> {describeEvent(e)}{' '}
             <a href={`?issue=${e.key}`} onClick={(ev) => { ev.preventDefault(); open(e.key!) }}><span className="issue-key">{e.key}</span></a>
             <div className="faint">{ago(e.at)}</div>
           </div>

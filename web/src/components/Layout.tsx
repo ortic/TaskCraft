@@ -255,7 +255,7 @@ function Notifications() {
   const n = useQuery({ queryKey: ['notifications'], queryFn: () => api.get<{ unread: number; items: Notification[] }>('/notifications'), refetchInterval: 120_000 })
   const close = useCallback(() => setOpen(false), [])
   const text = (x: Notification) => {
-    const who = x.actor?.name ?? t('Automation')
+    const who = x.actor?.name ?? x.data?.by ?? t('Automation')
     switch (x.kind) {
       case 'assigned':
         return t('{who} assigned you', { who })

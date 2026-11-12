@@ -423,6 +423,9 @@ impl TaskMcp {
         if let Some(r) = name(&v["reporter"]) {
             line("Reporter", r);
         }
+        if let Some(e) = v["requester"]["email"].as_str() {
+            line("Requester (by e-mail)", v["requester"]["name"].as_str().map(|n| format!("{n} <{e}>")).unwrap_or_else(|| e.to_string()));
+        }
         if v["parent"].is_object() {
             line("Parent", format!("{} {}", txt(&v["parent"]["key"]), txt(&v["parent"]["title"])));
         }
@@ -559,7 +562,7 @@ impl TaskMcp {
                 md.push_str(&format!("\n_{} older comments not shown._\n", comments.len() - max));
             }
             for c in comments.iter().skip(comments.len().saturating_sub(max)) {
-                let who = c["author"]["name"].as_str().unwrap_or("Automation");
+                let who = c["author"]["name"].as_str().or(c["external"]["name"].as_str()).or(c["external"]["email"].as_str()).unwrap_or("Automation");
                 let at = txt(&c["createdAt"]).get(..16).unwrap_or("").replace('T', " ");
                 md.push_str(&format!("\n**{who}** · {at}\n\n{}\n", crate::doc::to_markdown(&c["body"]).trim()));
             }

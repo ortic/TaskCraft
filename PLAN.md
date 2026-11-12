@@ -43,7 +43,7 @@
 - [x] Dashboards people compose from report widgets and saved filters
 - [x] Portfolio view across projects (epics and releases on one timeline), capacity per team
 - [x] Issue templates (fields, description, sub-tasks) and recurring issues (templates on a schedule)
-- [ ] E-mail in (create issues / comments by mail) for support trackers
+- [x] E-mail in (create issues / comments by mail) for support trackers: an IMAP mailbox or the mail server handing messages over, a project address or +KEY, replies by conversation or [KEY-12], requesters with acknowledgements and e-mailed replies, auto-reply / bulk / loop protection
 - [x] Git integration: link commits, branches and merge requests by issue key
 - [x] MCP server so assistants can search, create and update issues with the user's permissions
 - [x] Translations beyond English and German: French and Italian

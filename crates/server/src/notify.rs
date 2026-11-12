@@ -96,13 +96,18 @@ pub async fn mentions(state: &AppState, actor: &Actor, s: &Summary, body: &Value
     people
 }
 
-/// A new comment: mentioned people and watchers.
-pub async fn comment(state: &AppState, actor: &Actor, s: &Summary, comment: Uuid, body: &Value) {
+/// A new comment: mentioned people and watchers. `by` names an author without an account (an
+/// issue's requester writing by e-mail).
+pub async fn comment(state: &AppState, actor: &Actor, s: &Summary, comment: Uuid, body: &Value, by: Option<&str>) {
     let mentioned = mentions(state, actor, s, body, Some(comment)).await;
     let excerpt: String = crate::doc::text(body).chars().take(140).collect();
+    let mut data = json!({"commentId": comment, "excerpt": excerpt});
+    if let Some(by) = by {
+        data["by"] = json!(by);
+    }
     for w in watchers(state, s.id).await {
         if !mentioned.contains(&w) {
-            send(state, actor.workspace, w, s, actor.user, "commented", json!({"commentId": comment, "excerpt": excerpt})).await;
+            send(state, actor.workspace, w, s, actor.user, "commented", data.clone()).await;
         }
     }
 }

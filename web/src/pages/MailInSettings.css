@@ -1,0 +1,14 @@
+/* Project settings → E-mail */
+.mailin-enable { margin: 2px 0 14px; }
+.mailin-copy { gap: 4px; min-width: 0; max-width: 100%; }
+.mailin-copy code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; font-size: 12.5px; }
+.mailin-senders { max-width: 420px; }
+.mailin-senders .ps-kind:disabled { opacity: .55; cursor: default; }
+.mailin-how { margin: 14px 0 0; padding-inline-start: 18px; display: flex; flex-direction: column; gap: 3px; max-width: 75ch; }
+.mailin-table { overflow-x: auto; }
+.mailin-table td { vertical-align: top; }
+.mailin-table .nowrap { white-space: nowrap; }
+.mailin-issue:hover { text-decoration: none; }
+.mailin-issue:hover .badge { text-decoration: underline; }
+.mailin-from, .mailin-subject { min-width: 140px; }
+.mailin-from > span, .mailin-subject > span { display: block; overflow-wrap: anywhere; }
