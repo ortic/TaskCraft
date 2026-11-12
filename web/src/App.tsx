@@ -30,6 +30,7 @@ const People = lazy(() => import('./pages/People'))
 const Queue = lazy(() => import('./pages/Queue'))
 const Dashboards = lazy(() => import('./pages/Dashboards'))
 const Portfolio = lazy(() => import('./pages/Portfolio'))
+const ApiReference = lazy(() => import('./pages/ApiReference'))
 
 export default function App() {
   const setup = useQuery({ queryKey: ['setup'], queryFn: () => api.get<{ needsSetup: boolean }>('/setup') })
@@ -80,6 +81,7 @@ export default function App() {
             <Route path="/dashboards" element={<Dashboards />} />
             <Route path="/dashboards/:id" element={<Dashboards />} />
             <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/api-reference" element={<ApiReference />} />
             <Route path="/people" element={<People />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/admin/*" element={<Admin />} />

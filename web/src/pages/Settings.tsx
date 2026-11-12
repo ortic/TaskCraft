@@ -1,4 +1,5 @@
 import { t, AVAILABLE, LANGUAGES, chooseLanguage, locale, rememberLanguage } from '../i18n'
+import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, BookOpen, Check, Contrast, Copy, ExternalLink, KeyRound, Lock, Monitor, Moon, Palette, ShieldCheck, Sun, Trash, User } from 'lucide-react'
@@ -542,6 +543,7 @@ function TokensSection({ me, preset }: { me: Me; preset: { name: string; scope: 
       title={t('API tokens')}
       desc={t('Tokens let scripts and other tools use the TaskCraft API as you. A read-only token can look but not change anything.')}
     >
+      <p className="small" style={{ marginTop: 0 }}><Link to="/api-reference">{t('API reference: every endpoint with examples')}</Link></p>
       <form className="st-token-form" onSubmit={create}>
         <div className="field st-token-name">
           <label htmlFor="st-tok-name">{t('Token name')}</label>

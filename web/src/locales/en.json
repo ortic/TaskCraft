@@ -194,5 +194,9 @@
   "{count} times": {
     "one": "once",
     "other": "{count} times"
+  },
+  "{count} operations": {
+    "one": "{count} operation",
+    "other": "{count} operations"
   }
 }
