@@ -95,6 +95,10 @@ pub struct LoginRequest {
 }
 
 pub async fn login(State(state): State<AppState>, headers: HeaderMap, Json(req): Json<LoginRequest>) -> ApiResult<Response> {
+    // single sign-on: local passwords may be off; directory (LDAP) accounts still sign in here
+    if !crate::sso::password_form_enabled(&state) {
+        return Err(ApiError::bad("password sign-in is turned off; use single sign-on"));
+    }
     let email = req.email.trim().to_lowercase();
     if !crate::auth::login_allowed(&state, &email).await {
         return Err(ApiError::bad("too many failed attempts, try again in 15 minutes"));
@@ -104,12 +108,16 @@ pub async fn login(State(state): State<AppState>, headers: HeaderMap, Json(req):
     static DUMMY: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
     let dummy = DUMMY.get_or_try_init(|| hash_password("taskcraft-timing-dummy".into())).await?.clone();
     let (ok, user) = match row {
-        Some((id, ws, Some(hash), status)) if status == "active" => (verify_password(req.password, hash).await, Some((id, ws))),
+        Some((id, ws, Some(hash), status)) if status == "active" && crate::sso::passwords_enabled(&state) => {
+            (verify_password(req.password.clone(), hash).await, Some((id, ws)))
+        }
         _ => {
-            let _ = verify_password(req.password, dummy).await;
+            let _ = verify_password(req.password.clone(), dummy).await;
             (false, None)
         }
     };
+    // single sign-on: directory accounts (LDAP / Active Directory)
+    let (ok, user) = if ok { (ok, user) } else { crate::sso::ldap::login(&state, &req.email, &req.password).await?.map_or((false, user), |u| (true, Some(u))) };
     match (ok, user) {
         (true, Some((id, ws))) => {
             crate::auth::clear_login_failures(&state, &email).await;
@@ -205,6 +213,9 @@ pub async fn change_password(
     headers: HeaderMap,
     Json(req): Json<PasswordChange>,
 ) -> ApiResult<StatusCode> {
+    if !crate::sso::passwords_enabled(&state) {
+        return Err(ApiError::bad("password sign-in is turned off; use single sign-on"));
+    }
     validate_password(&req.new_password)?;
     let hash: Option<String> = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1").bind(user.id).fetch_one(&state.db).await?;
     let key = format!("password:{}", user.id);
@@ -346,6 +357,10 @@ pub struct LinkAccept {
 }
 
 pub async fn link_accept(State(state): State<AppState>, headers: HeaderMap, Json(req): Json<LinkAccept>) -> ApiResult<Response> {
+    // single sign-on only: invited people join by signing in with their provider
+    if !crate::sso::passwords_enabled(&state) {
+        return Err(ApiError::bad("password sign-in is turned off; sign in with single sign-on instead"));
+    }
     validate_password(&req.password)?;
     let row: Option<(Uuid, Uuid)> = sqlx::query_as(
         "DELETE FROM user_links l USING users u WHERE l.token_hash = $1 AND l.expires_at > now() AND u.id = l.user_id AND u.status <> 'deactivated'

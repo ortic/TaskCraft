@@ -9,17 +9,22 @@ RUN npm run build
 
 # ---- backend (embeds the web app) ----
 FROM rust:1.96-bookworm AS server
+# SAML single sign-on (`--build-arg FEATURES=saml`) links libxml2 / libxmlsec1 for XML signatures
+ARG FEATURES=""
+RUN if [ -n "$FEATURES" ]; then apt-get update && apt-get install -y --no-install-recommends libxml2-dev libxmlsec1-dev libclang-dev clang pkg-config && rm -rf /var/lib/apt/lists/*; fi
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY --from=web /web/dist ./web/dist
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release -p taskcraft && cp target/release/taskcraft /taskcraft
+    cargo build --release -p taskcraft --features "$FEATURES" && cp target/release/taskcraft /taskcraft
 
 # ---- runtime ----
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/* \
+ARG FEATURES=""
+RUN extra=""; case "$FEATURES" in *saml*) extra="libxml2 libxmlsec1 libxmlsec1-openssl" ;; esac; \
+    apt-get update && apt-get install -y --no-install-recommends ca-certificates $extra && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home /data taskcraft && mkdir -p /data && chown -R taskcraft /data
 COPY --from=server /taskcraft /usr/local/bin/taskcraft
 COPY LICENSE-MIT LICENSE-APACHE /usr/share/doc/taskcraft/

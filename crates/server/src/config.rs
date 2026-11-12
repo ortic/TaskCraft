@@ -77,6 +77,10 @@ pub struct Config {
     /// all TaskCraft members may read.
     #[arg(long, env = "TASKCRAFT_WIKICRAFT_TOKEN", hide_env_values = true)]
     pub wikicraft_token: Option<String>,
+
+    /// Single sign-on: OIDC / GitHub / LDAP / SAML providers, `TASKCRAFT_DISABLE_PASSWORD_LOGIN`.
+    #[command(flatten)]
+    pub sso: crate::sso::SsoConfig,
 }
 
 impl Config {

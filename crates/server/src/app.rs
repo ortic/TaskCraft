@@ -23,6 +23,8 @@ pub struct Inner {
     /// outgoing HTTP (WikiCraft, webhooks)
     pub http: reqwest::Client,
     pub shutting_down: std::sync::atomic::AtomicBool,
+    /// configured external sign-in providers (single sign-on)
+    pub providers: Vec<crate::sso::Provider>,
 }
 
 impl std::ops::Deref for AppState {
@@ -34,6 +36,8 @@ impl std::ops::Deref for AppState {
 
 impl AppState {
     pub async fn new(config: Config) -> anyhow::Result<Self> {
+        // invalid sign-in configuration stops the start (fail fast)
+        let providers = crate::sso::load(&config.sso)?;
         std::fs::create_dir_all(&config.data_dir)?;
         std::fs::create_dir_all(config.upload_dir())?;
         let db =
@@ -67,7 +71,7 @@ impl AppState {
             .timeout(std::time::Duration::from_secs(15))
             .redirect(reqwest::redirect::Policy::none())
             .build()?;
-        Ok(AppState { inner: Arc::new(Inner { db, config, blobs, hub: Hub::new(), http, shutting_down: Default::default() }) })
+        Ok(AppState { inner: Arc::new(Inner { db, config, blobs, hub: Hub::new(), http, shutting_down: Default::default(), providers }) })
     }
 }
 
