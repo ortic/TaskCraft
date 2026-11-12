@@ -60,6 +60,14 @@ export default function Home() {
       <div className="page-head">
         <h1>{greeting.replace('{name}', firstName)}</h1>
       </div>
+      {projects.data?.length === 0 && (me?.user?.role === 'owner' || me?.user?.role === 'admin') && (
+        <div className="card row" style={{ marginBottom: 16, flexWrap: 'wrap' }}>
+          <span>{t('The workspace has no projects yet.')}</span>
+          <Link to="/projects">{t('Create a project')}</Link>
+          <span className="faint">·</span>
+          <Link to="/admin/import">{t('Import a backup from another tracker')}</Link>
+        </div>
+      )}
       <div className="stat-row">
         <Stat value={w?.assigned.length} label={t('Open issues assigned to you')} />
         <Stat value={dueWeek} label={t('Due this week')} />

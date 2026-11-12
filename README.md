@@ -25,6 +25,7 @@ One binary, PostgreSQL, optional S3. Built with the same stack as WikiCraft.
   transitions with a transition matrix
 - **Move issues to another project** (the old key keeps working; type, status and custom fields are mapped, sub-tasks move along)
 - **CSV import** with column mapping and a dry run: statuses, types, people, sprints and releases matched by name (missing statuses created and put on the board); issue numbers kept when the project key stays, other keys keep working as links; parents by key or id; times in hours, durations or seconds, booked to whoever did the work; people who haven't joined yet or have left keep their issues; wiki-markup descriptions converted
+- **Migration from another tracker**: upload its XML site backup (.zip) in the browser, check what it holds, choose projects and how people come over, and import people, projects, issues with their numbers, comments, time logs, attachments, links, watchers, components, releases, sprints and the history the reports replay (see [Migrating from another tracker](#migrating-from-another-tracker))
 - **Trash** with restore, clone, bulk changes, CSV export
 
 **Views**
@@ -304,6 +305,7 @@ taskcraft demo         # add sample data to the workspace
 taskcraft healthcheck  # probe a running server (container HEALTHCHECK)
 taskcraft backup FILE  # database + attachments into one .tar.gz (`-` writes to standard output)
 taskcraft restore FILE # into an empty database (`--force` replaces an existing workspace)
+taskcraft import-backup FILE   # another tracker's XML site backup (.zip or unpacked folder)
 ```
 
 ### Backup and restore
@@ -319,6 +321,56 @@ the backup's version, the data loaded, then this version's newer migrations run 
 an older TaskCraft restores into a newer one, while a backup from a newer one is refused before
 anything is touched. Attachments go into whatever storage is configured, which also moves them
 from the data directory into S3 or back.
+
+### Migrating from another tracker
+
+Trackers that write an **XML site backup** — a `.zip` with `entities.xml`, often
+`activeobjects.xml` (boards and sprints) and the attachments under `data/attachments` — move over
+completely: people, projects, issues with their numbers, descriptions and comments (wiki markup
+converted, mentions pointing to the people, embedded images to the imported files), time logs,
+attachments, links (blocks, relates, duplicates, clones; sub-task and epic links become parents),
+watchers, labels, components, fix versions, sprints, estimates and story points, and the history of
+status, assignee, priority, sprint, estimate and points changes with their times and authors, so
+burndown, velocity, cumulative flow, cycle time and created vs resolved show the past as it was.
+
+**In the browser** (owners and administrators): *Administration → Import* (also linked from
+*Projects* and from an empty workspace).
+
+1. Download the XML site backup from the other tracker (with attachments).
+2. Choose the `.zip` and *Upload and check*. Uploads go up to `TASKCRAFT_MAX_UPLOAD_MB`; the file is
+   kept for a day at most and deleted once it's imported.
+3. The check lists each project with its key and its issues, comments, time logs, attachments and
+   links, and how many of the people named in it already have an account here. Choose per project:
+   *a new project* (same key or another one), *an existing project*, or *leave it out*; and for
+   people without an account: *prepare invitations* (invited accounts — nobody is e-mailed; send
+   the invitations from *Users* when you're ready; people inactive in the backup get deactivated
+   accounts) or *keep them as deactivated accounts*.
+4. *Test the import* runs it without changing anything; *Import* runs it for real in the
+   background (the page can be left and reloaded) and ends with a report and links to the projects.
+
+**On the command line** (no size limit; the workspace must be set up):
+
+```bash
+taskcraft import-backup backup.zip --dry-run          # what would happen
+taskcraft import-backup backup.zip                     # everything, under the same keys
+taskcraft import-backup backup/ --project OLD=NEW --skip TEST --people deactivated
+```
+
+`--project OLD=NEW` imports under another key (an existing project or a new one), `--only KEY` /
+`--skip KEY` choose projects, `--people invite|deactivated|skip`, `--attachments DIR` when the files
+sit elsewhere, `--time-zone Europe/Zurich` when the backup's times are the server's local time,
+`--template` for the projects it creates (default: scrum with sprints, else kanban), `--as EMAIL`
+to run as another administrator.
+
+How it maps: people are matched by e-mail address, then name; issue numbers stay when they're free
+in the target project, and every former key (renamed projects, issues moved in the other tracker,
+another key here) keeps working as a link; types, statuses and priorities are matched by name
+(missing statuses and types are created and put on the boards); an issue with a resolution is
+done, resolved at its resolution date; one component and one fix version per issue (the first);
+values of other custom fields are reported, not imported. The whole import is one transaction: it
+lands completely or not at all. Imports tell nobody (no e-mails, notifications, webhooks or
+automation), and importing the same backup again skips what's already there — so a later, newer
+backup brings in just the new issues.
 
 ### Kubernetes
 
@@ -524,6 +576,7 @@ on writes.
 | MCP | `POST /mcp` (streamable HTTP, see above) |
 | Live | `GET /events` (Server-Sent Events) |
 | Account & admin | `/me`, `/me/tokens`, `/notifications`, `/views`, `/timesheet`, `/people`, `/teams`, `/users`, `/auth/forgot`, `/admin/{workspace,stats,audit,webhooks,mail}`, `POST /admin/mail/test` |
+| Migration | `GET /admin/backup-imports`, `POST /admin/backup-imports?name=…` (the `.zip` as the body; checked in the background), `GET/DELETE /admin/backup-imports/{id}`, `POST /admin/backup-imports/{id}/run` (`projects`: per key `{"action": "new"\|"into", "key"}` or `{"action": "skip"}`, `people`: `invite`\|`deactivated`, `dryRun`) — administrators in the browser only |
 | Sign-in | `GET /auth/providers`, `GET /auth/sso/{id}/login?next=`, `GET /auth/sso/{id}/callback`, SAML `POST /auth/sso/{id}/acs` and `GET /auth/sso/{id}/metadata`, `GET /me/sign-in` |
 | Security | `POST /auth/mfa` (`mfaToken`, `code` or `passkey`), `POST /auth/mfa/passkey`, `POST /auth/passkey/options`, `POST /auth/passkey`, `GET /me/mfa`, `POST /me/mfa/{setup,enable,disable,recovery-codes}`, `GET/POST /me/passkeys`, `POST /me/passkeys/options`, `PATCH/DELETE /me/passkeys/{id}`, `GET /me/sessions`, `DELETE /me/sessions/{id}`, `POST /me/sessions/revoke-others`, `GET/PUT /admin/security`, `POST /users/{id}/reset-mfa` (browser sessions only for changes) |
 

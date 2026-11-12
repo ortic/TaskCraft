@@ -37,6 +37,42 @@ enum Command {
     },
     /// Probe the running server's `/api/health` (for container HEALTHCHECKs); exits non-zero when unhealthy.
     Healthcheck,
+    /// Import another tracker's XML site backup (the .zip, or the folder it was unpacked into):
+    /// people, projects, issues with their numbers, comments, time logs, attachments, links and history.
+    ImportBackup {
+        /// the backup's .zip, its unpacked folder or its entities.xml
+        path: std::path::PathBuf,
+        /// check and report only; nothing is changed
+        #[arg(long)]
+        dry_run: bool,
+        /// import a project under another key: `OLD=NEW` (NEW may be an existing project); repeatable
+        #[arg(long = "project", value_name = "OLD=NEW")]
+        projects: Vec<String>,
+        /// only these projects of the backup (by key); repeatable
+        #[arg(long, value_name = "KEY")]
+        only: Vec<String>,
+        /// leave a project of the backup out (by key); repeatable
+        #[arg(long, value_name = "KEY")]
+        skip: Vec<String>,
+        /// people without an account here: invite (invited or, when inactive in the source,
+        /// deactivated accounts), deactivated (deactivated accounts) or skip (no accounts).
+        /// Nobody is e-mailed.
+        #[arg(long, default_value = "invite")]
+        people: taskcraft::site_backup::People,
+        /// a folder with the attachments, when they aren't in the backup
+        #[arg(long)]
+        attachments: Option<std::path::PathBuf>,
+        /// the time zone the backup's times are written in (its server's zone)
+        #[arg(long, default_value = "UTC")]
+        time_zone: chrono_tz::Tz,
+        /// template of projects the import creates: scrum, kanban, tracker or business
+        /// (default: from the source project)
+        #[arg(long)]
+        template: Option<String>,
+        /// the administrator the import runs as (e-mail address; default: the owner)
+        #[arg(long = "as", value_name = "EMAIL")]
+        as_user: Option<String>,
+    },
 }
 
 /// Plain-TCP GET of `/api/health` on the configured bind address (no curl needed in the image).
@@ -92,6 +128,53 @@ async fn main() -> anyhow::Result<()> {
             let summary = taskcraft::backup::restore(&cli.config, &file, force).await?;
             eprintln!("backup restored: {summary}");
         }
+        Command::ImportBackup { path, dry_run, projects, only, skip, people, attachments, time_zone, template, as_user } => {
+            use taskcraft::site_backup::{self, Choice, Options};
+            let state = AppState::new(cli.config).await?;
+            let user: taskcraft::auth::User = match &as_user {
+                Some(email) => sqlx::query_as(
+                    "SELECT id, workspace_id, email, name, role, status FROM users WHERE lower(email) = lower($1) AND role IN ('owner', 'admin') AND status = 'active'",
+                )
+                .bind(email)
+                .fetch_optional(&state.db)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("no active administrator with the e-mail address {email}"))?,
+                None => sqlx::query_as("SELECT id, workspace_id, email, name, role, status FROM users WHERE role = 'owner' ORDER BY created_at LIMIT 1")
+                    .fetch_optional(&state.db)
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("set up the workspace first (open the web app)"))?,
+            };
+            let mut choices = std::collections::BTreeMap::new();
+            for p in &projects {
+                let (old, new) = p.split_once('=').ok_or_else(|| anyhow::anyhow!("--project takes OLD=NEW, like --project ABC=WEB"))?;
+                choices.insert(old.trim().to_uppercase(), Choice::Auto { key: new.trim().to_uppercase() });
+            }
+            for k in &skip {
+                choices.insert(k.trim().to_uppercase(), Choice::Skip);
+            }
+            let opts = Options { dry_run, people, choices, only: only.iter().map(|k| k.trim().to_uppercase()).collect(), template, time_zone };
+            eprintln!("reading {} …", path.display());
+            let (mut source, backup) = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+                let mut s = site_backup::Source::open(&path, attachments.as_deref())?;
+                let b = site_backup::load(&mut s, time_zone)?;
+                Ok((s, b))
+            })
+            .await??;
+            eprintln!(
+                "{} projects, {} issues, {} comments, {} work logs, {} attachments ({} files), {} links, {} history entries",
+                backup.projects.len(),
+                backup.issues.len(),
+                backup.comments.len(),
+                backup.worklogs.len(),
+                backup.attachments.len(),
+                source.file_count(),
+                backup.links.len(),
+                backup.groups.len()
+            );
+            let progress = site_backup::ProgressHandle::default();
+            let report = site_backup::run(&state, &user, &mut source, &backup, &opts, progress).await?;
+            println!("{report}");
+        }
         Command::Demo => {
             let state = AppState::new(cli.config).await?;
             let owner: uuid::Uuid = sqlx::query_scalar("SELECT id FROM users WHERE role = 'owner' ORDER BY created_at LIMIT 1")
@@ -109,6 +192,7 @@ async fn main() -> anyhow::Result<()> {
             taskcraft::schedule::spawn(&state);
             taskcraft::mail::spawn_worker(&state);
             taskcraft::mail_in::spawn(&state);
+            taskcraft::site_backup::jobs::spawn_cleanup(&state);
             let app = taskcraft::routes::router(state.clone());
             let listener = tokio::net::TcpListener::bind(bind).await?;
             tracing::info!("TaskCraft listening on http://{bind}; web app: {}", taskcraft::web_assets::source(&state.config.static_dir));

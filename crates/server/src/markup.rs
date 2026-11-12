@@ -78,7 +78,9 @@ fn prose(text: &str) -> String {
                 let marker = if c[1].ends_with('#') { "1." } else { "-" };
                 (Kind::Block, format!("{}{marker} {}", "   ".repeat(depth - 1), inline(&c[2])))
             } else {
-                (Kind::Prose, inline(l.trim_end()))
+                // a line of macros only (`{panel:bgColor=…}`, `{quote}`) separates blocks
+                let s = inline(l.trim_end());
+                if s.trim().is_empty() { (Kind::Blank, String::new()) } else { (Kind::Prose, s) }
             }
         })
         .collect();
@@ -163,5 +165,6 @@ mod tests {
         assert_eq!(to_markdown("{noformat}\n*raw*\n{noformat}"), "```\n*raw*\n```");
         assert_eq!(to_markdown("[~accountid:5570:abc] fixed it"), "@someone fixed it");
         assert_eq!(to_markdown("[https://example.com/a-(b)|https://example.com/a-(b)]"), "<https://example.com/a-(b)>");
+        assert_eq!(to_markdown("{panel:bgColor=#ddeeff}\nFirst\n{panel}\n\n{panel}\nSecond\n{panel}"), "First\n\n\n\nSecond");
     }
 }

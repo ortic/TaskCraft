@@ -1,0 +1,44 @@
+/* Administration → Import: a backup from another tracker (bi-). Cards and tables from Admin.css. */
+
+.bi { display: flex; flex-direction: column; gap: 16px; }
+.bi-card { max-width: 980px; }
+.bi-card h2 { display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.bi-drop { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; cursor: pointer; position: relative; }
+.bi-drop.over { border-style: solid; }
+.bi-drop:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bi-file { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.bi-file:disabled { cursor: progress; }
+.bi-progress { margin: 12px 0 6px; }
+.bi-progress .row { justify-content: space-between; margin-bottom: 6px; }
+.bi-bar { height: 8px; border-radius: 4px; background: var(--bg-hover); overflow: hidden; }
+.bi-bar > span { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+.bi-bar.unknown > span { width: 30%; animation: bi-slide 1.2s ease-in-out infinite; }
+@keyframes bi-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .bi-bar.unknown > span { animation: none; width: 100%; opacity: .4; } }
+.bi-table td, .bi-table th { vertical-align: top; }
+.bi-table .num { text-align: end; white-space: nowrap; }
+.bi-project { display: flex; align-items: baseline; gap: 6px; font-weight: 550; }
+.bi-note { color: var(--warning); }
+.bi-choice { display: flex; flex-direction: column; gap: 6px; min-width: 190px; }
+.bi-key { width: 120px; font-family: var(--mono); text-transform: uppercase; }
+.bi-people { border: 0; padding: 0; margin: 16px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.bi-people legend { font-weight: 600; font-size: 13.5px; margin-bottom: 6px; padding: 0; }
+.bi-radio { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.bi-radio input { margin-top: 3px; }
+.bi-radio > span { display: flex; flex-direction: column; gap: 2px; }
+.bi-warnings { margin-top: 14px; padding: 10px 14px; border-radius: 10px; background: color-mix(in srgb, var(--warning) 9%, transparent); }
+.bi-warnings h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; font-size: 13.5px; }
+.bi-warnings ul { margin: 0; padding-inline-start: 20px; font-size: 13px; }
+.bi-failed { display: flex; align-items: center; gap: 6px; color: var(--danger); margin: 0 0 8px; font-weight: 550; }
+.bi-error { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; background: var(--bg-soft); padding: 8px 10px; border-radius: 8px; margin: 0 0 8px; }
+.bi-done { color: var(--success); }
+.bi-reports { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.bi-report { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+.bi-report h3 { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 6px; font-size: 14px; }
+.bi-counts { display: grid; grid-template-columns: minmax(0, 1fr) max-content; gap: 3px 12px; margin: 0; font-size: 13px; }
+.bi-counts > div { display: contents; }
+.bi-counts dt { color: var(--text-faint); }
+.bi-counts dd { margin: 0; text-align: end; }
+.bi-earlier h3 { font-size: 13.5px; margin: 0 0 6px; }
+.bi-earlier ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.bi-earlier li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

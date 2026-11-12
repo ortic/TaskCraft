@@ -34,6 +34,8 @@ ldap3 = { version = "0.12.1", default-features = false, features = ["tls-rustls-
 mime_guess = "2.0.5"
 object_store = { version = "0.14.2", features = ["aws"] }
 openidconnect = "4.1.0"
+# XML site backups from other trackers (crate::site_backup): streaming XML in a zip
+quick-xml = "0.41.0"
 qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 rand = "0.10.3"
 # wiki markup in imported descriptions
@@ -61,6 +63,8 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 webpki-roots = "1.0.12"
 uuid = { version = "1.29.2", features = ["v7", "v4", "serde"] }
+# XML site backups arrive as .zip files
+zip = { version = "9.5.0", default-features = false, features = ["deflate-flate2"] }
 
 [dev-dependencies]
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "cookies", "multipart", "query", "form"] }

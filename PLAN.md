@@ -39,6 +39,7 @@
 - [x] Two-factor authentication (authenticator app, recovery codes) and passkeys; sessions list; "require two-factor" per workspace
 - [x] Move issues between projects: new key (the old one keeps working), type / status mapped by name or category, custom fields by name and kind, sub-tasks along; editing time logs
 - [x] CSV import with field mapping (suggested from header names, values matched by name, dry run, source keys kept as aliases, parents from the file); TaskCraft's own CSV export imports back
+- [x] Full migration from another tracker's XML site backup: people, projects, issues with their numbers, comments, time logs, attachments, links, watchers, components and versions, and the status history the reports replay (uploaded, checked and imported in the background from Administration → Import, or `taskcraft import-backup`; a second import skips what's there)
 - [x] Scheduled automation ("every weekday at 08:00, issues due tomorrow → notify the assignee", local time zones), a notify action; service-level goals (first response, resolution) per priority with a queue and alerts
 - [x] Dashboards people compose from report widgets and saved filters
 - [x] Portfolio view across projects (epics and releases on one timeline), capacity per team

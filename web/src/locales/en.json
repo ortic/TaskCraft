@@ -174,5 +174,25 @@
   "Show all {count} commits": {
     "one": "Show {count} commit",
     "other": "Show all {count} commits"
+  },
+  "{count} attachment files.": {
+    "one": "{count} attachment file.",
+    "other": "{count} attachment files."
+  },
+  "{count} issues are here from an earlier import and are skipped": {
+    "one": "{count} issue is here from an earlier import and is skipped",
+    "other": "{count} issues are here from an earlier import and are skipped"
+  },
+  "{count} people are named in it; {matched} of them have an account here already (same e-mail address or name).": {
+    "one": "{count} person is named in it; {matched} of them has an account here already (same e-mail address or name).",
+    "other": "{count} people are named in it; {matched} of them have an account here already (same e-mail address or name)."
+  },
+  "{count} sprints": {
+    "one": "{count} sprint",
+    "other": "{count} sprints"
+  },
+  "{count} times": {
+    "one": "once",
+    "other": "{count} times"
   }
 }
