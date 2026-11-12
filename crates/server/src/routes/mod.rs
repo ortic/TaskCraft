@@ -5,6 +5,7 @@ pub mod boards;
 pub mod comments;
 pub mod integrations;
 pub mod issues;
+pub mod moves;
 pub mod projects;
 pub mod reports;
 pub mod users;
@@ -104,6 +105,7 @@ pub fn api() -> Router<AppState> {
         .route("/issues/{key}/restore", post(issues::restore))
         .route("/issues/{key}/move", post(issues::move_issue))
         .route("/issues/{key}/clone", post(issues::clone_issue))
+        .route("/issues/{key}/move-project", get(moves::preview).post(moves::move_to_project))
         .route("/issues/{key}/history", get(issues::history))
         .route("/issues/{key}/watch", put(issues::watch))
         .route("/issues/{key}/links", post(issues::add_link))
@@ -117,7 +119,7 @@ pub fn api() -> Router<AppState> {
         .route("/web-links/{id}", delete(issues::delete_web_link))
         .route("/comments/{id}", patch(comments::update).delete(comments::delete))
         .route("/comments/{id}/react", post(comments::react))
-        .route("/worklogs/{id}", delete(comments::delete_worklog))
+        .route("/worklogs/{id}", patch(moves::update_worklog).delete(comments::delete_worklog))
         .route("/attachments/{id}", get(attachments::download).delete(attachments::delete))
         // search, views, activity, notifications
         .route("/search", get(issues::search))

@@ -264,6 +264,22 @@ pub async fn resolve(state: &AppState, user: &User, id_or_key: &str, deleted: bo
     } else {
         None
     };
+    // a key the issue had before it moved to another project
+    let row = match (row, split_key(id_or_key)) {
+        (None, Some((k, n))) => {
+            sqlx::query_as(
+                "SELECT i.id, i.project_id FROM issue_key_aliases a JOIN issues i ON i.id = a.issue_id
+              WHERE a.workspace_id = $1 AND upper(a.project_key) = $2 AND a.number = $3 AND ($4 OR i.deleted_at IS NULL)",
+            )
+            .bind(user.workspace_id)
+            .bind(k)
+            .bind(n)
+            .bind(deleted)
+            .fetch_optional(&state.db)
+            .await?
+        }
+        (row, _) => row,
+    };
     let (id, project) = row.ok_or(ApiError::NotFound("issue"))?;
     let role = access::role(state, user, project).await?;
     if role == Role::None {

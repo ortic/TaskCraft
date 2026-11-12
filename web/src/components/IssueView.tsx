@@ -5,12 +5,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Link2, Paperclip, Eye, EyeOff, Ellipsis, Heart, Copy, Trash, ExternalLink, Plus, X, Ban, BookOpen, Clock, CornerDownRight, MessageSquare, Activity, Timer, FileText, Check,
+  Link2, Paperclip, Eye, EyeOff, Ellipsis, Heart, FolderInput, Pencil, Copy, Trash, ExternalLink, Plus, X, Ban, BookOpen, Clock, CornerDownRight, MessageSquare, Activity, Timer, FileText, Check,
 } from 'lucide-react'
 import {
   api, ago, dateTime, duration, shortDate, type Comment, type HistoryEvent, type Issue, type IssueDetail, type Project, type WikiPage,
 } from '../api'
-import { Avatar, BotAvatar, Confirm, Empty, Lozenge, Loading, ErrorBox, Modal, PopButton, Tabs, useMe, useProject, useToast } from '../ui'
+import { Avatar, BotAvatar, Confirm, Empty, Lozenge, Loading, ErrorBox, Modal, PopButton, Tabs, useMe, useProject, useProjects, useToast } from '../ui'
 import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
 import { RichText, RichView, EMPTY_DOC, isEmptyDoc } from './Editor'
 import {
@@ -64,6 +64,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
     }
   }, [title])
   const [del, setDel] = useState(false)
+  const [moving, setMoving] = useState(false)
   const [linking, setLinking] = useState(false)
   const [tab, setTab] = useState<'comments' | 'history' | 'work'>('comments')
   const fileRef = useRef<HTMLInputElement>(null)
@@ -258,6 +259,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
                     <Copy size={14} /> {t('Clone')}
                   </button>
                 )}
+                {can && <button className="menu-item" onClick={() => { close(); setMoving(true) }}><FolderInput size={14} /> {t('Move to another project…')}</button>}
                 {can && <button className="menu-item danger" onClick={() => { close(); setDel(true) }}><Trash size={14} /> {t('Delete')}</button>}
               </div>
             )}
@@ -336,6 +338,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
           {issue.watchers.length > 0 && <span>{t('Watching: {names}', { names: issue.watchers.map((w) => w.name).join(', ') })}</span>}
         </div>
       </aside>
+      {moving && <MoveDialog issue={issue} inPanel={!!inPanel} onClose={() => setMoving(false)} />}
       {del && (
         <Confirm
           title={t('Delete {key}?', { key: issue.key })}
@@ -876,6 +879,8 @@ export function describeEvent(e: HistoryEvent): React.ReactNode {
       return t('created the issue')
     case 'deleted':
       return t('deleted the issue')
+    case 'moved':
+      return t('moved the issue from {from} to {to}', { from: e.old?.key ?? '', to: e.new?.key ?? '' })
     case 'restored':
       return t('restored the issue')
     case 'comment':
@@ -932,6 +937,7 @@ function History({ issueKey }: { issueKey: string }) {
 }
 
 function WorkLog({ issue }: { issue: IssueDetail }) {
+  const [editing, setEditing] = useState<string | null>(null)
   const qc = useQueryClient()
   const toast = useToast()
   const me = useMe().data?.user
@@ -977,24 +983,170 @@ function WorkLog({ issue }: { issue: IssueDetail }) {
       <table className="list">
         <tbody>
           {(list.data ?? []).map((w) => (
-            <tr key={w.id}>
-              <td style={{ width: 110 }}>{shortDate(w.date)}</td>
-              <td style={{ width: 90 }}><strong>{duration(w.minutes)}</strong></td>
-              <td>{w.user?.name}</td>
-              <td className="muted">{w.note}</td>
-              <td style={{ width: 40 }}>
-                {(w.user?.id === me?.id || issue.permissions.admin) && (
-                  <button className="icon-btn icon-btn-sm" aria-label={t('Delete')} onClick={async () => { await api.del(`/worklogs/${w.id}`); refresh() }}>
-                    <Trash size={13} />
-                  </button>
-                )}
-              </td>
-            </tr>
+            editing === w.id ? (
+              <tr key={w.id}>
+                <td colSpan={5}>
+                  <WorkLogEdit
+                    entry={w}
+                    onDone={(changed) => {
+                      setEditing(null)
+                      if (changed) refresh()
+                    }}
+                  />
+                </td>
+              </tr>
+            ) : (
+              <tr key={w.id}>
+                <td style={{ width: 110 }}>{shortDate(w.date)}</td>
+                <td style={{ width: 90 }}><strong>{duration(w.minutes)}</strong></td>
+                <td>{w.user?.name}</td>
+                <td className="muted">{w.note}</td>
+                <td style={{ width: 70, whiteSpace: 'nowrap' }}>
+                  {(w.user?.id === me?.id || issue.permissions.admin) && (
+                    <>
+                      <button className="icon-btn icon-btn-sm" aria-label={t('Edit')} title={t('Edit')} onClick={() => setEditing(w.id)}>
+                        <Pencil size={13} />
+                      </button>
+                      <button className="icon-btn icon-btn-sm" aria-label={t('Delete')} title={t('Delete')} onClick={async () => { await api.del(`/worklogs/${w.id}`); refresh() }}>
+                        <Trash size={13} />
+                      </button>
+                    </>
+                  )}
+                </td>
+              </tr>
+            )
           ))}
         </tbody>
       </table>
       {list.data?.length === 0 && <div className="faint small">{t('No time logged yet.')}</div>}
       {list.data && list.data.length > 0 && <div className="faint small"><Check size={12} /> {t('{time} in total', { time: duration(issue.spentMinutes) })}</div>}
     </div>
+  )
+}
+
+function WorkLogEdit({ entry, onDone }: { entry: { id: string; minutes: number; date: string; note: string | null }; onDone: (changed: boolean) => void }) {
+  const toast = useToast()
+  const [time, setTime] = useState(duration(entry.minutes))
+  const [date, setDate] = useState(entry.date)
+  const [note, setNote] = useState(entry.note ?? '')
+  return (
+    <form
+      className="row-wrap"
+      onSubmit={async (e) => {
+        e.preventDefault()
+        try {
+          await api.patch(`/worklogs/${entry.id}`, { time, date, note })
+          onDone(true)
+        } catch (err) {
+          toast((err as Error).message)
+        }
+      }}
+    >
+      <input className="input input-sm" style={{ width: 100 }} value={time} onChange={(e) => setTime(e.target.value)} aria-label={t('Time spent')} autoFocus />
+      <input type="date" className="input input-sm" style={{ width: 150 }} value={date} onChange={(e) => setDate(e.target.value)} aria-label={t('Date')} />
+      <input className="input input-sm" style={{ flex: 1, minWidth: 140 }} value={note} onChange={(e) => setNote(e.target.value)} aria-label={t('Note')} placeholder={t('What did you do? (optional)')} />
+      <button className="btn btn-primary btn-sm">{t('Save')}</button>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => onDone(false)}>{t('Cancel')}</button>
+    </form>
+  )
+}
+
+interface MovePreview {
+  target: { key: string; name: string }
+  typeId: string
+  statusId: string
+  droppedFields: string[]
+  cleared: string[]
+  subtasks: number
+}
+
+/** Moves the issue to another project: pick the project, check the mapped type and status. */
+function MoveDialog({ issue, inPanel, onClose }: { issue: IssueDetail; inPanel: boolean; onClose: () => void }) {
+  const projects = useProjects()
+  const qc = useQueryClient()
+  const toast = useToast()
+  const nav = useNavigate()
+  const targets = (projects.data ?? []).filter((p) => p.key !== issue.projectKey && !p.archivedAt && (p.role === 'member' || p.role === 'admin'))
+  const [to, setTo] = useState('')
+  const target = useProject(to || undefined).data
+  const preview = useQuery({ queryKey: ['move-preview', issue.key, to], queryFn: () => api.get<MovePreview>(`/issues/${issue.key}/move-project?to=${encodeURIComponent(to)}`), enabled: !!to })
+  const [typeId, setTypeId] = useState('')
+  const [statusId, setStatusId] = useState('')
+  useEffect(() => {
+    if (preview.data) {
+      setTypeId(preview.data.typeId)
+      setStatusId(preview.data.statusId)
+    }
+  }, [preview.data])
+  const [busy, setBusy] = useState(false)
+  const cleared = (preview.data?.cleared ?? []).map((c) => (c === 'sprint' ? t('sprint') : c === 'release' ? t('release') : t('component')))
+  return (
+    <Modal
+      title={t('Move {key} to another project', { key: issue.key })}
+      onClose={onClose}
+      width={520}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>{t('Cancel')}</button>
+          <button
+            className="btn btn-primary"
+            disabled={!to || !preview.data || busy}
+            onClick={async () => {
+              setBusy(true)
+              try {
+                const moved = await api.post<Issue>(`/issues/${issue.key}/move-project`, { projectKey: to, typeId, statusId })
+                refreshIssues(qc)
+                qc.invalidateQueries({ queryKey: ['projects'] })
+                toast(t('{old} is now {key}', { old: issue.key, key: moved.key }))
+                onClose()
+                if (inPanel) {
+                  const url = new URL(window.location.href)
+                  url.searchParams.set('issue', moved.key)
+                  nav(url.pathname + url.search, { replace: true })
+                } else nav(`/issues/${moved.key}`, { replace: true })
+              } catch (e) {
+                toast((e as Error).message)
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >{t('Move')}</button>
+        </>
+      }
+    >
+      <div className="field">
+        <label htmlFor="mv-to">{t('Project')}</label>
+        <select id="mv-to" className="select" value={to} onChange={(e) => setTo(e.target.value)}>
+          <option value="">{t('Choose a project…')}</option>
+          {targets.map((p) => <option key={p.id} value={p.key}>{p.name} ({p.key})</option>)}
+        </select>
+      </div>
+      {target && preview.data && (
+        <>
+          <div className="row" style={{ gap: 12 }}>
+            <div className="field" style={{ flex: 1 }}>
+              <label htmlFor="mv-type">{t('Type')}</label>
+              <select id="mv-type" className="select" value={typeId} onChange={(e) => setTypeId(e.target.value)}>
+                {target.types.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+            </div>
+            <div className="field" style={{ flex: 1 }}>
+              <label htmlFor="mv-status">{t('Status')}</label>
+              <select id="mv-status" className="select" value={statusId} onChange={(e) => setStatusId(e.target.value)}>
+                {target.statuses.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <ul className="small muted" style={{ paddingInlineStart: 18, margin: '4px 0 0' }}>
+            <li>{t('It gets a new key in {project}; {key} keeps working as a link.', { project: target.name, key: issue.key })}</li>
+            {preview.data.subtasks > 0 && <li>{t('Its {count} sub-tasks move along.', { count: preview.data.subtasks })}</li>}
+            {cleared.length > 0 && <li>{t('Cleared because they belong to this project: {fields}', { fields: cleared.join(', ') })}</li>}
+            {preview.data.droppedFields.length > 0 && <li style={{ color: 'var(--warning)' }}>{t('Values lost (no matching field in {project}): {fields}', { project: target.name, fields: preview.data.droppedFields.join(', ') })}</li>}
+            <li>{t('Comments, attachments, links, time logs and history stay with it.')}</li>
+          </ul>
+        </>
+      )}
+      {preview.error && <p className="error-text">{(preview.error as Error).message}</p>}
+    </Modal>
   )
 }

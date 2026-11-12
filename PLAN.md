@@ -37,7 +37,7 @@
 - [ ] E-mail: invitations, password reset, notification digests (SMTP)
 - [ ] Single sign-on: OpenID Connect, SAML, LDAP (reuse WikiCraft's providers)
 - [ ] Two-factor authentication and passkeys
-- [ ] Move issues between projects (key change with redirect, field mapping)
+- [x] Move issues between projects: new key (the old one keeps working), type / status mapped by name or category, custom fields by name and kind, sub-tasks along; editing time logs
 - [ ] CSV import with field mapping; imports from common trackers' exports
 - [ ] Scheduled automation ("every morning, issues due tomorrow → notify assignee"), SLA timers for trackers
 - [ ] Dashboards people compose from report widgets and saved filters

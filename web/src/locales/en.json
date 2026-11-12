@@ -1,122 +1,126 @@
 {
- "{count} days": {
-  "one": "{count} day",
-  "other": "{count} days"
- },
- "{count} days overdue": {
-  "one": "{count} day overdue",
-  "other": "{count} days overdue"
- },
- "{count} issues": {
-  "one": "{count} issue",
-  "other": "{count} issues"
- },
- "{count} issues · {percent} done": {
-  "one": "{count} issue · {percent} done",
-  "other": "{count} issues · {percent} done"
- },
- "{count} issues are planned for this sprint.": {
-  "one": "{count} issue is planned for this sprint.",
-  "other": "{count} issues are planned for this sprint."
- },
- "{count} members": {
-  "one": "{count} member",
-  "other": "{count} members"
- },
- "{count} people": {
-  "one": "{count} person",
-  "other": "{count} people"
- },
- "{count} people can see this project.": {
-  "one": "{count} person can see this project.",
-  "other": "{count} people can see this project."
- },
- "{count} points": {
-  "one": "{count} point",
-  "other": "{count} points"
- },
- "{days} days in this status": {
-  "one": "{days} day in this status",
-  "other": "{days} days in this status"
- },
- "{measure} of {count} issues finished in the last {days} days: median {median}, 85th percentile {p85}.": {
-  "one": "{measure} of {count} issue finished in the last {days} days: median {median}, 85th percentile {p85}.",
-  "other": "{measure} of {count} issues finished in the last {days} days: median {median}, 85th percentile {p85}."
- },
- "{n} days left": {
-  "one": "{n} day left",
-  "other": "{n} days left"
- },
- "{n} issues changed": {
-  "one": "{n} issue changed",
-  "other": "{n} issues changed"
- },
- "{n} weeks": {
-  "one": "{n} week",
-  "other": "{n} weeks"
- },
- "All {count} issues are done.": {
-  "one": "Its {count} issue is done.",
-  "other": "All {count} issues are done."
- },
- "Change in done over {count} days": {
-  "one": "Change in done over {count} day",
-  "other": "Change in done over {count} days"
- },
- "Created vs resolved over {count} days: {created} created, {resolved} resolved.": {
-  "one": "Created vs resolved over {count} day: {created} created, {resolved} resolved.",
-  "other": "Created vs resolved over {count} days: {created} created, {resolved} resolved."
- },
- "Cumulative flow over {count} days: {total} issues today, {wip} in progress.": {
-  "one": "Cumulative flow over {count} day: {total} issues today, {wip} in progress.",
-  "other": "Cumulative flow over {count} days: {total} issues today, {wip} in progress."
- },
- "Delete {n} issues?": {
-  "one": "Delete {n} issue?",
-  "other": "Delete {n} issues?"
- },
- "ended {n} days ago": {
-  "one": "ended {n} day ago",
-  "other": "ended {n} days ago"
- },
- "in {count} days": {
-  "one": "in {count} day",
-  "other": "in {count} days"
- },
- "Issues finished in {count} days": {
-  "one": "Issues finished in {count} day",
-  "other": "Issues finished in {count} days"
- },
- "Move the {count} unfinished issues to": {
-  "one": "Move the {count} unfinished issue to",
-  "other": "Move the {count} unfinished issues to"
- },
- "Ran {count} times, last {when}": {
-  "one": "Ran {count} time, last {when}",
-  "other": "Ran {count} times, last {when}"
- },
- "Released {name} · {count} issues moved": {
-  "one": "Released {name} · {count} issue moved",
-  "other": "Released {name} · {count} issues moved"
- },
- "Running difference of created and resolved issues: {value} after {count} days.": {
-  "one": "Running difference of created and resolved issues: {value} after {count} day.",
-  "other": "Running difference of created and resolved issues: {value} after {count} days."
- },
- "Sprint completed; {n} issues moved": {
-  "one": "Sprint completed; {n} issue moved",
-  "other": "Sprint completed; {n} issues moved"
- },
- "Team · {count} people": {
-  "one": "Team · {count} person",
-  "other": "Team · {count} people"
- },
- "The latest {count} entries": {
-  "one": "The latest {count} entry",
-  "other": "The latest {count} entries"
- },
- "Velocity of the last {count} sprints: {average} completed on average.": {
-  "one": "Velocity of the last sprint: {average} completed.",
-  "other": "Velocity of the last {count} sprints: {average} completed on average."
- }
+  "{count} days": {
+    "one": "{count} day",
+    "other": "{count} days"
+  },
+  "{count} days overdue": {
+    "one": "{count} day overdue",
+    "other": "{count} days overdue"
+  },
+  "{count} issues": {
+    "one": "{count} issue",
+    "other": "{count} issues"
+  },
+  "{count} issues · {percent} done": {
+    "one": "{count} issue · {percent} done",
+    "other": "{count} issues · {percent} done"
+  },
+  "{count} issues are planned for this sprint.": {
+    "one": "{count} issue is planned for this sprint.",
+    "other": "{count} issues are planned for this sprint."
+  },
+  "{count} members": {
+    "one": "{count} member",
+    "other": "{count} members"
+  },
+  "{count} people": {
+    "one": "{count} person",
+    "other": "{count} people"
+  },
+  "{count} people can see this project.": {
+    "one": "{count} person can see this project.",
+    "other": "{count} people can see this project."
+  },
+  "{count} points": {
+    "one": "{count} point",
+    "other": "{count} points"
+  },
+  "{days} days in this status": {
+    "one": "{days} day in this status",
+    "other": "{days} days in this status"
+  },
+  "{measure} of {count} issues finished in the last {days} days: median {median}, 85th percentile {p85}.": {
+    "one": "{measure} of {count} issue finished in the last {days} days: median {median}, 85th percentile {p85}.",
+    "other": "{measure} of {count} issues finished in the last {days} days: median {median}, 85th percentile {p85}."
+  },
+  "{n} days left": {
+    "one": "{n} day left",
+    "other": "{n} days left"
+  },
+  "{n} issues changed": {
+    "one": "{n} issue changed",
+    "other": "{n} issues changed"
+  },
+  "{n} weeks": {
+    "one": "{n} week",
+    "other": "{n} weeks"
+  },
+  "All {count} issues are done.": {
+    "one": "Its {count} issue is done.",
+    "other": "All {count} issues are done."
+  },
+  "Change in done over {count} days": {
+    "one": "Change in done over {count} day",
+    "other": "Change in done over {count} days"
+  },
+  "Created vs resolved over {count} days: {created} created, {resolved} resolved.": {
+    "one": "Created vs resolved over {count} day: {created} created, {resolved} resolved.",
+    "other": "Created vs resolved over {count} days: {created} created, {resolved} resolved."
+  },
+  "Cumulative flow over {count} days: {total} issues today, {wip} in progress.": {
+    "one": "Cumulative flow over {count} day: {total} issues today, {wip} in progress.",
+    "other": "Cumulative flow over {count} days: {total} issues today, {wip} in progress."
+  },
+  "Delete {n} issues?": {
+    "one": "Delete {n} issue?",
+    "other": "Delete {n} issues?"
+  },
+  "ended {n} days ago": {
+    "one": "ended {n} day ago",
+    "other": "ended {n} days ago"
+  },
+  "in {count} days": {
+    "one": "in {count} day",
+    "other": "in {count} days"
+  },
+  "Issues finished in {count} days": {
+    "one": "Issues finished in {count} day",
+    "other": "Issues finished in {count} days"
+  },
+  "Move the {count} unfinished issues to": {
+    "one": "Move the {count} unfinished issue to",
+    "other": "Move the {count} unfinished issues to"
+  },
+  "Ran {count} times, last {when}": {
+    "one": "Ran {count} time, last {when}",
+    "other": "Ran {count} times, last {when}"
+  },
+  "Released {name} · {count} issues moved": {
+    "one": "Released {name} · {count} issue moved",
+    "other": "Released {name} · {count} issues moved"
+  },
+  "Running difference of created and resolved issues: {value} after {count} days.": {
+    "one": "Running difference of created and resolved issues: {value} after {count} day.",
+    "other": "Running difference of created and resolved issues: {value} after {count} days."
+  },
+  "Sprint completed; {n} issues moved": {
+    "one": "Sprint completed; {n} issue moved",
+    "other": "Sprint completed; {n} issues moved"
+  },
+  "Team · {count} people": {
+    "one": "Team · {count} person",
+    "other": "Team · {count} people"
+  },
+  "The latest {count} entries": {
+    "one": "The latest {count} entry",
+    "other": "The latest {count} entries"
+  },
+  "Velocity of the last {count} sprints: {average} completed on average.": {
+    "one": "Velocity of the last sprint: {average} completed.",
+    "other": "Velocity of the last {count} sprints: {average} completed on average."
+  },
+  "Its {count} sub-tasks move along.": {
+    "one": "Its {count} sub-task moves along.",
+    "other": "Its {count} sub-tasks move along."
+  }
 }
