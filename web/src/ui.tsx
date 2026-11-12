@@ -9,6 +9,11 @@ export function useMe() {
   return useQuery({ queryKey: ['me'], queryFn: () => api.get<Me>('/me'), staleTime: 60_000 })
 }
 
+/** Whether the workspace still needs setting up, and what this server offers (`mail`: e-mail is configured). */
+export function useSetup() {
+  return useQuery({ queryKey: ['setup'], queryFn: () => api.get<{ needsSetup: boolean; mail?: boolean }>('/setup') })
+}
+
 export function usePeople() {
   const me = useMe()
   return useQuery({ queryKey: ['people'], queryFn: () => api.get<Person[]>('/people'), enabled: !!me.data?.user, staleTime: 120_000 })

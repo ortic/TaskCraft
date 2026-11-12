@@ -34,7 +34,7 @@
 
 ## Next
 
-- [ ] E-mail: invitations, password reset, notification digests (SMTP)
+- [x] E-mail (SMTP): e-mailed invitations, "forgot password", notification e-mails per person (instant bundles or a daily digest), admin status and test e-mail
 - [x] Single sign-on: OpenID Connect (Entra ID, Google, GitLab, any issuer), GitHub, LDAP / Active Directory, SAML (feature `saml`); group → team sync, password sign-in can be turned off
 - [x] Two-factor authentication (authenticator app, recovery codes) and passkeys; sessions list; "require two-factor" per workspace
 - [x] Move issues between projects: new key (the old one keeps working), type / status mapped by name or category, custom fields by name and kind, sub-tasks along; editing time logs

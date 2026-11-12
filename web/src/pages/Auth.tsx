@@ -1,8 +1,9 @@
 import { t } from '../i18n'
 import { useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
-import { Logo } from '../ui'
+import { Logo, useSetup } from '../ui'
 import { SsoButtons, useSignInOptions } from '../components/Sso'
 import { PasskeySignIn, SecondStep } from '../components/SignInSteps'
 
@@ -56,6 +57,8 @@ export function Login() {
   const [busy, setBusy] = useState(false)
   // single sign-on comes back with `?error=` when it can't sign someone in
   const [err, setErr] = useState(() => new URLSearchParams(location.search).get('error') ?? '')
+  const [email, setEmail] = useState('')
+  const mail = !!useSetup().data?.mail
   const next = new URLSearchParams(location.search).get('next')
   const sso = useSignInOptions()
   // the password form signs in local accounts and directory (LDAP / Active Directory) accounts
@@ -92,7 +95,7 @@ export function Login() {
         {sso.data && <SsoButtons options={sso.data} next={next} passwordForm={passwordForm} />}
         {passwordForm && (
           <>
-            <div className="field"><label htmlFor="em">{directory ? t('E-mail or username') : t('E-mail')}</label><input id="em" name="email" type={directory ? 'text' : 'email'} className="input" required autoFocus autoComplete="username" /></div>
+            <div className="field"><label htmlFor="em">{directory ? t('E-mail or username') : t('E-mail')}</label><input id="em" name="email" type={directory ? 'text' : 'email'} className="input" required autoFocus autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
             <div className="field"><label htmlFor="pw">{t('Password')}</label><input id="pw" name="password" type="password" className="input" required autoComplete="current-password" /></div>
           </>
         )}
@@ -100,7 +103,57 @@ export function Login() {
         {err && <p className="error-text" role="alert">{err}</p>}
         {passwordForm && <button className="btn btn-primary" style={{ width: '100%' }} disabled={busy}>{t('Log in')}</button>}
         {sso.data?.passwordLogin !== false && <PasskeySignIn next={next} onError={setErr} />}
-        {sso.data?.passwordLogin !== false && <p className="faint small" style={{ marginBottom: 0 }}>{t('Forgot your password? Ask an administrator for a reset link.')}</p>}
+        {sso.data?.passwordLogin !== false && (mail ? (
+          <p className="small" style={{ marginBottom: 0 }}><Link to="/forgot-password" state={{ email }}>{t('Forgot password?')}</Link></p>
+        ) : (
+          <p className="faint small" style={{ marginBottom: 0 }}>{t('Forgot your password? Ask an administrator for a reset link.')}</p>
+        ))}
+      </form>
+    </div>
+  )
+}
+
+/** `/forgot-password`: e-mails a link to choose a new password (when the server sends e-mail). */
+export function ForgotPassword() {
+  const loc = useLocation()
+  const [email, setEmail] = useState<string>((loc.state as { email?: string } | null)?.email ?? '')
+  const [sent, setSent] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  return (
+    <div className="auth">
+      <form
+        className="auth-card"
+        onSubmit={async (e) => {
+          e.preventDefault()
+          setBusy(true)
+          setErr('')
+          try {
+            await api.post('/auth/forgot', { email: email.trim() })
+            setSent(true)
+          } catch (e) {
+            setErr((e as Error).message)
+          } finally {
+            setBusy(false)
+          }
+        }}
+      >
+        <Logo />
+        <h1>{t('Reset your password')}</h1>
+        {sent ? (
+          <div role="status">
+            <p className="muted" style={{ marginTop: 0 }}>{t('If {email} belongs to an account, we’ve sent it a link to choose a new password. The link works once, for an hour.', { email: email.trim() })}</p>
+            <p className="faint small">{t('Nothing arrived? Check your spam folder, or ask an administrator for a reset link.')}</p>
+          </div>
+        ) : (
+          <>
+            <p className="muted" style={{ marginTop: 0 }}>{t('Enter the e-mail address of your account and we’ll send you a link to choose a new password.')}</p>
+            <div className="field"><label htmlFor="fp-em">{t('E-mail')}</label><input id="fp-em" name="email" type="email" className="input" required autoFocus autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
+            {err && <p className="error-text" role="alert">{err}</p>}
+            <button className="btn btn-primary" style={{ width: '100%' }} disabled={busy}>{busy ? t('Sending…') : t('Send reset link')}</button>
+          </>
+        )}
+        <p className="small" style={{ marginBottom: 0 }}><Link to="/login">{t('Back to log in')}</Link></p>
       </form>
     </div>
   )

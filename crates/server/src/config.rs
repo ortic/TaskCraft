@@ -81,6 +81,17 @@ pub struct Config {
     /// Single sign-on: OIDC / GitHub / LDAP / SAML providers, `TASKCRAFT_DISABLE_PASSWORD_LOGIN`.
     #[command(flatten)]
     pub sso: crate::sso::SsoConfig,
+
+    /// Outgoing mail server: `smtps://user:pass@mail.example.com` (TLS, port 465),
+    /// `smtp://user:pass@mail.example.com:587?tls=required` (STARTTLS) or `smtp://localhost:25`
+    /// (unencrypted, local relays only). URL-encode special characters in the password.
+    /// Enables e-mailed invitations, password resets and notification e-mails.
+    #[arg(long, env = "TASKCRAFT_SMTP_URL", hide_env_values = true)]
+    pub smtp_url: Option<String>,
+
+    /// Sender of e-mails.
+    #[arg(long, env = "TASKCRAFT_MAIL_FROM", default_value = "TaskCraft <taskcraft@localhost>")]
+    pub mail_from: String,
 }
 
 impl Config {

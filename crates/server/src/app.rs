@@ -22,6 +22,8 @@ pub struct Inner {
     pub hub: Hub,
     /// outgoing HTTP (WikiCraft, webhooks)
     pub http: reqwest::Client,
+    /// outgoing e-mail (disabled without `TASKCRAFT_SMTP_URL`)
+    pub mailer: crate::mail::Mailer,
     pub shutting_down: std::sync::atomic::AtomicBool,
     /// configured external sign-in providers (single sign-on)
     pub providers: Vec<crate::sso::Provider>,
@@ -38,6 +40,8 @@ impl AppState {
     pub async fn new(config: Config) -> anyhow::Result<Self> {
         // invalid sign-in configuration stops the start (fail fast)
         let providers = crate::sso::load(&config.sso)?;
+        // configuration mistakes surface before anything else happens
+        let mailer = crate::mail::Mailer::new(&config)?;
         std::fs::create_dir_all(&config.data_dir)?;
         std::fs::create_dir_all(config.upload_dir())?;
         let db =
@@ -71,7 +75,7 @@ impl AppState {
             .timeout(std::time::Duration::from_secs(15))
             .redirect(reqwest::redirect::Policy::none())
             .build()?;
-        Ok(AppState { inner: Arc::new(Inner { db, config, blobs, hub: Hub::new(), http, shutting_down: Default::default(), providers }) })
+        Ok(AppState { inner: Arc::new(Inner { db, config, blobs, hub: Hub::new(), http, mailer, shutting_down: Default::default(), providers }) })
     }
 }
 

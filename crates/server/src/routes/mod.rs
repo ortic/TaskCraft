@@ -4,6 +4,7 @@ pub mod auth;
 pub mod boards;
 pub mod comments;
 pub mod dashboards;
+pub mod email;
 pub mod import;
 pub mod integrations;
 pub mod issues;
@@ -51,6 +52,7 @@ pub fn api() -> Router<AppState> {
         .route("/auth/login", post(auth::login))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/link", get(auth::link_info).post(auth::link_accept))
+        .route("/auth/forgot", post(email::forgot))
         .route("/me", get(auth::me))
         .route("/me/profile", put(auth::update_profile))
         .route("/me/password", put(auth::change_password))
@@ -157,6 +159,8 @@ pub fn api() -> Router<AppState> {
         .route("/admin/workspace", put(admin::put_workspace))
         .route("/admin/audit", get(admin::audit_log))
         .route("/admin/stats", get(admin::stats))
+        .route("/admin/mail", get(email::status))
+        .route("/admin/mail/test", post(email::test))
         .route("/admin/webhooks", get(admin::webhooks).post(admin::create_webhook))
         .route("/admin/webhooks/{id}", patch(admin::update_webhook).delete(admin::delete_webhook))
         .route("/admin/webhooks/{id}/test", post(admin::test_webhook))

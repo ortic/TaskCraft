@@ -19,6 +19,12 @@
 .adm-card-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 10px 18px; border-top: 1px solid var(--border); background: var(--bg-soft); border-radius: 0 0 12px 12px; flex-wrap: wrap; }
 .adm-foot-msg { margin-inline-end: auto; align-self: center; }
 .adm-ws-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 20px; }
+.adm-mail { margin-top: 20px; }
+.adm-mail h2 { display: flex; align-items: center; gap: 6px; }
+.adm-mail-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 12px 0 8px; font-size: 13.5px; }
+.adm-mail-facts dt { color: var(--text-faint); }
+.adm-mail-facts dd { margin: 0; overflow-wrap: anywhere; }
+.adm-mail-error { margin: 0 0 8px; overflow-wrap: anywhere; }
 .adm-accent { display: flex; align-items: center; gap: 8px; }
 .adm-color { flex: none; width: 34px; height: 34px; padding: 2px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg); cursor: pointer; }
 .adm-color::-webkit-color-swatch-wrapper { padding: 0; }

@@ -18,8 +18,9 @@ One binary, PostgreSQL, optional S3. Built with the same stack as WikiCraft.
   dates, custom fields (text, number, single and multiple choice, date, person, checkbox, URL)
 - **Links** (blocks / is blocked by, relates, duplicates, clones) — blocked issues are flagged
   everywhere — plus web links, wiki pages and attachments (drag & drop)
-- **Comments** with mentions and reactions, **watchers**, in-app **notifications**, a full
-  **history** of every change, **time logs** and a weekly **timesheet**
+- **Comments** with mentions and reactions, **watchers**, in-app **notifications** (also by
+  e-mail: bundled a couple of minutes after, or as a daily digest at 08:00 local time), a
+  full **history** of every change, **time logs** and a weekly **timesheet**
 - **Workflows**: statuses in three categories (to do, in progress, done); free or restricted
   transitions with a transition matrix
 - **Move issues to another project** (the old key keeps working; type, status and custom fields are mapped, sub-tasks move along)
@@ -102,7 +103,9 @@ and high-contrast themes, phone layout, checked with axe against WCAG 2.2 AA in 
 
 **Administration**: workspace owner / admins / members / guests; project roles (viewer, member,
 admin) for people and teams, a default role per project; invitations and password-reset links;
-teams; personal API tokens (read-only or read/write); signed webhooks; audit log.
+teams; personal API tokens (read-only or read/write); signed webhooks; audit log. With SMTP
+configured, invitations and password-reset links are e-mailed and people can reset a forgotten
+password themselves.
 
 **Sign-in**: local passwords and single sign-on — OpenID Connect (Microsoft Entra ID, Google,
 GitLab, Okta, Keycloak, Authentik, …), GitHub, LDAP / Active Directory and SAML 2.0 — with
@@ -210,6 +213,9 @@ taskcraft healthcheck  # probe a running server (container HEALTHCHECK)
 | `TASKCRAFT_OIDC_ISSUER` / `_CLIENT_ID` / `_CLIENT_SECRET` / `_NAME` / `_ALLOWED_DOMAINS` / `_AUTO_CREATE` | — | one OpenID Connect provider (id `oidc`) |
 | `TASKCRAFT_DISABLE_PASSWORD_LOGIN` | `false` | sign in through providers only (LDAP accounts still use the password form) |
 
+| `TASKCRAFT_SMTP_URL` | — | outgoing mail: `smtps://user:pass@mail.example.com` (TLS, port 465), `smtp://user:pass@mail.example.com:587?tls=required` (STARTTLS) or `smtp://relay:25` (unencrypted, local relays only); URL-encode special characters in the password. Enables e-mailed invitations, "forgot password" and notification e-mails |
+| `TASKCRAFT_MAIL_FROM` | `TaskCraft <taskcraft@localhost>` | sender of e-mails |
+
 ### Sign-in: SSO, LDAP / Active Directory, SAML
 
 Local accounts (e-mail + password) work out of the box. Any number of external providers can be
@@ -257,6 +263,16 @@ password-reset links) stop working; the first-run setup still asks for the owner
 signs them in, and afterwards the owner signs in through a provider with the same e-mail address
 (a verified one, or set `trustEmail` for that provider).
 
+### E-mail
+
+With `TASKCRAFT_SMTP_URL` set, e-mails go through an outbox in Postgres that every replica's worker
+sends from (retried with backoff for about two hours; *Administration → Overview* shows the state
+and sends a test e-mail). Each person picks under *Profile & settings → Notifications* how
+notifications reach them by e-mail: a **daily digest** (the default; 08:00 in their time zone,
+grouped by issue), **immediately** (a burst of changes within about two minutes becomes one e-mail;
+nothing is sent for what they've read or while they're using the app) or **off**. Notification
+kinds they switched off aren't e-mailed either, and every e-mail links to these settings.
+
 ## API
 
 Everything the web app does is available under `/api/v1` (the app itself uses `/api`).
@@ -273,7 +289,7 @@ on writes.
 | WikiCraft | `GET /issues/{KEY}/wiki-pages`, `POST /issues/{KEY}/wiki-page`, `POST /sprints/{id}/wiki-page`, `POST /versions/{id}/wiki-page`, `GET /projects/{KEY}/wiki`, `GET /wiki-links?url=` (issues linking a page) |
 | Dashboards | `GET/POST /dashboards`, `GET/PATCH/DELETE /dashboards/{id}`, `GET /search/groups?q=<TQL>&by=status\|category\|assignee\|priority\|type\|project\|labels\|sprint`, `GET /portfolio?projects=KEY,KEY` |
 | Live | `GET /events` (Server-Sent Events) |
-| Account & admin | `/me`, `/me/tokens`, `/notifications`, `/views`, `/timesheet`, `/people`, `/teams`, `/users`, `/admin/{workspace,stats,audit,webhooks}` |
+| Account & admin | `/me`, `/me/tokens`, `/notifications`, `/views`, `/timesheet`, `/people`, `/teams`, `/users`, `/auth/forgot`, `/admin/{workspace,stats,audit,webhooks,mail}`, `POST /admin/mail/test` |
 | Sign-in | `GET /auth/providers`, `GET /auth/sso/{id}/login?next=`, `GET /auth/sso/{id}/callback`, SAML `POST /auth/sso/{id}/acs` and `GET /auth/sso/{id}/metadata`, `GET /me/sign-in` |
 | Security | `POST /auth/mfa` (`mfaToken`, `code` or `passkey`), `POST /auth/mfa/passkey`, `POST /auth/passkey/options`, `POST /auth/passkey`, `GET /me/mfa`, `POST /me/mfa/{setup,enable,disable,recovery-codes}`, `GET/POST /me/passkeys`, `POST /me/passkeys/options`, `PATCH/DELETE /me/passkeys/{id}`, `GET /me/sessions`, `DELETE /me/sessions/{id}`, `POST /me/sessions/revoke-others`, `GET/PUT /admin/security`, `POST /users/{id}/reset-mfa` (browser sessions only for changes) |
 

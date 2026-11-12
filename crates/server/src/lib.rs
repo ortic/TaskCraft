@@ -10,6 +10,7 @@ pub mod doc;
 pub mod error;
 pub mod events;
 pub mod issues;
+pub mod mail;
 pub mod mfa;
 pub mod notify;
 pub mod query;

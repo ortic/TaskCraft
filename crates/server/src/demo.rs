@@ -74,7 +74,8 @@ impl Seed<'_> {
         let mark = self.now().await?;
         let id = crate::routes::comments::add(self.state, &self.actor(who), issue, crate::doc::from_markdown(md)).await?;
         sqlx::query("UPDATE comments SET created_at = $2, updated_at = $2 WHERE id = $1").bind(id).bind(ago(days_ago)).execute(&self.state.db).await?;
-        sqlx::query("UPDATE notifications SET created_at = $2 WHERE issue_id = $1 AND created_at >= $3")
+        // backdated notifications would be due for e-mail right away: they count as mailed
+        sqlx::query("UPDATE notifications SET created_at = $2, emailed_at = COALESCE(emailed_at, now()) WHERE issue_id = $1 AND created_at >= $3")
             .bind(issue)
             .bind(ago(days_ago))
             .bind(mark)
@@ -130,12 +131,14 @@ pub async fn seed(state: &AppState, owner: Uuid) -> anyhow::Result<()> {
         ("Yuki Tanaka", "Support lead", "yuki"),
     ] {
         let id = new_id();
-        sqlx::query("INSERT INTO users (id, workspace_id, email, name, title, role, status) VALUES ($1, $2, $3, $4, $5, 'member', 'active')")
+        // sample people's addresses aren't real: no notification e-mails for them
+        sqlx::query("INSERT INTO users (id, workspace_id, email, name, title, role, status, preferences) VALUES ($1, $2, $3, $4, $5, 'member', 'active', $6)")
             .bind(id)
             .bind(ws)
             .bind(format!("{email}@example.com"))
             .bind(name)
             .bind(title)
+            .bind(json!({"email": "off"}))
             .execute(&state.db)
             .await?;
         people.push((id, name.to_string()));
@@ -612,6 +615,7 @@ pub async fn seed(state: &AppState, owner: Uuid) -> anyhow::Result<()> {
     }
     // notifications from seeding are noise, except a few recent ones
     sqlx::query("DELETE FROM notifications WHERE user_id = $1 AND created_at < now() - interval '3 days'").bind(owner).execute(&state.db).await?;
+    sqlx::query("UPDATE notifications SET emailed_at = now() WHERE user_id = $1 AND emailed_at IS NULL").bind(owner).execute(&state.db).await?;
     sqlx::query("UPDATE issues SET rank = sub.n * 1024.0 FROM (SELECT id, row_number() OVER (PARTITION BY project_id ORDER BY rank) n FROM issues) sub WHERE issues.id = sub.id")
         .execute(&state.db)
         .await?;
