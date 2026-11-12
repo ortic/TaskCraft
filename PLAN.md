@@ -36,7 +36,7 @@
 
 - [ ] E-mail: invitations, password reset, notification digests (SMTP)
 - [x] Single sign-on: OpenID Connect (Entra ID, Google, GitLab, any issuer), GitHub, LDAP / Active Directory, SAML (feature `saml`); group → team sync, password sign-in can be turned off
-- [ ] Two-factor authentication and passkeys
+- [x] Two-factor authentication (authenticator app, recovery codes) and passkeys; sessions list; "require two-factor" per workspace
 - [x] Move issues between projects: new key (the old one keeps working), type / status mapped by name or category, custom fields by name and kind, sub-tasks along; editing time logs
 - [x] CSV import with field mapping (suggested from header names, values matched by name, dry run, source keys kept as aliases, parents from the file); TaskCraft's own CSV export imports back
 - [x] Scheduled automation ("every weekday at 08:00, issues due tomorrow → notify the assignee", local time zones), a notify action; service-level goals (first response, resolution) per priority with a queue and alerts

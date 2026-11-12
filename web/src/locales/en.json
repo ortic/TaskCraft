@@ -150,5 +150,17 @@
   "{count} widgets": {
     "one": "{count} widget",
     "other": "{count} widgets"
+  },
+  "{count} passkeys": {
+    "one": "{count} passkey",
+    "other": "{count} passkeys"
+  },
+  "{count} recovery codes left.": {
+    "one": "{count} recovery code left.",
+    "other": "{count} recovery codes left."
+  },
+  "Signed out of {count} other sessions": {
+    "one": "Signed out of {count} other session",
+    "other": "Signed out of {count} other sessions"
   }
 }

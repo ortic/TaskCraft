@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 import { Logo } from '../ui'
 import { SsoButtons, useSignInOptions } from '../components/Sso'
+import { PasskeySignIn, SecondStep } from '../components/SignInSteps'
 
 function go(next?: string | null) {
   location.href = next && next.startsWith('/') && !next.startsWith('//') ? next : '/'
@@ -60,6 +61,9 @@ export function Login() {
   // the password form signs in local accounts and directory (LDAP / Active Directory) accounts
   const directory = !!sso.data?.providers.some((p) => p.type === 'ldap')
   const passwordForm = sso.data ? sso.data.passwordLogin || directory : true
+  // two-factor authentication: the second step (`?mfa=1`: a reset link or single sign-on left it in a cookie)
+  const [step, setStep] = useState<{ token: string; methods: string[] | null } | null>(() => (new URLSearchParams(location.search).get('mfa') ? { token: '', methods: null } : null))
+  if (step) return <SecondStep token={step.token} methods={step.methods} next={next} onCancel={() => setStep(null)} />
   return (
     <div className="auth">
       <form
@@ -70,7 +74,12 @@ export function Login() {
           setBusy(true)
           setErr('')
           try {
-            await api.post('/auth/login', { email: fd.get('email'), password: fd.get('password') })
+            const r = await api.post<{ mfaRequired?: boolean; mfaToken?: string; methods?: string[] }>('/auth/login', { email: fd.get('email'), password: fd.get('password') })
+            if (r?.mfaRequired) {
+              setStep({ token: r.mfaToken ?? '', methods: r.methods ?? null })
+              setBusy(false)
+              return
+            }
             go(next)
           } catch (e) {
             setErr((e as Error).message)
@@ -90,6 +99,7 @@ export function Login() {
         {sso.data && !passwordForm && sso.data.providers.length === 0 && <p className="muted">{t('Password sign-in is turned off and no single sign-on is set up. Ask an administrator.')}</p>}
         {err && <p className="error-text" role="alert">{err}</p>}
         {passwordForm && <button className="btn btn-primary" style={{ width: '100%' }} disabled={busy}>{t('Log in')}</button>}
+        {sso.data?.passwordLogin !== false && <PasskeySignIn next={next} onError={setErr} />}
         {sso.data?.passwordLogin !== false && <p className="faint small" style={{ marginBottom: 0 }}>{t('Forgot your password? Ask an administrator for a reset link.')}</p>}
       </form>
     </div>
@@ -113,8 +123,9 @@ export function Welcome() {
           setBusy(true)
           setErr('')
           try {
-            await api.post('/auth/link', { token, password: fd.get('password'), name: fd.get('name') })
-            go('/')
+            const r = await api.post<{ mfaRequired?: boolean }>('/auth/link', { token, password: fd.get('password'), name: fd.get('name') })
+            // two-factor authentication: the second step follows on the login page
+            go(r?.mfaRequired ? '/login?mfa=1' : '/')
           } catch (e) {
             setErr((e as Error).message)
             setBusy(false)

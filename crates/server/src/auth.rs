@@ -133,15 +133,20 @@ pub fn session_token(headers: &HeaderMap) -> Option<&str> {
     cookie_value(headers, SESSION_COOKIE)
 }
 
-async fn user_from_session(state: &AppState, token: &str) -> Result<Option<User>, ApiError> {
-    let user: Option<User> = sqlx::query_as(
-        "SELECT u.id, u.workspace_id, u.email, u.name, u.role, u.status
-           FROM sessions s JOIN users u ON u.id = s.user_id
+/// The session's user, and whether they must set up two-factor authentication first
+/// (`crate::mfa::MustEnrollTwoFactor`).
+async fn user_from_session(state: &AppState, token: &str) -> Result<Option<(User, bool)>, ApiError> {
+    let row: Option<(Uuid, Uuid, Option<String>, String, String, String, bool)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT u.id, u.workspace_id, u.email, u.name, u.role, u.status,
+                u.totp_enabled_at IS NULL AND NOT EXISTS (SELECT 1 FROM passkeys pk WHERE pk.user_id = u.id) AND {} AS must_enroll
+           FROM sessions s JOIN users u ON u.id = s.user_id JOIN workspaces w ON w.id = u.workspace_id
           WHERE s.token_hash = $1 AND s.expires_at > now() AND u.status = 'active'",
-    )
+        crate::mfa::POLICY_APPLIES_SQL
+    )))
     .bind(token_hash(token))
     .fetch_optional(&state.db)
     .await?;
+    let user = row.map(|(id, workspace_id, email, name, role, status, must_enroll)| (User { id, workspace_id, email, name, role, status }, must_enroll));
     if user.is_some() {
         let _ = sqlx::query("UPDATE sessions SET last_seen_at = now() WHERE token_hash = $1 AND last_seen_at < now() - interval '5 minutes'")
             .bind(token_hash(token))
@@ -234,6 +239,18 @@ impl FromRequestParts<AppState> for MaybeUser {
         if user.is_some() && is_mutating(&parts.method) && parts.headers.get(CSRF_HEADER).is_none() {
             return Err(ApiError::BadRequest(format!("missing {CSRF_HEADER} header")));
         }
+        // the workspace requires two-factor authentication: until it's set up, only that
+        let user = match user {
+            Some((u, true)) => {
+                if !crate::mfa::allowed_before_enrollment(&parts.method, parts.uri.path()) {
+                    return Err(crate::mfa::enrollment_required());
+                }
+                parts.extensions.insert(crate::mfa::MustEnrollTwoFactor);
+                Some(u)
+            }
+            Some((u, false)) => Some(u),
+            None => None,
+        };
         let mu = MaybeUser(user);
         parts.extensions.insert(mu.clone());
         Ok(mu)

@@ -8,8 +8,10 @@ pub mod import;
 pub mod integrations;
 pub mod issues;
 pub mod moves;
+pub mod passkeys;
 pub mod projects;
 pub mod reports;
+pub mod security;
 pub mod templates;
 pub mod users;
 pub mod views;
@@ -160,6 +162,8 @@ pub fn api() -> Router<AppState> {
         .route("/admin/webhooks/{id}/test", post(admin::test_webhook))
         // single sign-on: /auth/providers, /auth/sso/{id}/…, /me/sign-in
         .merge(crate::sso::routes())
+        // two-factor authentication, passkeys, sessions
+        .merge(security::routes())
 }
 
 pub fn router(state: AppState) -> Router {

@@ -109,6 +109,13 @@ GitLab, Okta, Keycloak, Authentik, …), GitHub, LDAP / Active Directory and SAM
 accounts created on first sign-in, linked by verified e-mail, and provider groups mirrored into
 teams (see [below](#sign-in-sso-ldap--active-directory-saml)).
 
+**Security**: two-factor authentication with an authenticator app (TOTP, QR code setup) and ten
+one-time recovery codes; **passkeys** (WebAuthn) as the second step or to sign in without a
+password; *where you're signed in* with "sign out everywhere else"; a workspace setting *Require
+two-factor authentication* (off / owners and admins / everyone) — people it applies to see only the
+setup until they've added a second factor — and admins reset the second factor of someone who lost
+their phone. See [Security](#security) below.
+
 ## WikiCraft integration
 
 TaskCraft and WikiCraft work as a pair:
@@ -186,7 +193,7 @@ taskcraft healthcheck  # probe a running server (container HEALTHCHECK)
 |---|---|---|
 | `TASKCRAFT_DATABASE_URL` | `postgres://taskcraft:taskcraft@127.0.0.1:55433/taskcraft` | PostgreSQL |
 | `TASKCRAFT_BIND` | `127.0.0.1:8788` | listen address |
-| `TASKCRAFT_BASE_URL` | `http://127.0.0.1:8788` | public URL (links in pages, webhooks, invitations) |
+| `TASKCRAFT_BASE_URL` | `http://127.0.0.1:8788` | public URL (links in pages, webhooks, invitations); its host name is the passkeys' relying party |
 | `TASKCRAFT_DATA_DIR` | `./data` | local attachments and uploads |
 | `TASKCRAFT_STATIC_DIR` | `./web/dist` | built frontend; the binary's embedded copy is used when this holds no build |
 | `TASKCRAFT_S3_BUCKET` / `_ENDPOINT` / `_REGION` / `_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY` | — | attachments in S3-compatible storage |
@@ -268,6 +275,7 @@ on writes.
 | Live | `GET /events` (Server-Sent Events) |
 | Account & admin | `/me`, `/me/tokens`, `/notifications`, `/views`, `/timesheet`, `/people`, `/teams`, `/users`, `/admin/{workspace,stats,audit,webhooks}` |
 | Sign-in | `GET /auth/providers`, `GET /auth/sso/{id}/login?next=`, `GET /auth/sso/{id}/callback`, SAML `POST /auth/sso/{id}/acs` and `GET /auth/sso/{id}/metadata`, `GET /me/sign-in` |
+| Security | `POST /auth/mfa` (`mfaToken`, `code` or `passkey`), `POST /auth/mfa/passkey`, `POST /auth/passkey/options`, `POST /auth/passkey`, `GET /me/mfa`, `POST /me/mfa/{setup,enable,disable,recovery-codes}`, `GET/POST /me/passkeys`, `POST /me/passkeys/options`, `PATCH/DELETE /me/passkeys/{id}`, `GET /me/sessions`, `DELETE /me/sessions/{id}`, `POST /me/sessions/revoke-others`, `GET/PUT /admin/security`, `POST /users/{id}/reset-mfa` (browser sessions only for changes) |
 
 ### Webhooks
 
@@ -276,6 +284,33 @@ Admins register endpoints for `issue.created`, `issue.updated`, `issue.deleted`,
 Each delivery is a JSON `POST` `{event, timestamp, webhookId, deliveryId, data}` with
 `X-TaskCraft-Event` and `X-TaskCraft-Signature: sha256=<HMAC of the body with the secret>`, retried
 with backoff for about eight hours.
+
+## Security
+
+- **Passwords** are hashed with Argon2; failed logins are throttled per e-mail address (10 per
+  15 minutes, shared by all replicas). Sessions are `HttpOnly`, `SameSite=Lax` cookies (`Secure`
+  with `TASKCRAFT_SECURE_COOKIES`); writes need the `x-taskcraft` header (CSRF).
+- **Two-factor authentication** (*Profile & settings → Security*): an authenticator app (TOTP,
+  RFC 6238, set up by QR code) with ten one-time recovery codes, and/or **passkeys**. After a
+  correct password there is no session yet, only a ten-minute second step: five tries per
+  sign-in, and wrong codes count against a per-person limit a new login doesn't reset; each TOTP
+  code works once. A password-reset link doesn't get past the second factor either.
+- **Passkeys** (WebAuthn, checked by TaskCraft itself: ES256, EdDSA and RS256 keys, signature
+  counters) serve as the second step, or sign in without a password when the authenticator
+  verified the person (PIN, fingerprint, face). They are bound to the host name of
+  `TASKCRAFT_BASE_URL`, so that must be the address people use, over https (or `localhost`).
+- **Changes to sign-in methods** (setting up the app, adding or removing a passkey) need a sign-in
+  from the last 15 minutes or the password; turning the app off always needs the password. They
+  are refused for API tokens, so a leaked token can't take over the account.
+- **Require two-factor authentication** (*Administration → Overview*): off, owners and admins, or
+  everyone. People it applies to who have no second factor yet can only set one up (or sign out);
+  the last second factor can't be removed while it's required. API tokens are separate
+  credentials and keep working.
+- **Sessions**: *Where you're signed in* lists browsers with their last activity; sign out one or
+  everywhere else. Changing the password also signs out everywhere else.
+- **Lost phone**: admins reset someone's second factor (*Administration → Users*; only the owner
+  resets admins). That removes the app and passkeys, signs the person out everywhere and deletes
+  their API tokens; they sign in with their password and set up a new second factor.
 
 ## Architecture
 

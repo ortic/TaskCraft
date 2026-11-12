@@ -3,7 +3,7 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ChevronDown, CircleDot, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, Trash,
+  ChevronDown, CircleDot, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, ShieldOff, Trash,
   UserCheck, UserPlus, UserX, Users, Webhook,
 } from 'lucide-react'
 import { api, ago, dateTime, shortDate, type Me } from '../api'
@@ -12,6 +12,7 @@ import { PROJECT_COLORS } from '../icons'
 import { CopyField, Switch } from './Settings'
 import { DeleteTeam, TeamDialog, TeamMembers, useTeams, type Team } from './People'
 import { SignInBadges, type SignInMethods } from '../components/Sso'
+import { ResetTwoFactor, TwoFactorPolicy, canResetTwoFactor, useTwoFactorPolicy } from '../components/Security'
 import './Admin.css'
 
 type Tab = 'overview' | 'users' | 'teams' | 'webhooks' | 'audit'
@@ -99,6 +100,7 @@ function Overview({ me }: { me: Me }) {
         <Stat icon={<HardDrive size={16} />} value={s ? formatBytes(s.attachmentBytes) : undefined} label={t('Attachment storage')} />
       </div>
       <WorkspaceForm key={JSON.stringify(me.workspace)} me={me} />
+      <TwoFactorPolicy />
     </>
   )
 }
@@ -234,6 +236,9 @@ function UsersTab({ me }: { me: Me }) {
   const [adding, setAdding] = useState(false)
   const [link, setLink] = useState<{ user: AdminUser; url: string } | null>(null)
   const [deactivating, setDeactivating] = useState<AdminUser | null>(null)
+  // two-factor authentication: who has it, resetting it
+  const enrolled = useTwoFactorPolicy().data?.enrolled
+  const [resetting, setResetting] = useState<AdminUser | null>(null)
   const myId = me.user!.id
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['admin', 'users'] })
@@ -312,7 +317,7 @@ function UsersTab({ me }: { me: Me }) {
                       <div className="adm-person">
                         <Avatar name={u.name} id={u.id} size={30} />
                         <div className="adm-person-text">
-                          <div className="adm-person-name">{u.name} {self && <span className="badge">{t('You')}</span>}</div>
+                          <div className="adm-person-name">{u.name} {self && <span className="badge">{t('You')}</span>} {enrolled?.includes(u.id) && <span className="badge badge-success" title={t('Two-factor authentication is on')}>{t('2FA')}</span>}</div>
                           <div className="faint small adm-ellipsis">{[u.email, u.title].filter(Boolean).join(' · ')}</div>
                         </div>
                       </div>
@@ -359,6 +364,11 @@ function UsersTab({ me }: { me: Me }) {
                             <button type="button" className="menu-item" onClick={() => { close(); makeLink(u) }}>
                               <Link size={15} /> {u.status === 'invited' ? t('New invitation link') : t('Password-reset link')}
                             </button>
+                            {canResetTwoFactor(me, u, enrolled) && (
+                              <button type="button" className="menu-item" onClick={() => { close(); setResetting(u) }}>
+                                <ShieldOff size={15} /> {t('Reset two-factor authentication')}
+                              </button>
+                            )}
                             {!locked && !self && u.status !== 'deactivated' && (
                               <button type="button" className="menu-item danger" onClick={() => { close(); setDeactivating(u) }}>
                                 <UserX size={15} /> {t('Deactivate')}
@@ -397,6 +407,7 @@ function UsersTab({ me }: { me: Me }) {
           onConfirm={() => patch(deactivating, { status: 'deactivated' }, t('{name} was deactivated', { name: deactivating.name }))}
         />
       )}
+      {resetting && <ResetTwoFactor user={resetting} onClose={() => setResetting(null)} />}
     </>
   )
 }
