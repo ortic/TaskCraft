@@ -30,8 +30,9 @@ pub async fn matches(state: &AppState, s: &Summary, workspace: Uuid, condition: 
     }
     let Ok(q) = crate::query::parse(condition) else { return false };
     let Ok(ctx) = crate::query::context_with(state, workspace, Uuid::nil(), vec![s.project_id], &q).await else { return false };
-    let mut qb: QueryBuilder<sqlx::Postgres> =
-        QueryBuilder::new("SELECT EXISTS (SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id JOIN statuses s ON s.id = i.status_id JOIN issue_types it ON it.id = i.type_id WHERE i.id = ");
+    let mut qb: QueryBuilder<sqlx::Postgres> = QueryBuilder::new(
+        "SELECT EXISTS (SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id JOIN statuses s ON s.id = i.status_id JOIN issue_types it ON it.id = i.type_id WHERE i.id = ",
+    );
     qb.push_bind(s.id);
     qb.push(" AND ");
     if crate::query::push_where(&mut qb, &ctx, &q).is_err() {
@@ -75,11 +76,12 @@ async fn run_inner(state: &AppState, actor: &Actor, s: &Summary, changes: &[Chan
     if actor.depth >= 3 {
         return;
     }
-    let rules: Vec<Rule> = sqlx::query_as("SELECT id, name, trigger, condition, actions FROM automation_rules WHERE project_id = $1 AND enabled ORDER BY created_at")
-        .bind(s.project_id)
-        .fetch_all(&state.db)
-        .await
-        .unwrap_or_default();
+    let rules: Vec<Rule> =
+        sqlx::query_as("SELECT id, name, trigger, condition, actions FROM automation_rules WHERE project_id = $1 AND enabled ORDER BY created_at")
+            .bind(s.project_id)
+            .fetch_all(&state.db)
+            .await
+            .unwrap_or_default();
     for rule in rules {
         if !triggered(&rule.trigger, changes, created, commented) || !matches(state, s, actor.workspace, &rule.condition).await {
             continue;
@@ -127,12 +129,14 @@ async fn execute(state: &AppState, bot: &Actor, s: &Summary, actions: &Value) ->
             }
             "setSprint" => {
                 let sprint = match a["sprint"].as_str() {
-                    Some("active") => sqlx::query_scalar::<_, Uuid>("SELECT id FROM sprints WHERE project_id = $1 AND state = 'active' ORDER BY start_at LIMIT 1")
-                        .bind(s.project_id)
-                        .fetch_optional(&state.db)
-                        .await?
-                        .map(|id| json!(id))
-                        .unwrap_or(Value::Null),
+                    Some("active") => {
+                        sqlx::query_scalar::<_, Uuid>("SELECT id FROM sprints WHERE project_id = $1 AND state = 'active' ORDER BY start_at LIMIT 1")
+                            .bind(s.project_id)
+                            .fetch_optional(&state.db)
+                            .await?
+                            .map(|id| json!(id))
+                            .unwrap_or(Value::Null)
+                    }
                     _ => Value::Null,
                 };
                 patch.insert("sprintId".into(), sprint);

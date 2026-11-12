@@ -31,17 +31,36 @@ pub struct Order {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Expr {
-    And { items: Vec<Expr> },
-    Or { items: Vec<Expr> },
-    Not { item: Box<Expr> },
+    And {
+        items: Vec<Expr>,
+    },
+    Or {
+        items: Vec<Expr>,
+    },
+    Not {
+        item: Box<Expr>,
+    },
     /// `field op value`
-    Compare { field: String, op: Op, value: Value },
+    Compare {
+        field: String,
+        op: Op,
+        value: Value,
+    },
     /// `field [not] in (a, b)`
-    In { field: String, values: Vec<Value>, negated: bool },
+    In {
+        field: String,
+        values: Vec<Value>,
+        negated: bool,
+    },
     /// `field is [not] empty`
-    Empty { field: String, negated: bool },
+    Empty {
+        field: String,
+        negated: bool,
+    },
     /// a bare word or quoted string: full-text search
-    Text { text: String },
+    Text {
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -98,10 +117,17 @@ impl Op {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Value {
     /// a word or a quoted string (`"In progress"`, `WEB-12`, `-7d`, `2026-11-01`)
-    Text { text: String },
-    Number { value: f64 },
+    Text {
+        text: String,
+    },
+    Number {
+        value: f64,
+    },
     /// `me()`, `now("-1d")`, `openSprints()`
-    Function { name: String, args: Vec<Value> },
+    Function {
+        name: String,
+        args: Vec<Value>,
+    },
 }
 
 impl Value {
@@ -240,9 +266,10 @@ fn lex(input: &str) -> Result<Vec<Token>, ParseError> {
                     s.push(ch);
                     i += 1;
                 }
-                // plain numbers are numbers; `-7d`, `2026-11-01`, `WEB-12` stay words
+                // plain numbers are numbers; `-7d`, `2026-11-01`, `WEB-12` stay words, and so do
+                // numbers that wouldn't read back the same (`1.0`, `007`: version names, codes)
                 let tok = match s.parse::<f64>() {
-                    Ok(n) if n.is_finite() && !s.ends_with('.') => Tok::Num(n),
+                    Ok(n) if n.is_finite() && (Value::Number { value: n }).as_text().as_deref() == Some(s.as_str()) => Tok::Num(n),
                     _ => Tok::Word(s),
                 };
                 out.push(Token { tok, at });
@@ -294,9 +321,7 @@ impl Parser {
     fn starts_primary(&self) -> bool {
         match self.peek() {
             None => false,
-            Some(Token { tok: Tok::Word(w), .. }) => {
-                !(w.eq_ignore_ascii_case("or") || w.eq_ignore_ascii_case("and") || self.at_order_by())
-            }
+            Some(Token { tok: Tok::Word(w), .. }) => !(w.eq_ignore_ascii_case("or") || w.eq_ignore_ascii_case("and") || self.at_order_by()),
             Some(Token { tok: Tok::Str(_) | Tok::Num(_) | Tok::LParen, .. }) => true,
             _ => false,
         }
@@ -588,9 +613,7 @@ mod tests {
         let q = parse("login timeout project = WEB").unwrap();
         assert_eq!(
             q.filter.unwrap(),
-            Expr::And {
-                items: vec![Expr::Text { text: "login".into() }, Expr::Text { text: "timeout".into() }, cmp("project", Op::Eq, Value::text("WEB"))]
-            }
+            Expr::And { items: vec![Expr::Text { text: "login".into() }, Expr::Text { text: "timeout".into() }, cmp("project", Op::Eq, Value::text("WEB"))] }
         );
         assert_eq!(parse("\"exact phrase\"").unwrap().filter.unwrap(), Expr::Text { text: "exact phrase".into() });
     }
@@ -638,6 +661,15 @@ mod tests {
         assert!(parse("\"open").unwrap_err().message.contains("quote"));
         assert!(parse("= 3").is_err());
         assert!(parse("status = a )").is_err());
+    }
+
+    #[test]
+    fn number_like_names_keep_their_text() {
+        let q = parse("version = 1.0 and points >= 2.5 and code = 007").unwrap();
+        let Expr::And { items } = q.filter.unwrap() else { panic!() };
+        assert_eq!(items[0], cmp("version", Op::Eq, Value::text("1.0")));
+        assert_eq!(items[1], cmp("points", Op::Ge, Value::Number { value: 2.5 }));
+        assert_eq!(items[2], cmp("code", Op::Eq, Value::text("007")));
     }
 
     #[test]

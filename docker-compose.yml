@@ -1,0 +1,39 @@
+# TaskCraft + PostgreSQL. Start with:  docker compose up -d   → http://localhost:8788
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: taskcraft
+      POSTGRES_PASSWORD: ${TASKCRAFT_DB_PASSWORD:-change-me}
+      POSTGRES_DB: taskcraft
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskcraft"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  taskcraft:
+    build: .
+    image: taskcraft:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TASKCRAFT_DATABASE_URL: postgres://taskcraft:${TASKCRAFT_DB_PASSWORD:-change-me}@db:5432/taskcraft
+      TASKCRAFT_BASE_URL: ${TASKCRAFT_BASE_URL:-http://localhost:8788}
+      # behind HTTPS (reverse proxy) set this to true
+      TASKCRAFT_SECURE_COOKIES: ${TASKCRAFT_SECURE_COOKIES:-false}
+      # documentation next to the work (optional)
+      # TASKCRAFT_WIKICRAFT_URL: https://wiki.example.com
+      # TASKCRAFT_WIKICRAFT_TOKEN: wct_...
+    ports:
+      - "8788:8788"
+    volumes:
+      - data:/data
+    restart: unless-stopped
+
+volumes:
+  db:
+  data:

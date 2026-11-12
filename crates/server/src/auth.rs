@@ -173,10 +173,12 @@ async fn user_from_api_token(state: &AppState, token: &str) -> Result<Option<(Us
     .fetch_optional(&state.db)
     .await?;
     let Some((id, workspace_id, email, name, role, status, scope)) = row else { return Ok(None) };
-    let _ = sqlx::query("UPDATE api_tokens SET last_used_at = now() WHERE token_hash = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')")
-        .bind(token_hash(token))
-        .execute(&state.db)
-        .await;
+    let _ = sqlx::query(
+        "UPDATE api_tokens SET last_used_at = now() WHERE token_hash = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')",
+    )
+    .bind(token_hash(token))
+    .execute(&state.db)
+    .await;
     Ok(Some((User { id, workspace_id, email, name, role, status }, if scope == "read" { TokenScope::Read } else { TokenScope::Write })))
 }
 

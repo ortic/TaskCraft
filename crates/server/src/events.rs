@@ -23,7 +23,8 @@ const CHANNEL: &str = "taskcraft_events";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Event {
-    #[serde(skip_serializing)]
+    /// travels next to the event (`Wire.w`), never to browsers
+    #[serde(skip)]
     pub workspace: Uuid,
     /// issue | comment | sprint | board | project | version | notification
     pub kind: String,
@@ -102,10 +103,13 @@ pub fn spawn_listener(state: &AppState) {
                 Ok(mut l) => {
                     if l.listen(CHANNEL).await.is_ok() {
                         while let Ok(n) = l.recv().await {
-                            if let Ok(w) = serde_json::from_str::<Wire>(n.payload()) {
-                                let mut e = w.e;
-                                e.workspace = w.w;
-                                let _ = state.hub.tx.send(e);
+                            match serde_json::from_str::<Wire>(n.payload()) {
+                                Ok(w) => {
+                                    let mut e = w.e;
+                                    e.workspace = w.w;
+                                    let _ = state.hub.tx.send(e);
+                                }
+                                Err(err) => tracing::warn!(error = %err, "live updates: unreadable event"),
                             }
                         }
                     }

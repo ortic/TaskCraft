@@ -73,7 +73,8 @@ pub async fn create(State(state): State<AppState>, CurrentUser(user): CurrentUse
 }
 
 async fn own(state: &AppState, user: &crate::auth::User, id: Uuid) -> ApiResult<()> {
-    let owner: Option<Option<Uuid>> = sqlx::query_scalar("SELECT owner_id FROM views WHERE id = $1 AND workspace_id = $2").bind(id).bind(user.workspace_id).fetch_optional(&state.db).await?;
+    let owner: Option<Option<Uuid>> =
+        sqlx::query_scalar("SELECT owner_id FROM views WHERE id = $1 AND workspace_id = $2").bind(id).bind(user.workspace_id).fetch_optional(&state.db).await?;
     match owner {
         None => Err(ApiError::NotFound("view")),
         Some(o) if o == Some(user.id) || user.is_admin() => Ok(()),
@@ -133,7 +134,8 @@ pub async fn notifications(State(state): State<AppState>, CurrentUser(user): Cur
     .bind(user.id)
     .fetch_all(&state.db)
     .await?;
-    let unread: i64 = sqlx::query_scalar("SELECT count(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL").bind(user.id).fetch_one(&state.db).await?;
+    let unread: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL").bind(user.id).fetch_one(&state.db).await?;
     Ok(Json(json!({
         "unread": unread,
         "items": rows.into_iter().map(|(id, aid, an, kind, data, at, read)| json!({
@@ -148,7 +150,11 @@ pub async fn read_notifications(State(state): State<AppState>, CurrentUser(user)
         sqlx::query("UPDATE notifications SET read_at = now() WHERE user_id = $1 AND read_at IS NULL").bind(user.id).execute(&state.db).await?;
     } else {
         let ids: Vec<Uuid> = serde_json::from_value(req["ids"].clone()).unwrap_or_default();
-        sqlx::query("UPDATE notifications SET read_at = now() WHERE user_id = $1 AND id = ANY($2) AND read_at IS NULL").bind(user.id).bind(&ids).execute(&state.db).await?;
+        sqlx::query("UPDATE notifications SET read_at = now() WHERE user_id = $1 AND id = ANY($2) AND read_at IS NULL")
+            .bind(user.id)
+            .bind(&ids)
+            .execute(&state.db)
+            .await?;
     }
     Ok(StatusCode::NO_CONTENT)
 }

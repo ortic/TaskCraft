@@ -19,7 +19,12 @@ use crate::error::{ApiError, ApiResult};
 use crate::events::{self, Event};
 use crate::issues::{self, Change};
 
-pub async fn upload(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, mut mp: Multipart) -> ApiResult<(StatusCode, Json<Value>)> {
+pub async fn upload(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(key): Path<String>,
+    mut mp: Multipart,
+) -> ApiResult<(StatusCode, Json<Value>)> {
     let (issue, project, _) = issue_for(&state, &user, &key, Role::Member).await?;
     let max = state.config.max_upload_mb.saturating_mul(1024 * 1024);
     let mut out = Vec::new();
@@ -50,7 +55,15 @@ pub async fn upload(State(state): State<AppState>, CurrentUser(user): CurrentUse
             .bind(user.id)
             .execute(&mut *tx)
             .await?;
-        issues::record(&mut tx, issue, project, Some(user.id), "attachment", Some(&Change { field: "attachment", old: Value::Null, new: json!({"name": name}) })).await?;
+        issues::record(
+            &mut tx,
+            issue,
+            project,
+            Some(user.id),
+            "attachment",
+            Some(&Change { field: "attachment", old: Value::Null, new: json!({"name": name}) }),
+        )
+        .await?;
         sqlx::query("UPDATE issues SET updated_at = now() WHERE id = $1").bind(issue).execute(&mut *tx).await?;
         tx.commit().await?;
         out.push(json!({"id": id, "name": name, "mime": mime, "size": size, "url": format!("/api/attachments/{id}")}));
@@ -63,7 +76,11 @@ pub async fn upload(State(state): State<AppState>, CurrentUser(user): CurrentUse
 }
 
 async fn attachment(state: &AppState, id: Uuid) -> ApiResult<(Uuid, String, String, String, i64)> {
-    sqlx::query_as("SELECT issue_id, name, mime, storage_key, size FROM attachments WHERE id = $1").bind(id).fetch_optional(&state.db).await?.ok_or(ApiError::NotFound("attachment"))
+    sqlx::query_as("SELECT issue_id, name, mime, storage_key, size FROM attachments WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(ApiError::NotFound("attachment"))
 }
 
 /// Images, PDFs, video and plain text show in the browser; everything else downloads. Files
@@ -98,7 +115,8 @@ pub async fn delete(State(state): State<AppState>, CurrentUser(user): CurrentUse
     let (_, project, _) = issue_for(&state, &user, &issue.to_string(), Role::Member).await?;
     let mut tx = state.db.begin().await?;
     sqlx::query("DELETE FROM attachments WHERE id = $1").bind(id).execute(&mut *tx).await?;
-    issues::record(&mut tx, issue, project, Some(user.id), "attachment", Some(&Change { field: "attachment", old: json!({"name": name}), new: Value::Null })).await?;
+    issues::record(&mut tx, issue, project, Some(user.id), "attachment", Some(&Change { field: "attachment", old: json!({"name": name}), new: Value::Null }))
+        .await?;
     tx.commit().await?;
     let _ = state.blobs.delete(&ObjPath::from(key)).await;
     events::publish(&state, Event::new(user.workspace_id, "issue").project(project).actor(user.id)).await;

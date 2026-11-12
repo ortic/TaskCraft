@@ -1,0 +1,187 @@
+/* Reports page and the charts in components/charts.tsx. Charts take every colour from the
+   --rp-* variables below, so each theme gets its own validated steps (not an automatic flip).
+   Categorical slots (--rp-s1…8): adjacent pairs clear CVD ΔE ≥ 8 and normal-vision ΔE ≥ 15 in
+   light (on #fff) and dark (on #15171c); the high-contrast steps are darker (all ≥ 3:1 on white).
+   Light slots 3–5 sit under 3:1 on white, so every chart has a table view. */
+
+.rp-viz {
+  --rp-s1: #2a78d6;
+  --rp-s2: #eb6834;
+  --rp-s3: #1baf7a;
+  --rp-s4: #eda100;
+  --rp-s5: #e87ba4;
+  --rp-s6: #008300;
+  --rp-s7: #6250d6;
+  --rp-s8: #e34948;
+  /* status categories as marks (to do stays neutral on purpose) */
+  --rp-todo: #9ba1ad;
+  --rp-progress: #2a78d6;
+  --rp-done: #12805c;
+  /* context series ("committed") and folded "Other" */
+  --rp-muted: #9ba1ad;
+  /* reference lines (ideal, average, median) and the derived running difference */
+  --rp-ref: var(--text-soft);
+  --rp-net: var(--text-soft);
+  --rp-grid: var(--border);
+  --rp-axis: var(--border-strong);
+  --rp-surface: var(--bg);
+  --rp-hover: var(--bg-hover);
+  --rp-wash: 0.1;
+  --rp-band: 0.2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not([data-theme='contrast']) .rp-viz {
+    --rp-s1: #3987e5;
+    --rp-s2: #d95926;
+    --rp-s3: #199e70;
+    --rp-s4: #c98500;
+    --rp-s5: #d55181;
+    --rp-s6: #008300;
+    --rp-s7: #9085e9;
+    --rp-s8: #e66767;
+    --rp-todo: #6b717d;
+    --rp-progress: #3987e5;
+    --rp-done: #199e70;
+    --rp-muted: #6b717d;
+    --rp-wash: 0.14;
+    --rp-band: 0.28;
+  }
+}
+:root[data-theme='dark'] .rp-viz {
+  --rp-s1: #3987e5;
+  --rp-s2: #d95926;
+  --rp-s3: #199e70;
+  --rp-s4: #c98500;
+  --rp-s5: #d55181;
+  --rp-s6: #008300;
+  --rp-s7: #9085e9;
+  --rp-s8: #e66767;
+  --rp-todo: #6b717d;
+  --rp-progress: #3987e5;
+  --rp-done: #199e70;
+  --rp-muted: #6b717d;
+  --rp-wash: 0.14;
+  --rp-band: 0.28;
+}
+:root[data-theme='contrast'] .rp-viz {
+  --rp-s1: #1c5cab;
+  --rp-s2: #b8440f;
+  --rp-s3: #0b7350;
+  --rp-s4: #835000;
+  --rp-s5: #b02a62;
+  --rp-s6: #2f6b00;
+  --rp-s7: #4a3aa7;
+  --rp-s8: #b3261e;
+  --rp-todo: #6a6a6a;
+  --rp-progress: #0b3a8a;
+  --rp-done: #0a5a1c;
+  --rp-muted: #7a7a7a;
+  --rp-ref: #1c1c1c;
+  --rp-net: #1c1c1c;
+  --rp-grid: #b8b8b8;
+  --rp-axis: #3a3a3a;
+  --rp-hover: #efefef;
+  --rp-wash: 0.16;
+  --rp-band: 0.3;
+}
+
+/* ---------- page ---------- */
+.rp-panel { min-width: 0; }
+.rp-body { transition: opacity .15s; }
+.rp-stale { opacity: .55; }
+.rp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
+.rp-grid > .rp-card { margin-bottom: 0; }
+.rp-goal { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-seg-sm button { height: 28px; font-size: 13px; }
+
+.rp-stat .stat-value { display: flex; align-items: center; gap: 6px; font-weight: 650; }
+.rp-stat-sub { font-size: 12px; color: var(--text-faint); }
+.rp-tone-danger .stat-value { color: var(--danger); }
+.rp-tone-warning .stat-value { color: var(--warning); }
+
+/* ---------- card, legend, table view ---------- */
+.rp-card { border: 1px solid var(--border); border-radius: 12px; background: var(--bg); padding: 14px 16px 12px; margin-bottom: 16px; min-width: 0; }
+.rp-card-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
+.rp-card-titles { flex: 1; min-width: 0; }
+.rp-card-head h2 { margin: 0; font-size: 14.5px; }
+.rp-card-sub { font-size: 12.5px; color: var(--text-faint); margin-top: 2px; }
+
+.rp-legend { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; color: var(--text-soft); }
+.rp-legend li { display: inline-flex; align-items: center; gap: 6px; }
+
+.rp-key { flex: none; display: inline-block; }
+.rp-key-rect { width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
+.rp-key-line { width: 14px; height: 2px; border-radius: 1px; background: var(--c); }
+.rp-key-dash { width: 14px; height: 0; border-top: 2px dashed var(--c); }
+.rp-key-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
+.rp-key-ring { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--c); }
+.rp-key-none { width: 14px; }
+
+.rp-table-wrap { overflow-x: auto; }
+.rp-table td, .rp-table th { white-space: nowrap; }
+.rp-num { text-align: end !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rp-title-cell { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- plots ---------- */
+.rp-plot { position: relative; width: 100%; min-width: 0; border-radius: 6px; touch-action: pan-y; }
+.rp-plot:focus-visible { outline-offset: 4px; }
+.rp-plot[data-clickable] { cursor: pointer; }
+.rp-svg { display: block; overflow: visible; direction: ltr; font-family: var(--font); user-select: none; }
+
+.rp-tick { font-size: 11.5px; fill: var(--text-faint); font-variant-numeric: tabular-nums; }
+.rp-gridline { stroke: var(--rp-grid); stroke-width: 1; }
+.rp-baseline { stroke: var(--rp-axis); stroke-width: 1; }
+.rp-crosshair { stroke: var(--rp-axis); stroke-width: 1; }
+.rp-hover-band { fill: var(--rp-hover); }
+.rp-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.rp-line-dash { stroke-width: 1.5; stroke-dasharray: 6 5; }
+.rp-wash { fill-opacity: var(--rp-wash); stroke: none; }
+.rp-band { fill-opacity: var(--rp-band); stroke: none; }
+.rp-dot { stroke: var(--rp-surface); stroke-width: 2; }
+.rp-dot-dot, .rp-dot-active { fill: var(--c); }
+.rp-dot-ring { fill: var(--rp-surface); stroke: var(--c); }
+.rp-refline { stroke: var(--rp-ref); stroke-width: 1; stroke-dasharray: 4 4; }
+.rp-marker-line { stroke: var(--rp-axis); stroke-width: 1; }
+.rp-reflabel { font-size: 11.5px; fill: var(--text-soft); paint-order: stroke; stroke: var(--rp-surface); stroke-width: 3px; stroke-linejoin: round; }
+.rp-cap { font-size: 11.5px; font-weight: 600; fill: var(--text-soft); font-variant-numeric: tabular-nums; }
+
+/* ---------- tooltip ---------- */
+.rp-tip {
+  position: absolute; z-index: 5; pointer-events: none; transform: translateX(var(--off, 12px));
+  min-width: 150px; max-width: 280px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text); box-shadow: var(--shadow); font-size: 12.5px; line-height: 1.45;
+}
+.rp-tip-left { transform: translateX(calc(-100% - var(--off, 12px))); }
+.rp-tip-title { font-weight: 600; margin-bottom: 4px; overflow-wrap: anywhere; }
+.rp-tip-row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.rp-tip-row strong { font-weight: 650; }
+.rp-tip-label { color: var(--text-soft); }
+.rp-tip-note { margin-top: 4px; font-size: 12px; color: var(--text-faint); }
+.rp-tip-hint { margin-top: 2px; }
+
+/* ---------- bar lists ---------- */
+.rp-bartable { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rp-bartable th, .rp-bartable td { padding: 4px 0; vertical-align: middle; }
+.rp-bartable thead th { font-size: 12px; font-weight: 600; color: var(--text-faint); text-align: start; padding-bottom: 6px; white-space: nowrap; }
+.rp-bartable .rp-num { padding-inline-start: 14px; }
+.rp-bar-name { font-weight: 400; text-align: start; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; padding-inline-end: 12px !important; color: var(--text); }
+.rp-bar-cell { width: 100%; min-width: 80px; position: relative; border-inline-start: 1px solid var(--rp-axis); padding-inline-end: 4px !important; }
+.rp-bar { display: flex; height: 14px; }
+.rp-seg { display: block; height: 100%; min-width: 2px; }
+.rp-seg + .rp-seg { margin-inline-start: 2px; }
+.rp-seg:last-child { border-start-end-radius: 4px; border-end-end-radius: 4px; }
+.rp-bar-total { font-weight: 600; }
+.rp-bartable tbody tr.rp-hover > * { background: var(--bg-soft); }
+.rp-bar-tip { top: auto; bottom: calc(100% - 2px); transform: none; }
+.rp-name { display: inline-flex; align-items: center; gap: 8px; max-width: 220px; vertical-align: middle; }
+.rp-name > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+
+.rp-slowest .issue-key { font-weight: 600; }
+
+@media (max-width: 760px) {
+  .rp-bar-name, .rp-name { max-width: 110px; }
+  .rp-bar-cell { min-width: 48px; }
+  .rp-bartable .rp-num { padding-inline-start: 8px; }
+  .rp-grid { grid-template-columns: 1fr; }
+}

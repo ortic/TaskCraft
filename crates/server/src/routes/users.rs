@@ -13,12 +13,11 @@ use crate::error::{ApiError, ApiResult};
 
 /// Everyone active in the workspace (people pickers, mentions).
 pub async fn people(State(state): State<AppState>, CurrentUser(user): CurrentUser) -> ApiResult<Json<Value>> {
-    let rows: Vec<(Uuid, String, Option<String>, String, Option<String>)> = sqlx::query_as(
-        "SELECT id, name, email, role, title FROM users WHERE workspace_id = $1 AND status = 'active' ORDER BY lower(name)",
-    )
-    .bind(user.workspace_id)
-    .fetch_all(&state.db)
-    .await?;
+    let rows: Vec<(Uuid, String, Option<String>, String, Option<String>)> =
+        sqlx::query_as("SELECT id, name, email, role, title FROM users WHERE workspace_id = $1 AND status = 'active' ORDER BY lower(name)")
+            .bind(user.workspace_id)
+            .fetch_all(&state.db)
+            .await?;
     // guests don't see e-mail addresses
     let guest = user.is_guest();
     Ok(Json(json!(
@@ -37,10 +36,11 @@ pub async fn person(State(state): State<AppState>, CurrentUser(user): CurrentUse
             .fetch_optional(&state.db)
             .await?;
     let (id, name, email, role, title, status) = row.ok_or(ApiError::NotFound("person"))?;
-    let teams: Vec<(Uuid, String)> = sqlx::query_as("SELECT t.id, t.name FROM teams t JOIN team_members m ON m.team_id = t.id WHERE m.user_id = $1 ORDER BY t.name")
-        .bind(id)
-        .fetch_all(&state.db)
-        .await?;
+    let teams: Vec<(Uuid, String)> =
+        sqlx::query_as("SELECT t.id, t.name FROM teams t JOIN team_members m ON m.team_id = t.id WHERE m.user_id = $1 ORDER BY t.name")
+            .bind(id)
+            .fetch_all(&state.db)
+            .await?;
     Ok(Json(json!({
         "id": id, "name": name, "email": if user.is_guest() { None } else { email }, "role": role, "title": title, "status": status,
         "teams": teams.iter().map(|(id, n)| json!({"id": id, "name": n})).collect::<Vec<_>>(),
@@ -225,11 +225,20 @@ async fn set_members(state: &AppState, ws: Uuid, team: Uuid, members: Vec<Uuid>)
     Ok(())
 }
 
-pub async fn update_team(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>, Json(req): Json<TeamInput>) -> ApiResult<StatusCode> {
+pub async fn update_team(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<TeamInput>,
+) -> ApiResult<StatusCode> {
     if user.is_guest() {
         return Err(ApiError::Forbidden);
     }
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM teams WHERE id = $1 AND workspace_id = $2)").bind(id).bind(user.workspace_id).fetch_one(&state.db).await?;
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM teams WHERE id = $1 AND workspace_id = $2)")
+        .bind(id)
+        .bind(user.workspace_id)
+        .fetch_one(&state.db)
+        .await?;
     if !exists {
         return Err(ApiError::NotFound("team"));
     }

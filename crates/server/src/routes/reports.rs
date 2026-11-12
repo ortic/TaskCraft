@@ -24,7 +24,12 @@ pub async fn burndown(State(state): State<AppState>, CurrentUser(user): CurrentU
     Ok(Json(crate::reports::burndown(&state, id).await?))
 }
 
-pub async fn project_report(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path((key, report)): Path<(String, String)>, Query(r): Query<Range>) -> ApiResult<Json<Value>> {
+pub async fn project_report(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path((key, report)): Path<(String, String)>,
+    Query(r): Query<Range>,
+) -> ApiResult<Json<Value>> {
     let (p, _) = by_key(&state, &user, &key, Role::Viewer).await?;
     let days = r.days.unwrap_or(30);
     Ok(Json(match report.as_str() {

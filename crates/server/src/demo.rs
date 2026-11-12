@@ -74,7 +74,12 @@ impl Seed<'_> {
         let mark = self.now().await?;
         let id = crate::routes::comments::add(self.state, &self.actor(who), issue, crate::doc::from_markdown(md)).await?;
         sqlx::query("UPDATE comments SET created_at = $2, updated_at = $2 WHERE id = $1").bind(id).bind(ago(days_ago)).execute(&self.state.db).await?;
-        sqlx::query("UPDATE notifications SET created_at = $2 WHERE issue_id = $1 AND created_at >= $3").bind(issue).bind(ago(days_ago)).bind(mark).execute(&self.state.db).await?;
+        sqlx::query("UPDATE notifications SET created_at = $2 WHERE issue_id = $1 AND created_at >= $3")
+            .bind(issue)
+            .bind(ago(days_ago))
+            .bind(mark)
+            .execute(&self.state.db)
+            .await?;
         self.at(issue, ago(days_ago), mark).await
     }
 
@@ -87,7 +92,10 @@ impl Seed<'_> {
             .bind(ago(days_ago).date_naive())
             .execute(&self.state.db)
             .await?;
-        sqlx::query("UPDATE issues SET spent_minutes = (SELECT COALESCE(sum(minutes), 0) FROM worklogs WHERE issue_id = $1) WHERE id = $1").bind(issue).execute(&self.state.db).await?;
+        sqlx::query("UPDATE issues SET spent_minutes = (SELECT COALESCE(sum(minutes), 0) FROM worklogs WHERE issue_id = $1) WHERE id = $1")
+            .bind(issue)
+            .execute(&self.state.db)
+            .await?;
         Ok(())
     }
 
@@ -110,7 +118,8 @@ async fn ids(state: &AppState, project: Uuid) -> anyhow::Result<(std::collection
 }
 
 pub async fn seed(state: &AppState, owner: Uuid) -> anyhow::Result<()> {
-    let user: User = sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {} FROM users WHERE id = $1", crate::auth::USER_COLUMNS))).bind(owner).fetch_one(&state.db).await?;
+    let user: User =
+        sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {} FROM users WHERE id = $1", crate::auth::USER_COLUMNS))).bind(owner).fetch_one(&state.db).await?;
     let ws = user.workspace_id;
     let mut people = vec![(owner, user.name.clone())];
     for (name, title, email) in [
@@ -147,17 +156,26 @@ pub async fn seed(state: &AppState, owner: Uuid) -> anyhow::Result<()> {
     let (web, _) = create_project_spec(
         state,
         &user,
-        NewProjectSpec { key: "WEB".into(), name: "Web Platform".into(), template: "scrum".into(), description: Some("Customer-facing web shop and accounts".into()), icon: "globe".into(), color: "#4f6bed".into() },
+        NewProjectSpec {
+            key: "WEB".into(),
+            name: "Web Platform".into(),
+            template: "scrum".into(),
+            description: Some("Customer-facing web shop and accounts".into()),
+            icon: "globe".into(),
+            color: "#4f6bed".into(),
+        },
     )
     .await?;
     let (st, ty) = ids(state, web).await?;
     let sprint1: Uuid = sqlx::query_scalar("SELECT id FROM sprints WHERE project_id = $1").bind(web).fetch_one(&state.db).await?;
-    sqlx::query("UPDATE sprints SET name = 'WEB Sprint 1', goal = 'Guest checkout works end to end', state = 'active', start_at = $2, end_at = $3 WHERE id = $1")
-        .bind(sprint1)
-        .bind(ago(21.0))
-        .bind(ago(7.0))
-        .execute(&state.db)
-        .await?;
+    sqlx::query(
+        "UPDATE sprints SET name = 'WEB Sprint 1', goal = 'Guest checkout works end to end', state = 'active', start_at = $2, end_at = $3 WHERE id = $1",
+    )
+    .bind(sprint1)
+    .bind(ago(21.0))
+    .bind(ago(7.0))
+    .execute(&state.db)
+    .await?;
     let sprint2 = new_id();
     let sprint3 = new_id();
     sqlx::query("INSERT INTO sprints (id, project_id, name, goal, state, position) VALUES ($1, $3, 'WEB Sprint 2', 'Faster pages and saved carts', 'future', 2), ($2, $3, 'WEB Sprint 3', NULL, 'future', 3)")
@@ -178,17 +196,58 @@ pub async fn seed(state: &AppState, owner: Uuid) -> anyhow::Result<()> {
         .await?;
     let (todo, doing, review, done) = (st["To do"], st["In progress"], st["In review"], st["Done"]);
     let (epic, story, task, bug, sub) = (ty["Epic"], ty["Story"], ty["Task"], ty["Bug"], ty["Sub-task"]);
-    let e_checkout = s.issue(web, 1, 30.0, "Checkout redesign", "One page checkout with fewer steps and guest purchases.", json!({"typeId": epic, "priority": "high", "startDate": ago(21.0).date_naive(), "dueDate": ago(-10.0).date_naive()})).await?;
-    let e_accounts = s.issue(web, 1, 30.0, "Accounts & sign-in", "Passwordless sign-in, profile page, saved addresses.", json!({"typeId": epic, "startDate": ago(7.0).date_naive(), "dueDate": ago(-30.0).date_naive()})).await?;
-    let e_perf = s.issue(web, 2, 29.0, "Performance", "Largest contentful paint below 2 s on mobile.", json!({"typeId": epic, "startDate": ago(3.0).date_naive(), "dueDate": ago(-24.0).date_naive()})).await?;
+    let e_checkout = s
+        .issue(
+            web,
+            1,
+            30.0,
+            "Checkout redesign",
+            "One page checkout with fewer steps and guest purchases.",
+            json!({"typeId": epic, "priority": "high", "startDate": ago(21.0).date_naive(), "dueDate": ago(-10.0).date_naive()}),
+        )
+        .await?;
+    let e_accounts = s
+        .issue(
+            web,
+            1,
+            30.0,
+            "Accounts & sign-in",
+            "Passwordless sign-in, profile page, saved addresses.",
+            json!({"typeId": epic, "startDate": ago(7.0).date_naive(), "dueDate": ago(-30.0).date_naive()}),
+        )
+        .await?;
+    let e_perf = s
+        .issue(
+            web,
+            2,
+            29.0,
+            "Performance",
+            "Largest contentful paint below 2 s on mobile.",
+            json!({"typeId": epic, "startDate": ago(3.0).date_naive(), "dueDate": ago(-24.0).date_naive()}),
+        )
+        .await?;
 
     // sprint 1 (closed): planned 3 weeks ago
     let s1: Vec<(&str, Uuid, Uuid, f64, usize, &str)> = vec![
-        ("Guest checkout without an account", story, e_checkout, 8.0, 2, "As a shopper I want to buy without creating an account so that I finish faster.\n\n**Acceptance criteria**\n\n- [x] E-mail only\n- [x] Order confirmation page\n- [ ] Offer an account afterwards"),
+        (
+            "Guest checkout without an account",
+            story,
+            e_checkout,
+            8.0,
+            2,
+            "As a shopper I want to buy without creating an account so that I finish faster.\n\n**Acceptance criteria**\n\n- [x] E-mail only\n- [x] Order confirmation page\n- [ ] Offer an account afterwards",
+        ),
         ("Address form validates postal codes per country", story, e_checkout, 5.0, 3, ""),
         ("Payment step shows the order summary", story, e_checkout, 3.0, 3, ""),
         ("Order confirmation e-mail", task, e_checkout, 3.0, 2, "Use the transactional mail template; include the order number."),
-        ("Cart total rounds wrong for 3+ items with discounts", bug, e_checkout, 2.0, 2, "**Steps to reproduce**\n\n1. Add three discounted items\n2. Open the cart\n\n**Expected** 59.97\n\n**Actual** 59.96"),
+        (
+            "Cart total rounds wrong for 3+ items with discounts",
+            bug,
+            e_checkout,
+            2.0,
+            2,
+            "**Steps to reproduce**\n\n1. Add three discounted items\n2. Open the cart\n\n**Expected** 59.97\n\n**Actual** 59.96",
+        ),
         ("Checkout analytics events", task, e_checkout, 2.0, 3, ""),
     ];
     let mut s1_ids = Vec::new();
@@ -198,14 +257,38 @@ pub async fn seed(state: &AppState, owner: Uuid) -> anyhow::Result<()> {
         s1_ids.push(id);
     }
     // sprint 1 progress
-    let script: &[(usize, f64, Uuid)] = &[(0, 20.0, doing), (4, 19.5, doing), (4, 18.0, review), (4, 17.2, done), (1, 18.5, doing), (0, 16.0, review), (0, 15.0, done), (1, 14.0, review), (1, 12.5, done), (2, 13.0, doing), (3, 12.0, doing), (3, 10.0, done), (2, 9.0, review), (2, 8.0, done)];
+    let script: &[(usize, f64, Uuid)] = &[
+        (0, 20.0, doing),
+        (4, 19.5, doing),
+        (4, 18.0, review),
+        (4, 17.2, done),
+        (1, 18.5, doing),
+        (0, 16.0, review),
+        (0, 15.0, done),
+        (1, 14.0, review),
+        (1, 12.5, done),
+        (2, 13.0, doing),
+        (3, 12.0, doing),
+        (3, 10.0, done),
+        (2, 9.0, review),
+        (2, 8.0, done),
+    ];
     for (idx, d, status) in script {
         s.change(s1_ids[*idx], 2 + idx % 2, *d, json!({"statusId": status})).await?;
     }
     s.comment(s1_ids[4], 2, 19.4, "Found it: we rounded each line before applying the discount. Fix is in review.").await?;
     s.comment(s1_ids[0], 1, 15.1, "Tested on mobile and desktop, looks great. 🎉").await?;
     // added mid-sprint
-    let late = s.issue(web, 4, 16.0, "Coupon field accepts lower-case codes", "", json!({"typeId": bug, "parentId": e_checkout, "storyPoints": 1.0, "assigneeId": p(3), "priority": "medium", "versionId": v24})).await?;
+    let late = s
+        .issue(
+            web,
+            4,
+            16.0,
+            "Coupon field accepts lower-case codes",
+            "",
+            json!({"typeId": bug, "parentId": e_checkout, "storyPoints": 1.0, "assigneeId": p(3), "priority": "medium", "versionId": v24}),
+        )
+        .await?;
     s.change(late, 1, 16.0, json!({"sprintId": sprint1})).await?;
     s.change(late, 3, 11.0, json!({"statusId": done})).await?;
     for (i, id) in s1_ids.iter().enumerate() {
@@ -214,12 +297,22 @@ pub async fn seed(state: &AppState, owner: Uuid) -> anyhow::Result<()> {
     // close sprint 1: the analytics task moves on
     s.change(s1_ids[5], 1, 7.0, json!({"sprintId": sprint2})).await?;
     let stats = json!({});
-    sqlx::query("UPDATE sprints SET state = 'closed', completed_at = $2, stats = $3 WHERE id = $1").bind(sprint1).bind(ago(7.0)).bind(stats).execute(&state.db).await?;
+    sqlx::query("UPDATE sprints SET state = 'closed', completed_at = $2, stats = $3 WHERE id = $1")
+        .bind(sprint1)
+        .bind(ago(7.0))
+        .bind(stats)
+        .execute(&state.db)
+        .await?;
     if let Ok(st) = crate::reports::sprint_stats(state, sprint1).await {
         sqlx::query("UPDATE sprints SET stats = $2 WHERE id = $1").bind(sprint1).bind(st).execute(&state.db).await?;
     }
     sqlx::query("UPDATE versions SET status = 'released', released_at = $2 WHERE id = $1").bind(v24).bind(ago(6.0)).execute(&state.db).await?;
-    sqlx::query("UPDATE sprints SET state = 'active', start_at = $2, end_at = $3 WHERE id = $1").bind(sprint2).bind(ago(6.0)).bind(ago(-8.0)).execute(&state.db).await?;
+    sqlx::query("UPDATE sprints SET state = 'active', start_at = $2, end_at = $3 WHERE id = $1")
+        .bind(sprint2)
+        .bind(ago(6.0))
+        .bind(ago(-8.0))
+        .execute(&state.db)
+        .await?;
 
     // sprint 2 (running)
     let s2: Vec<(&str, Uuid, Uuid, f64, usize, &str)> = vec![
@@ -237,13 +330,33 @@ pub async fn seed(state: &AppState, owner: Uuid) -> anyhow::Result<()> {
         s.change(id, 1, 6.2, json!({"sprintId": sprint2})).await?;
         s2_ids.push(id);
     }
-    let script2: &[(usize, f64, Uuid)] = &[(1, 5.5, doing), (1, 4.0, review), (1, 3.2, done), (7, 5.0, doing), (7, 3.5, done), (2, 4.5, doing), (2, 2.0, review), (3, 3.0, doing), (6, 2.5, doing), (6, 1.0, done), (4, 1.5, doing), (0, 1.0, doing)];
+    let script2: &[(usize, f64, Uuid)] = &[
+        (1, 5.5, doing),
+        (1, 4.0, review),
+        (1, 3.2, done),
+        (7, 5.0, doing),
+        (7, 3.5, done),
+        (2, 4.5, doing),
+        (2, 2.0, review),
+        (3, 3.0, doing),
+        (6, 2.5, doing),
+        (6, 1.0, done),
+        (4, 1.5, doing),
+        (0, 1.0, doing),
+    ];
     for (idx, d, status) in script2 {
         s.change(s2_ids[*idx], 2 + idx % 3, *d, json!({"statusId": status})).await?;
     }
     s.change(s2_ids[3], 1, 2.8, json!({"storyPoints": 13.0})).await?;
-    s.comment(s2_ids[3], 2, 2.7, "Bigger than we thought: carts must merge when someone signs in with items already in a guest cart. Re-estimated to 13.").await?;
-    s.comment(s2_ids[3], 1, 2.5, &format!("Thanks. Let's keep it in the sprint but split out the merge rules if it drags. @{} can you sketch the merge prompt?", people[4].1)).await?;
+    s.comment(s2_ids[3], 2, 2.7, "Bigger than we thought: carts must merge when someone signs in with items already in a guest cart. Re-estimated to 13.")
+        .await?;
+    s.comment(
+        s2_ids[3],
+        1,
+        2.5,
+        &format!("Thanks. Let's keep it in the sprint but split out the merge rules if it drags. @{} can you sketch the merge prompt?", people[4].1),
+    )
+    .await?;
     s.comment(s2_ids[5], 4, 0.6, "Design for the profile page is in the wiki; ping me for questions.").await?;
     for (i, id) in s2_ids.iter().enumerate() {
         s.log(*id, 2 + i % 3, 5.0 - (i as f64 * 0.5), 60 + (i as i32 * 35) % 200).await?;
@@ -291,7 +404,14 @@ pub async fn seed(state: &AppState, owner: Uuid) -> anyhow::Result<()> {
     let (ops, _) = create_project_spec(
         state,
         &user,
-        NewProjectSpec { key: "OPS".into(), name: "Operations".into(), template: "kanban".into(), description: Some("Infrastructure, releases and on-call".into()), icon: "server".into(), color: "#0e9f6e".into() },
+        NewProjectSpec {
+            key: "OPS".into(),
+            name: "Operations".into(),
+            template: "kanban".into(),
+            description: Some("Infrastructure, releases and on-call".into()),
+            icon: "server".into(),
+            color: "#0e9f6e".into(),
+        },
     )
     .await?;
     let (st, ty) = ids(state, ops).await?;
@@ -308,7 +428,16 @@ pub async fn seed(state: &AppState, owner: Uuid) -> anyhow::Result<()> {
         ("Clean up unused DNS records", "Backlog", "none", 1, ""),
     ];
     for (i, (title, status, prio, who, label)) in ops_items.iter().enumerate() {
-        let id = s.issue(ops, *who, 25.0 - i as f64 * 2.0, title, "", json!({"typeId": ty["Task"], "priority": prio, "assigneeId": p(*who), "labels": if label.is_empty() { json!([]) } else { json!([label]) }})).await?;
+        let id = s
+            .issue(
+                ops,
+                *who,
+                25.0 - i as f64 * 2.0,
+                title,
+                "",
+                json!({"typeId": ty["Task"], "priority": prio, "assigneeId": p(*who), "labels": if label.is_empty() { json!([]) } else { json!([label]) }}),
+            )
+            .await?;
         let path: &[&str] = match *status {
             "Selected" => &["Selected"],
             "In progress" => &["Selected", "In progress"],
@@ -325,11 +454,19 @@ pub async fn seed(state: &AppState, owner: Uuid) -> anyhow::Result<()> {
     let (sup, _) = create_project_spec(
         state,
         &user,
-        NewProjectSpec { key: "SUP".into(), name: "Customer Support".into(), template: "tracker".into(), description: Some("Problems customers report".into()), icon: "life-buoy".into(), color: "#e5484d".into() },
+        NewProjectSpec {
+            key: "SUP".into(),
+            name: "Customer Support".into(),
+            template: "tracker".into(),
+            description: Some("Problems customers report".into()),
+            icon: "life-buoy".into(),
+            color: "#e5484d".into(),
+        },
     )
     .await?;
     let (st, ty) = ids(state, sup).await?;
-    let fields: Vec<(Uuid, String, Value)> = sqlx::query_as("SELECT id, name, options FROM custom_fields WHERE project_id = $1").bind(sup).fetch_all(&state.db).await?;
+    let fields: Vec<(Uuid, String, Value)> =
+        sqlx::query_as("SELECT id, name, options FROM custom_fields WHERE project_id = $1").bind(sup).fetch_all(&state.db).await?;
     let severity = fields.iter().find(|f| f.1 == "Severity").map(|f| f.0).unwrap_or_default();
     let environment = fields.iter().find(|f| f.1 == "Environment").map(|f| f.0).unwrap_or_default();
     sqlx::query("INSERT INTO automation_rules (id, project_id, name, trigger, condition, actions, created_by) VALUES ($1, $2, 'Critical reports are urgent', $3, 'Severity = Critical', $4, $5)")
@@ -374,7 +511,14 @@ pub async fn seed(state: &AppState, owner: Uuid) -> anyhow::Result<()> {
     let (mkt, _) = create_project_spec(
         state,
         &user,
-        NewProjectSpec { key: "MKT".into(), name: "Spring launch".into(), template: "business".into(), description: Some("Campaign for the spring collection".into()), icon: "megaphone".into(), color: "#d97706".into() },
+        NewProjectSpec {
+            key: "MKT".into(),
+            name: "Spring launch".into(),
+            template: "business".into(),
+            description: Some("Campaign for the spring collection".into()),
+            icon: "megaphone".into(),
+            color: "#d97706".into(),
+        },
     )
     .await?;
     let (st, ty) = ids(state, mkt).await?;
@@ -390,7 +534,8 @@ pub async fn seed(state: &AppState, owner: Uuid) -> anyhow::Result<()> {
     ];
     let mut prev: Option<Uuid> = None;
     for (i, (title, start, end, status, who, money)) in plan.iter().enumerate() {
-        let mut f = json!({"typeId": ty["Task"], "assigneeId": p(*who), "startDate": ago(-(*start as f64)).date_naive(), "dueDate": ago(-(*end as f64)).date_naive()});
+        let mut f =
+            json!({"typeId": ty["Task"], "assigneeId": p(*who), "startDate": ago(-(*start as f64)).date_naive(), "dueDate": ago(-(*end as f64)).date_naive()});
         if *money > 0.0 {
             f["custom"] = json!({budget.to_string(): money});
         }

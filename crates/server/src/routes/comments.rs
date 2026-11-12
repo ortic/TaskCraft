@@ -68,7 +68,15 @@ pub async fn add(state: &AppState, actor: &Actor, issue: Uuid, body: Value) -> A
         .execute(&mut *tx)
         .await?;
     let excerpt: String = text.chars().take(200).collect();
-    issues::record(&mut tx, issue, project, actor.user, "comment", Some(&Change { field: "comment", old: Value::Null, new: json!({"id": id, "excerpt": excerpt}) })).await?;
+    issues::record(
+        &mut tx,
+        issue,
+        project,
+        actor.user,
+        "comment",
+        Some(&Change { field: "comment", old: Value::Null, new: json!({"id": id, "excerpt": excerpt}) }),
+    )
+    .await?;
     if let Some(u) = actor.user {
         issues::watch(&mut tx, issue, u).await?;
     }
@@ -79,7 +87,14 @@ pub async fn add(state: &AppState, actor: &Actor, issue: Uuid, body: Value) -> A
     let mut e = Event::new(actor.workspace, "comment").project(project).issue(issue, &s.key);
     e.actor_id = actor.user;
     events::publish(state, e).await;
-    crate::webhooks::enqueue(state, actor.workspace, Some(project), "comment.created", json!({"issue": {"id": s.id, "key": s.key, "title": s.title}, "comment": {"id": id, "text": text}})).await;
+    crate::webhooks::enqueue(
+        state,
+        actor.workspace,
+        Some(project),
+        "comment.created",
+        json!({"issue": {"id": s.id, "key": s.key, "title": s.title}, "comment": {"id": id, "text": text}}),
+    )
+    .await;
     crate::automation::run_commented(state, actor, &s).await;
     Ok(id)
 }
@@ -101,7 +116,12 @@ impl CommentReq {
     }
 }
 
-pub async fn create(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Json(req): Json<CommentReq>) -> ApiResult<(StatusCode, Json<Value>)> {
+pub async fn create(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(key): Path<String>,
+    Json(req): Json<CommentReq>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
     let (issue, _, _) = issue_for(&state, &user, &key, Role::Viewer).await?;
     let id = add(&state, &Actor::of(&user), issue, req.doc()?).await?;
     Ok((StatusCode::CREATED, Json(json!({"id": id}))))
@@ -143,7 +163,10 @@ pub async fn delete(State(state): State<AppState>, CurrentUser(user): CurrentUse
 pub async fn react(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>, Json(req): Json<Value>) -> ApiResult<StatusCode> {
     let (issue, _) = comment_issue(&state, id).await?;
     let (_, project, _) = issue_for(&state, &user, &issue.to_string(), Role::Viewer).await?;
-    let reaction = req["reaction"].as_str().filter(|r| matches!(*r, "thumbs-up" | "heart" | "check" | "eyes" | "party")).ok_or_else(|| ApiError::bad("unknown reaction"))?;
+    let reaction = req["reaction"]
+        .as_str()
+        .filter(|r| matches!(*r, "thumbs-up" | "heart" | "check" | "eyes" | "party"))
+        .ok_or_else(|| ApiError::bad("unknown reaction"))?;
     let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM comment_reactions WHERE comment_id = $1 AND user_id = $2 AND reaction = $3)")
         .bind(id)
         .bind(user.id)
@@ -151,9 +174,19 @@ pub async fn react(State(state): State<AppState>, CurrentUser(user): CurrentUser
         .fetch_one(&state.db)
         .await?;
     if exists {
-        sqlx::query("DELETE FROM comment_reactions WHERE comment_id = $1 AND user_id = $2 AND reaction = $3").bind(id).bind(user.id).bind(reaction).execute(&state.db).await?;
+        sqlx::query("DELETE FROM comment_reactions WHERE comment_id = $1 AND user_id = $2 AND reaction = $3")
+            .bind(id)
+            .bind(user.id)
+            .bind(reaction)
+            .execute(&state.db)
+            .await?;
     } else {
-        sqlx::query("INSERT INTO comment_reactions (comment_id, user_id, reaction) VALUES ($1, $2, $3)").bind(id).bind(user.id).bind(reaction).execute(&state.db).await?;
+        sqlx::query("INSERT INTO comment_reactions (comment_id, user_id, reaction) VALUES ($1, $2, $3)")
+            .bind(id)
+            .bind(user.id)
+            .bind(reaction)
+            .execute(&state.db)
+            .await?;
     }
     events::publish(&state, Event::new(user.workspace_id, "comment").project(project).actor(user.id)).await;
     Ok(StatusCode::NO_CONTENT)
@@ -216,7 +249,12 @@ async fn refresh_spent(state: &AppState, issue: Uuid) -> ApiResult<()> {
     Ok(())
 }
 
-pub async fn log_work(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Json(req): Json<Value>) -> ApiResult<(StatusCode, Json<Value>)> {
+pub async fn log_work(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(key): Path<String>,
+    Json(req): Json<Value>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
     let (id, project, _) = issue_for(&state, &user, &key, Role::Member).await?;
     let minutes = match &req["minutes"] {
         Value::Number(n) => n.as_f64().map(|m| m.round() as i32),
@@ -236,10 +274,22 @@ pub async fn log_work(State(state): State<AppState>, CurrentUser(user): CurrentU
         .bind(req["note"].as_str().map(str::trim).filter(|n| !n.is_empty()))
         .execute(&mut *tx)
         .await?;
-    issues::record(&mut tx, id, project, Some(user.id), "worklog", Some(&Change { field: "worklog", old: Value::Null, new: json!({"minutes": minutes, "date": date}) })).await?;
+    issues::record(
+        &mut tx,
+        id,
+        project,
+        Some(user.id),
+        "worklog",
+        Some(&Change { field: "worklog", old: Value::Null, new: json!({"minutes": minutes, "date": date}) }),
+    )
+    .await?;
     // remaining estimate goes down with the time spent (never below zero)
     if req["reduceEstimate"].as_bool().unwrap_or(false) {
-        sqlx::query("UPDATE issues SET estimate_minutes = GREATEST(estimate_minutes - $2, 0) WHERE id = $1 AND estimate_minutes IS NOT NULL").bind(id).bind(minutes).execute(&mut *tx).await?;
+        sqlx::query("UPDATE issues SET estimate_minutes = GREATEST(estimate_minutes - $2, 0) WHERE id = $1 AND estimate_minutes IS NOT NULL")
+            .bind(id)
+            .bind(minutes)
+            .execute(&mut *tx)
+            .await?;
     }
     tx.commit().await?;
     refresh_spent(&state, id).await?;

@@ -93,7 +93,15 @@ async fn link_page(state: &AppState, user: &User, issue: Uuid, project: Uuid, ur
         .bind(user.id)
         .execute(&mut *tx)
         .await?;
-    issues::record(&mut tx, issue, project, Some(user.id), "link", Some(&Change { field: "webLink", old: Value::Null, new: json!({"url": url, "title": title}) })).await?;
+    issues::record(
+        &mut tx,
+        issue,
+        project,
+        Some(user.id),
+        "link",
+        Some(&Change { field: "webLink", old: Value::Null, new: json!({"url": url, "title": title}) }),
+    )
+    .await?;
     tx.commit().await?;
     events::publish(state, Event::new(user.workspace_id, "issue").project(project).issue(issue, "").actor(user.id)).await;
     Ok(())
@@ -131,7 +139,12 @@ fn parent_of(p: &super::projects::ProjectRow, req: &NewPage) -> Option<Uuid> {
 }
 
 /// Writes a wiki page for an issue (a specification to fill in) and links it.
-pub async fn issue_page(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Json(req): Json<NewPage>) -> ApiResult<(StatusCode, Json<Value>)> {
+pub async fn issue_page(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(key): Path<String>,
+    Json(req): Json<NewPage>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
     let (id, project, _) = issue_for(&state, &user, &key, Role::Member).await?;
     let (p, _) = by_key(&state, &user, &project.to_string(), Role::Viewer).await?;
     let c = wikicraft::require(&state, &user).await?;
@@ -155,7 +168,12 @@ pub async fn issue_page(State(state): State<AppState>, CurrentUser(user): Curren
 }
 
 /// A sprint review page: goal, figures, what was finished and what wasn't.
-pub async fn sprint_page(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>, Json(req): Json<NewPage>) -> ApiResult<(StatusCode, Json<Value>)> {
+pub async fn sprint_page(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<NewPage>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
     let project = crate::reports::sprint_project(&state, id).await?;
     access::require(&state, &user, project, Role::Member).await?;
     let (p, _) = by_key(&state, &user, &project.to_string(), Role::Viewer).await?;
@@ -216,7 +234,12 @@ pub async fn sprint_page(State(state): State<AppState>, CurrentUser(user): Curre
 }
 
 /// Release notes for a version, grouped by issue type.
-pub async fn version_page(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>, Json(req): Json<NewPage>) -> ApiResult<(StatusCode, Json<Value>)> {
+pub async fn version_page(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<NewPage>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
     let row: Option<(Uuid, String, Option<String>, Option<chrono::NaiveDate>)> =
         sqlx::query_as("SELECT v.project_id, v.name, v.description, v.release_date FROM versions v JOIN projects p ON p.id = v.project_id WHERE v.id = $1 AND p.workspace_id = $2")
             .bind(id)
@@ -287,7 +310,12 @@ pub async fn linked_issues(State(state): State<AppState>, CurrentUser(user): Cur
 }
 
 /// Links an existing page to an issue.
-pub async fn add_issue_page(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Json(req): Json<ByUrl>) -> ApiResult<(StatusCode, Json<Value>)> {
+pub async fn add_issue_page(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(key): Path<String>,
+    Json(req): Json<ByUrl>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
     let (id, project, _) = issue_for(&state, &user, &key, Role::Member).await?;
     let c = wikicraft::require(&state, &user).await?;
     let page = wikicraft::lookup(&state, &c, &req.url).await?.ok_or_else(|| ApiError::bad("that isn't a WikiCraft page you can open"))?;

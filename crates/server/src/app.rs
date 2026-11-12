@@ -67,9 +67,7 @@ impl AppState {
             .timeout(std::time::Duration::from_secs(15))
             .redirect(reqwest::redirect::Policy::none())
             .build()?;
-        Ok(AppState {
-            inner: Arc::new(Inner { db, config, blobs, hub: Hub::new(), http, shutting_down: Default::default() }),
-        })
+        Ok(AppState { inner: Arc::new(Inner { db, config, blobs, hub: Hub::new(), http, shutting_down: Default::default() }) })
     }
 }
 

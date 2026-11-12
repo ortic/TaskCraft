@@ -83,13 +83,12 @@ pub async fn context_with(state: &AppState, workspace: Uuid, user: Uuid, visible
     let mut custom = HashMap::new();
     let unknown: Vec<String> = taskcraft_tql::fields(q).into_iter().filter(|f| !is_builtin(f)).collect();
     if !unknown.is_empty() {
-        let rows: Vec<(Uuid, String, String, Json)> = sqlx::query_as(
-            "SELECT id, lower(name), kind, options FROM custom_fields WHERE project_id = ANY($1) AND lower(name) = ANY($2)",
-        )
-        .bind(&visible)
-        .bind(&unknown)
-        .fetch_all(&state.db)
-        .await?;
+        let rows: Vec<(Uuid, String, String, Json)> =
+            sqlx::query_as("SELECT id, lower(name), kind, options FROM custom_fields WHERE project_id = ANY($1) AND lower(name) = ANY($2)")
+                .bind(&visible)
+                .bind(&unknown)
+                .fetch_all(&state.db)
+                .await?;
         for (id, name, kind, options) in rows {
             let def = custom.entry(name).or_insert_with(|| FieldDef { ids: vec![], kind: kind.clone(), options: HashMap::new() });
             def.ids.push(id.to_string());
@@ -104,10 +103,49 @@ pub async fn context_with(state: &AppState, workspace: Uuid, user: Uuid, visible
 }
 
 const BUILTIN: &[&str] = &[
-    "project", "key", "issue", "id", "title", "summary", "description", "text", "comment", "comments", "type", "issuetype", "status", "category",
-    "statuscategory", "priority", "assignee", "reporter", "creator", "labels", "label", "sprint", "version", "fixversion", "release", "component",
-    "parent", "epic", "points", "storypoints", "estimate", "spent", "created", "updated", "resolved", "due", "duedate", "start", "startdate",
-    "watcher", "watchers", "blocked", "rank",
+    "project",
+    "key",
+    "issue",
+    "id",
+    "title",
+    "summary",
+    "description",
+    "text",
+    "comment",
+    "comments",
+    "type",
+    "issuetype",
+    "status",
+    "category",
+    "statuscategory",
+    "priority",
+    "assignee",
+    "reporter",
+    "creator",
+    "labels",
+    "label",
+    "sprint",
+    "version",
+    "fixversion",
+    "release",
+    "component",
+    "parent",
+    "epic",
+    "points",
+    "storypoints",
+    "estimate",
+    "spent",
+    "created",
+    "updated",
+    "resolved",
+    "due",
+    "duedate",
+    "start",
+    "startdate",
+    "watcher",
+    "watchers",
+    "blocked",
+    "rank",
 ];
 
 fn is_builtin(f: &str) -> bool {
@@ -180,8 +218,7 @@ fn expr(qb: &mut Qb, ctx: &Ctx, e: &Expr) -> ApiResult<()> {
 
 /// Words for a prefix search: `log in` → `log:* & in:*`.
 fn tsquery(text: &str) -> Option<String> {
-    let words: Vec<String> =
-        text.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).take(12).map(|w| format!("{}:*", w.to_lowercase())).collect();
+    let words: Vec<String> = text.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).take(12).map(|w| format!("{}:*", w.to_lowercase())).collect();
     (!words.is_empty()).then(|| words.join(" & "))
 }
 
@@ -939,13 +976,7 @@ mod tests {
     use super::*;
 
     fn ctx() -> Ctx {
-        Ctx {
-            user: Uuid::nil(),
-            workspace: Uuid::nil(),
-            visible: vec![],
-            now: Utc.with_ymd_and_hms(2026, 11, 12, 10, 30, 0).unwrap(),
-            custom: HashMap::new(),
-        }
+        Ctx { user: Uuid::nil(), workspace: Uuid::nil(), visible: vec![], now: Utc.with_ymd_and_hms(2026, 11, 12, 10, 30, 0).unwrap(), custom: HashMap::new() }
     }
 
     fn sql(q: &str) -> String {

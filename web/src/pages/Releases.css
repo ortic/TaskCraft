@@ -1,0 +1,60 @@
+/* Releases page (prefix rel-) */
+.rel-summary { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--text-soft); font-size: 13px; margin: -6px 0 18px; }
+.rel-summary-overdue { display: inline-flex; align-items: center; gap: 4px; color: var(--danger); font-weight: 600; }
+
+.rel-section { margin-bottom: 26px; }
+.rel-section-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); margin: 0 0 8px; }
+.rel-list { display: flex; flex-direction: column; gap: 10px; }
+.rel-none { color: var(--text-faint); font-size: 13px; padding: 10px 2px; }
+
+.rel-card { border: 1px solid var(--border); border-radius: 10px; background: var(--bg); padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; }
+.rel-card.rel-overdue { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); box-shadow: inset 3px 0 0 var(--danger); }
+.rel-card.rel-archived { background: var(--bg-soft); }
+.rel-card.rel-archived .rel-name { color: var(--text-soft); }
+
+.rel-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rel-toggle { margin-inline-start: -4px; }
+.rel-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.rel-title h3 { margin: 0; font-size: 15px; min-width: 0; }
+.rel-name { border: 0; background: transparent; padding: 0; font: inherit; font-weight: 650; color: var(--text); cursor: pointer; text-align: start; overflow-wrap: anywhere; }
+.rel-name:hover { color: var(--accent-text); }
+.rel-menu { padding: 4px; display: flex; flex-direction: column; }
+.rel-menu .menu-item:disabled { opacity: .55; cursor: default; }
+
+.rel-dates { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--text-soft); padding-inline-start: 26px; }
+.rel-dates > svg { color: var(--text-faint); margin-inline-end: -8px; }
+.rel-date-overdue { color: var(--danger); font-weight: 600; }
+.rel-days { font-weight: 500; }
+.rel-desc { margin: 0; padding-inline-start: 26px; color: var(--text-soft); font-size: 13.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.rel-progress { padding-inline-start: 26px; display: flex; flex-direction: column; gap: 6px; }
+.rel-bar { height: 8px; border-radius: 4px; }
+.rel-counts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12.5px; color: var(--text-soft); }
+.rel-count { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.rel-count b { color: var(--text); }
+.rel-pct { margin-inline-start: auto; font-weight: 600; color: var(--text); }
+.rel-dot-done { background: var(--cat-done); }
+.rel-dot-progress { background: var(--cat-progress); }
+.rel-dot-todo { background: var(--bg-hover); box-shadow: inset 0 0 0 1px var(--border-strong); }
+
+.rel-issues { margin: 4px 0 0 26px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.rel-issue { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 38px; padding: 4px 10px; border: 0; border-bottom: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; text-align: start; font: inherit; }
+.rel-issue:last-child { border-bottom: 0; }
+.rel-issue:hover { background: var(--bg-soft); }
+.rel-issue-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rel-issue-done { color: var(--text-soft); text-decoration: line-through; text-decoration-color: var(--text-faint); }
+.rel-issues .loading { padding: 16px; }
+.rel-issues .rel-none { padding: 12px; }
+
+.rel-date-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.rel-warn { color: var(--warning); }
+.rel-release-summary { margin: 0 0 12px; }
+
+@media (max-width: 760px) {
+  .rel-card { padding: 10px 10px 12px; }
+  .rel-dates, .rel-desc, .rel-progress { padding-inline-start: 0; }
+  .rel-issues { margin-inline-start: 0; }
+  .rel-issue .lozenge { max-width: 90px; }
+  .rel-date-fields { grid-template-columns: 1fr; gap: 0; }
+  .rel-pct { margin-inline-start: 0; }
+}

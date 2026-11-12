@@ -409,9 +409,19 @@ pub async fn create(state: &AppState, actor: &Actor, mut n: NewIssue) -> ApiResu
             .await?
             .ok_or_else(|| ApiError::bad("the project has no issue types"))?,
     };
-    let type_ok: Option<Value> =
-        sqlx::query_scalar("SELECT template FROM issue_types WHERE id = $1 AND project_id = $2").bind(type_id).bind(n.project).fetch_optional(&mut *tx).await?.flatten().map(Some).unwrap_or(None);
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM issue_types WHERE id = $1 AND project_id = $2)").bind(type_id).bind(n.project).fetch_one(&mut *tx).await?;
+    let type_ok: Option<Value> = sqlx::query_scalar("SELECT template FROM issue_types WHERE id = $1 AND project_id = $2")
+        .bind(type_id)
+        .bind(n.project)
+        .fetch_optional(&mut *tx)
+        .await?
+        .flatten()
+        .map(Some)
+        .unwrap_or(None);
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM issue_types WHERE id = $1 AND project_id = $2)")
+        .bind(type_id)
+        .bind(n.project)
+        .fetch_one(&mut *tx)
+        .await?;
     if !exists {
         return Err(ApiError::bad("unknown issue type for this project"));
     }
@@ -501,7 +511,9 @@ fn opt_date(v: &Value, field: &str) -> ApiResult<Option<NaiveDate>> {
     match v {
         Value::Null => Ok(None),
         Value::String(s) if s.is_empty() => Ok(None),
-        Value::String(s) => NaiveDate::parse_from_str(s.get(..10).unwrap_or(s), "%Y-%m-%d").map(Some).map_err(|_| ApiError::bad(format!("{field} must be a date (YYYY-MM-DD)"))),
+        Value::String(s) => {
+            NaiveDate::parse_from_str(s.get(..10).unwrap_or(s), "%Y-%m-%d").map(Some).map_err(|_| ApiError::bad(format!("{field} must be a date (YYYY-MM-DD)")))
+        }
         _ => Err(ApiError::bad(format!("{field} must be a date or null"))),
     }
 }
@@ -509,9 +521,13 @@ fn opt_date(v: &Value, field: &str) -> ApiResult<Option<NaiveDate>> {
 fn opt_f64(v: &Value, field: &str) -> ApiResult<Option<f64>> {
     match v {
         Value::Null => Ok(None),
-        Value::Number(n) => n.as_f64().filter(|n| n.is_finite() && *n >= 0.0 && *n < 1e6).map(Some).ok_or_else(|| ApiError::bad(format!("{field} is out of range"))),
+        Value::Number(n) => {
+            n.as_f64().filter(|n| n.is_finite() && *n >= 0.0 && *n < 1e6).map(Some).ok_or_else(|| ApiError::bad(format!("{field} is out of range")))
+        }
         Value::String(s) if s.trim().is_empty() => Ok(None),
-        Value::String(s) => s.trim().parse::<f64>().ok().filter(|n| n.is_finite() && *n >= 0.0).map(Some).ok_or_else(|| ApiError::bad(format!("{field} must be a number"))),
+        Value::String(s) => {
+            s.trim().parse::<f64>().ok().filter(|n| n.is_finite() && *n >= 0.0).map(Some).ok_or_else(|| ApiError::bad(format!("{field} must be a number")))
+        }
         _ => Err(ApiError::bad(format!("{field} must be a number or null"))),
     }
 }
@@ -590,20 +606,30 @@ pub async fn apply(
             "typeId" => {
                 let t = opt_uuid(v, k)?.ok_or_else(|| ApiError::bad("an issue needs a type"))?;
                 if t != cur.type_id {
-                    let level: Option<i16> =
-                        sqlx::query_scalar("SELECT level FROM issue_types WHERE id = $1 AND project_id = $2").bind(t).bind(project).fetch_optional(&mut **tx).await?;
+                    let level: Option<i16> = sqlx::query_scalar("SELECT level FROM issue_types WHERE id = $1 AND project_id = $2")
+                        .bind(t)
+                        .bind(project)
+                        .fetch_optional(&mut **tx)
+                        .await?;
                     if level.is_none() {
                         return Err(ApiError::bad("unknown issue type for this project"));
                     }
-                    changes.push(Change { field: "type", old: named(tx, "issue_types", Some(cur.type_id)).await?, new: named(tx, "issue_types", Some(t)).await? });
+                    changes.push(Change {
+                        field: "type",
+                        old: named(tx, "issue_types", Some(cur.type_id)).await?,
+                        new: named(tx, "issue_types", Some(t)).await?,
+                    });
                     sets.push(("type_id", SqlVal::Uuid(Some(t))));
                 }
             }
             "statusId" => {
                 let s = opt_uuid(v, k)?.ok_or_else(|| ApiError::bad("an issue needs a status"))?;
                 if s != cur.status_id {
-                    let row: Option<(String, String)> =
-                        sqlx::query_as("SELECT name, category FROM statuses WHERE id = $1 AND project_id = $2").bind(s).bind(project).fetch_optional(&mut **tx).await?;
+                    let row: Option<(String, String)> = sqlx::query_as("SELECT name, category FROM statuses WHERE id = $1 AND project_id = $2")
+                        .bind(s)
+                        .bind(project)
+                        .fetch_optional(&mut **tx)
+                        .await?;
                     let (name, category) = row.ok_or_else(|| ApiError::bad("unknown status for this project"))?;
                     check_transition(tx, project, cur.status_id, s, actor).await?;
                     let (old_name, old_cat): (String, String) =
@@ -691,8 +717,11 @@ pub async fn apply(
                 let s = opt_uuid(v, k)?;
                 if s != cur.sprint_id {
                     if let Some(s) = s {
-                        let st: Option<String> =
-                            sqlx::query_scalar("SELECT state FROM sprints WHERE id = $1 AND project_id = $2").bind(s).bind(project).fetch_optional(&mut **tx).await?;
+                        let st: Option<String> = sqlx::query_scalar("SELECT state FROM sprints WHERE id = $1 AND project_id = $2")
+                            .bind(s)
+                            .bind(project)
+                            .fetch_optional(&mut **tx)
+                            .await?;
                         match st.as_deref() {
                             None => return Err(ApiError::bad("unknown sprint for this project")),
                             Some("closed") => return Err(ApiError::bad("the sprint is closed")),
@@ -712,11 +741,12 @@ pub async fn apply(
                 };
                 if x != old {
                     if let Some(x) = x {
-                        let ok: bool = sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT EXISTS (SELECT 1 FROM {table} WHERE id = $1 AND project_id = $2)")))
-                            .bind(x)
-                            .bind(project)
-                            .fetch_one(&mut **tx)
-                            .await?;
+                        let ok: bool =
+                            sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT EXISTS (SELECT 1 FROM {table} WHERE id = $1 AND project_id = $2)")))
+                                .bind(x)
+                                .bind(project)
+                                .fetch_one(&mut **tx)
+                                .await?;
                         if !ok {
                             return Err(ApiError::bad(format!("unknown {field} for this project")));
                         }
@@ -772,11 +802,12 @@ pub async fn apply(
                 let mut merged = cur.custom.as_object().cloned().unwrap_or_default();
                 for (fid, val) in obj {
                     let fid_uuid: Uuid = fid.parse().map_err(|_| ApiError::bad("custom field ids must be ids"))?;
-                    let def: Option<(String, String, Value)> = sqlx::query_as("SELECT name, kind, options FROM custom_fields WHERE id = $1 AND project_id = $2")
-                        .bind(fid_uuid)
-                        .bind(project)
-                        .fetch_optional(&mut **tx)
-                        .await?;
+                    let def: Option<(String, String, Value)> =
+                        sqlx::query_as("SELECT name, kind, options FROM custom_fields WHERE id = $1 AND project_id = $2")
+                            .bind(fid_uuid)
+                            .bind(project)
+                            .fetch_optional(&mut **tx)
+                            .await?;
                     let (name, kind, options) = def.ok_or_else(|| ApiError::bad("unknown custom field for this project"))?;
                     let val = custom_value(&kind, &options, val, &name)?;
                     let old = merged.get(fid).cloned().unwrap_or(Value::Null);
@@ -836,7 +867,10 @@ enum SqlVal {
 async fn parent_ref(tx: &mut Transaction<'_, Postgres>, id: Option<Uuid>) -> ApiResult<Value> {
     let Some(id) = id else { return Ok(Value::Null) };
     let r: Option<(String, i32, String)> =
-        sqlx::query_as("SELECT p.key, i.number, i.title FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1").bind(id).fetch_optional(&mut **tx).await?;
+        sqlx::query_as("SELECT p.key, i.number, i.title FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1")
+            .bind(id)
+            .fetch_optional(&mut **tx)
+            .await?;
     Ok(r.map(|(k, n, t)| json!({"id": id, "key": format!("{k}-{n}"), "name": t})).unwrap_or(Value::Null))
 }
 
@@ -886,8 +920,11 @@ async fn check_transition(tx: &mut Transaction<'_, Postgres>, project: Uuid, fro
     if allowed {
         return Ok(());
     }
-    let names: (String, String) =
-        sqlx::query_as("SELECT (SELECT name FROM statuses WHERE id = $1), (SELECT name FROM statuses WHERE id = $2)").bind(from).bind(to).fetch_one(&mut **tx).await?;
+    let names: (String, String) = sqlx::query_as("SELECT (SELECT name FROM statuses WHERE id = $1), (SELECT name FROM statuses WHERE id = $2)")
+        .bind(from)
+        .bind(to)
+        .fetch_one(&mut **tx)
+        .await?;
     Err(ApiError::BadRequest(format!("the workflow doesn't allow moving from {} to {}", names.0, names.1)))
 }
 
@@ -934,7 +971,11 @@ fn custom_value(kind: &str, options: &Value, v: &Value, name: &str) -> ApiResult
 
 /// Updates an issue on behalf of `actor` (permission already checked) and runs the follow-ups.
 pub async fn update(state: &AppState, actor: &Actor, id: Uuid, patch: &Map<String, Value>) -> ApiResult<(Summary, Vec<Change>)> {
-    let project: Uuid = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1 AND deleted_at IS NULL").bind(id).fetch_optional(&state.db).await?.ok_or(ApiError::NotFound("issue"))?;
+    let project: Uuid = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1 AND deleted_at IS NULL")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(ApiError::NotFound("issue"))?;
     let mut tx = state.db.begin().await?;
     let changes = apply(state, &mut tx, actor, id, project, patch, false).await?;
     tx.commit().await?;
@@ -974,7 +1015,11 @@ pub async fn move_issue(
     after: Option<Uuid>,
     before: Option<Uuid>,
 ) -> ApiResult<Summary> {
-    let project: Uuid = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1 AND deleted_at IS NULL").bind(id).fetch_optional(&state.db).await?.ok_or(ApiError::NotFound("issue"))?;
+    let project: Uuid = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1 AND deleted_at IS NULL")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(ApiError::NotFound("issue"))?;
     let mut patch = Map::new();
     if let Some(s) = status {
         patch.insert("statusId".into(), json!(s));

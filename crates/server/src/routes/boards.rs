@@ -35,8 +35,9 @@ async fn issues_where(state: &AppState, user: &User, project: Uuid, q: &str, ext
     let parsed = crate::query::parse(q)?;
     let mut ctx = crate::query::context(state, user, &parsed).await?;
     ctx.visible = vec![project];
-    let mut qb: QueryBuilder<sqlx::Postgres> =
-        QueryBuilder::new("SELECT i.id FROM issues i JOIN projects p ON p.id = i.project_id JOIN statuses s ON s.id = i.status_id JOIN issue_types it ON it.id = i.type_id WHERE");
+    let mut qb: QueryBuilder<sqlx::Postgres> = QueryBuilder::new(
+        "SELECT i.id FROM issues i JOIN projects p ON p.id = i.project_id JOIN statuses s ON s.id = i.status_id JOIN issue_types it ON it.id = i.type_id WHERE",
+    );
     crate::query::push_where(&mut qb, &ctx, &parsed)?;
     extra(&mut qb);
     crate::query::push_order(&mut qb, &ctx, &parsed.order, "i.rank, i.id")?;
@@ -75,7 +76,10 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
         .filter_map(|s| s.as_str().and_then(|s| s.parse().ok()))
         .collect();
     let sprints: Vec<(Uuid, String, Option<String>, Option<DateTime<Utc>>, Option<DateTime<Utc>>)> =
-        sqlx::query_as("SELECT id, name, goal, start_at, end_at FROM sprints WHERE project_id = $1 AND state = 'active' ORDER BY start_at").bind(project).fetch_all(&state.db).await?;
+        sqlx::query_as("SELECT id, name, goal, start_at, end_at FROM sprints WHERE project_id = $1 AND state = 'active' ORDER BY start_at")
+            .bind(project)
+            .fetch_all(&state.db)
+            .await?;
     let (issues, sprint) = if kind == "scrum" {
         let chosen = bq.sprint.filter(|s| sprints.iter().any(|x| x.0 == *s)).or(sprints.first().map(|s| s.0));
         match chosen {
@@ -115,10 +119,16 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
     })))
 }
 
-pub async fn create(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Json(req): Json<Value>) -> ApiResult<(StatusCode, Json<Value>)> {
+pub async fn create(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(key): Path<String>,
+    Json(req): Json<Value>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
     let (p, _) = by_key(&state, &user, &key, Role::Admin).await?;
     let kind = req["kind"].as_str().filter(|k| matches!(*k, "kanban" | "scrum")).unwrap_or("kanban");
-    let statuses: Vec<(Uuid, String)> = sqlx::query_as("SELECT id, name FROM statuses WHERE project_id = $1 ORDER BY position").bind(p.id).fetch_all(&state.db).await?;
+    let statuses: Vec<(Uuid, String)> =
+        sqlx::query_as("SELECT id, name FROM statuses WHERE project_id = $1 ORDER BY position").bind(p.id).fetch_all(&state.db).await?;
     let config = json!({
         "columns": statuses.iter().map(|(id, n)| json!({"id": new_id(), "name": n, "statusIds": [id], "wipLimit": null})).collect::<Vec<_>>(),
         "swimlanes": "none",
@@ -231,7 +241,12 @@ async fn sprint_for(state: &AppState, user: &User, id: Uuid, min: Role) -> ApiRe
 }
 
 /// Sprints (open ones with their issues) and the backlog, in rank order.
-pub async fn backlog(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Query(bq): Query<BoardQuery>) -> ApiResult<Json<Value>> {
+pub async fn backlog(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(key): Path<String>,
+    Query(bq): Query<BoardQuery>,
+) -> ApiResult<Json<Value>> {
     let (p, role) = by_key(&state, &user, &key, Role::Viewer).await?;
     let sprints: Vec<SprintRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {SPRINT_COLS} FROM sprints WHERE project_id = $1 AND state <> 'closed' ORDER BY state = 'active' DESC, position, created_at"
@@ -277,13 +292,19 @@ pub async fn list_sprints(State(state): State<AppState>, CurrentUser(user): Curr
 
 fn ts(v: &Value) -> Option<DateTime<Utc>> {
     let s = v.as_str()?;
-    DateTime::parse_from_rfc3339(s)
-        .map(|d| d.with_timezone(&Utc))
-        .ok()
-        .or_else(|| chrono::NaiveDate::parse_from_str(s.get(..10).unwrap_or(s), "%Y-%m-%d").ok().map(|d| DateTime::from_naive_utc_and_offset(d.and_hms_opt(9, 0, 0).unwrap_or_default(), Utc)))
+    DateTime::parse_from_rfc3339(s).map(|d| d.with_timezone(&Utc)).ok().or_else(|| {
+        chrono::NaiveDate::parse_from_str(s.get(..10).unwrap_or(s), "%Y-%m-%d")
+            .ok()
+            .map(|d| DateTime::from_naive_utc_and_offset(d.and_hms_opt(9, 0, 0).unwrap_or_default(), Utc))
+    })
 }
 
-pub async fn create_sprint(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Json(req): Json<Value>) -> ApiResult<(StatusCode, Json<Value>)> {
+pub async fn create_sprint(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(key): Path<String>,
+    Json(req): Json<Value>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
     let (p, _) = by_key(&state, &user, &key, Role::Member).await?;
     let n: i64 = sqlx::query_scalar("SELECT count(*) FROM sprints WHERE project_id = $1").bind(p.id).fetch_one(&state.db).await?;
     let name = req["name"].as_str().map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(|| format!("{} Sprint {}", p.key, n + 1));
@@ -301,13 +322,22 @@ pub async fn create_sprint(State(state): State<AppState>, CurrentUser(user): Cur
     Ok((StatusCode::CREATED, Json(json!({"id": id, "name": name}))))
 }
 
-pub async fn update_sprint(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>, Json(req): Json<Value>) -> ApiResult<StatusCode> {
+pub async fn update_sprint(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<Value>,
+) -> ApiResult<StatusCode> {
     let s = sprint_for(&state, &user, id, Role::Member).await?;
     if let Some(n) = req["name"].as_str().map(str::trim).filter(|n| !n.is_empty()) {
         sqlx::query("UPDATE sprints SET name = $2 WHERE id = $1").bind(id).bind(n).execute(&state.db).await?;
     }
     if req.get("goal").is_some() {
-        sqlx::query("UPDATE sprints SET goal = $2 WHERE id = $1").bind(id).bind(req["goal"].as_str().filter(|g| !g.trim().is_empty())).execute(&state.db).await?;
+        sqlx::query("UPDATE sprints SET goal = $2 WHERE id = $1")
+            .bind(id)
+            .bind(req["goal"].as_str().filter(|g| !g.trim().is_empty()))
+            .execute(&state.db)
+            .await?;
     }
     if req.get("startAt").is_some() {
         sqlx::query("UPDATE sprints SET start_at = $2 WHERE id = $1").bind(id).bind(ts(&req["startAt"])).execute(&state.db).await?;
@@ -319,12 +349,18 @@ pub async fn update_sprint(State(state): State<AppState>, CurrentUser(user): Cur
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn start_sprint(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>, Json(req): Json<Value>) -> ApiResult<Json<Value>> {
+pub async fn start_sprint(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<Value>,
+) -> ApiResult<Json<Value>> {
     let s = sprint_for(&state, &user, id, Role::Member).await?;
     if s.state != "future" {
         return Err(ApiError::bad("only planned sprints can start"));
     }
-    let active: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM sprints WHERE project_id = $1 AND state = 'active')").bind(s.project_id).fetch_one(&state.db).await?;
+    let active: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM sprints WHERE project_id = $1 AND state = 'active')").bind(s.project_id).fetch_one(&state.db).await?;
     if active {
         return Err(ApiError::bad("another sprint is running: complete it first"));
     }
@@ -345,7 +381,12 @@ pub async fn start_sprint(State(state): State<AppState>, CurrentUser(user): Curr
 
 /// Completes the active sprint; unfinished issues move to `moveTo` (a planned sprint id,
 /// `new` for a new sprint, or the backlog).
-pub async fn complete_sprint(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>, Json(req): Json<Value>) -> ApiResult<Json<Value>> {
+pub async fn complete_sprint(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<Value>,
+) -> ApiResult<Json<Value>> {
     let s = sprint_for(&state, &user, id, Role::Member).await?;
     if s.state != "active" {
         return Err(ApiError::bad("only the running sprint can be completed"));
@@ -395,7 +436,8 @@ pub async fn complete_sprint(State(state): State<AppState>, CurrentUser(user): C
     stats["moved"] = json!(unfinished.len());
     sqlx::query("UPDATE sprints SET stats = $2 WHERE id = $1").bind(id).bind(&stats).execute(&state.db).await?;
     events::publish(&state, Event::new(user.workspace_id, "sprint").project(s.project_id).actor(user.id)).await;
-    crate::webhooks::enqueue(&state, user.workspace_id, Some(s.project_id), "sprint.completed", json!({"sprint": {"id": id, "name": s.name}, "stats": stats})).await;
+    crate::webhooks::enqueue(&state, user.workspace_id, Some(s.project_id), "sprint.completed", json!({"sprint": {"id": id, "name": s.name}, "stats": stats}))
+        .await;
     Ok(Json(json!({"moved": unfinished.len(), "movedTo": target, "stats": stats})))
 }
 

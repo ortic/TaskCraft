@@ -26,7 +26,11 @@ pub async fn issue_for(state: &AppState, user: &User, key: &str, min: Role) -> A
     Ok((id, project, role))
 }
 
-pub async fn create(State(state): State<AppState>, CurrentUser(user): CurrentUser, Json(req): Json<Map<String, Value>>) -> ApiResult<(StatusCode, Json<Summary>)> {
+pub async fn create(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Json(req): Json<Map<String, Value>>,
+) -> ApiResult<(StatusCode, Json<Summary>)> {
     let mut fields = req;
     let project_ref = fields.remove("projectKey").or_else(|| fields.remove("projectId")).and_then(|v| v.as_str().map(str::to_string));
     let project_ref = project_ref.ok_or_else(|| ApiError::bad("projectKey is required"))?;
@@ -52,7 +56,8 @@ pub async fn create(State(state): State<AppState>, CurrentUser(user): CurrentUse
 
 #[derive(Deserialize)]
 pub struct ViewQuery {
-    view: Option<bool>,
+    /// `1` / `true`: count this as the caller viewing the issue (recently viewed)
+    view: Option<String>,
 }
 
 pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Query(q): Query<ViewQuery>) -> ApiResult<Json<Value>> {
@@ -60,9 +65,15 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
     let s = issues::summary(&state, issues::load(&state, id).await?);
     let description: Option<Value> = sqlx::query_scalar("SELECT description FROM issues WHERE id = $1").bind(id).fetch_one(&state.db).await?;
     let watchers: Vec<(Uuid, String)> =
-        sqlx::query_as("SELECT u.id, u.name FROM issue_watchers w JOIN users u ON u.id = w.user_id WHERE w.issue_id = $1 ORDER BY lower(u.name)").bind(id).fetch_all(&state.db).await?;
+        sqlx::query_as("SELECT u.id, u.name FROM issue_watchers w JOIN users u ON u.id = w.user_id WHERE w.issue_id = $1 ORDER BY lower(u.name)")
+            .bind(id)
+            .fetch_all(&state.db)
+            .await?;
     let links: Vec<(Uuid, String, Uuid, Uuid)> =
-        sqlx::query_as("SELECT id, kind, source_id, target_id FROM issue_links WHERE source_id = $1 OR target_id = $1 ORDER BY created_at").bind(id).fetch_all(&state.db).await?;
+        sqlx::query_as("SELECT id, kind, source_id, target_id FROM issue_links WHERE source_id = $1 OR target_id = $1 ORDER BY created_at")
+            .bind(id)
+            .fetch_all(&state.db)
+            .await?;
     let other_ids: Vec<Uuid> = links.iter().map(|(_, _, s, t)| if *s == id { *t } else { *s }).collect();
     let visible = crate::access::visible_projects(&state, &user).await?;
     let others: std::collections::HashMap<Uuid, Summary> =
@@ -83,9 +94,10 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
     .bind(id)
     .fetch_all(&state.db)
     .await?;
-    let child_ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM issues WHERE parent_id = $1 AND deleted_at IS NULL ORDER BY rank").bind(id).fetch_all(&state.db).await?;
+    let child_ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM issues WHERE parent_id = $1 AND deleted_at IS NULL ORDER BY rank").bind(id).fetch_all(&state.db).await?;
     let children = issues::load_many(&state, &child_ids).await?;
-    if q.view.unwrap_or(false) {
+    if q.view.as_deref().is_some_and(|v| v == "1" || v == "true") {
         let _ = sqlx::query("INSERT INTO recent_issues (user_id, issue_id) VALUES ($1, $2) ON CONFLICT (user_id, issue_id) DO UPDATE SET viewed_at = now()")
             .bind(user.id)
             .bind(id)
@@ -121,7 +133,12 @@ pub fn link_label(kind: &str, outward: bool) -> &'static str {
     }
 }
 
-pub async fn update(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Json(req): Json<Map<String, Value>>) -> ApiResult<Json<Summary>> {
+pub async fn update(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(key): Path<String>,
+    Json(req): Json<Map<String, Value>>,
+) -> ApiResult<Json<Summary>> {
     let (id, _, _) = issue_for(&state, &user, &key, Role::Member).await?;
     let (s, _) = issues::update(&state, &Actor::of(&user), id, &req).await?;
     Ok(Json(s))
@@ -142,7 +159,12 @@ fn double_option<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option
     Ok(Some(Option::<Uuid>::deserialize(d)?))
 }
 
-pub async fn move_issue(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Json(req): Json<MoveReq>) -> ApiResult<Json<Summary>> {
+pub async fn move_issue(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(key): Path<String>,
+    Json(req): Json<MoveReq>,
+) -> ApiResult<Json<Summary>> {
     let (id, _, _) = issue_for(&state, &user, &key, Role::Member).await?;
     Ok(Json(issues::move_issue(&state, &Actor::of(&user), id, req.status_id, req.sprint_id, req.after, req.before).await?))
 }
@@ -250,7 +272,15 @@ pub struct SearchResult {
 }
 
 /// Runs a TQL query for `user` (optionally within one project).
-pub async fn run_search(state: &AppState, user: &User, q: &str, project: Option<&str>, limit: i64, offset: i64, default_order: &str) -> ApiResult<SearchResult> {
+pub async fn run_search(
+    state: &AppState,
+    user: &User,
+    q: &str,
+    project: Option<&str>,
+    limit: i64,
+    offset: i64,
+    default_order: &str,
+) -> ApiResult<SearchResult> {
     let parsed = crate::query::parse(q)?;
     let mut ctx = crate::query::context(state, user, &parsed).await?;
     if let Some(key) = project.filter(|k| !k.is_empty()) {
@@ -295,8 +325,25 @@ pub async fn search_csv(State(state): State<AppState>, CurrentUser(user): Curren
     let r = run_search(&state, &user, &q.q, q.project.as_deref(), 1000, 0, default_order(q.order.as_deref())).await?;
     let mut w = csv::Writer::from_writer(Vec::new());
     let _ = w.write_record([
-        "Key", "Title", "Type", "Status", "Priority", "Assignee", "Reporter", "Sprint", "Version", "Parent", "Points", "Estimate (h)", "Spent (h)", "Labels", "Start", "Due",
-        "Created", "Updated", "Resolved",
+        "Key",
+        "Title",
+        "Type",
+        "Status",
+        "Priority",
+        "Assignee",
+        "Reporter",
+        "Sprint",
+        "Version",
+        "Parent",
+        "Points",
+        "Estimate (h)",
+        "Spent (h)",
+        "Labels",
+        "Start",
+        "Due",
+        "Created",
+        "Updated",
+        "Resolved",
     ]);
     let h = |m: Option<i32>| m.map(|m| format!("{:.1}", m as f64 / 60.0)).unwrap_or_default();
     for s in r.issues {
@@ -325,11 +372,7 @@ pub async fn search_csv(State(state): State<AppState>, CurrentUser(user): Curren
         ]);
     }
     let body = w.into_inner().map_err(|e| ApiError::Internal(anyhow::anyhow!("csv: {e}")))?;
-    Ok((
-        [(header::CONTENT_TYPE, "text/csv; charset=utf-8"), (header::CONTENT_DISPOSITION, "attachment; filename=\"issues.csv\"")],
-        body,
-    )
-        .into_response())
+    Ok(([(header::CONTENT_TYPE, "text/csv; charset=utf-8"), (header::CONTENT_DISPOSITION, "attachment; filename=\"issues.csv\"")], body).into_response())
 }
 
 /// Checks a query: `{"ok": true}` or the error message.
@@ -351,15 +394,43 @@ pub async fn validate(State(state): State<AppState>, CurrentUser(user): CurrentU
 }
 
 /// Field names and values for query autocompletion.
-pub async fn suggest(State(state): State<AppState>, CurrentUser(user): CurrentUser, Query(q): Query<std::collections::HashMap<String, String>>) -> ApiResult<Json<Value>> {
+pub async fn suggest(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> ApiResult<Json<Value>> {
     let visible = crate::access::visible_projects(&state, &user).await?;
     let field = q.get("field").map(|f| f.to_lowercase()).unwrap_or_default();
     let values: Vec<String> = match field.as_str() {
         "" => {
-            let custom: Vec<String> = sqlx::query_scalar("SELECT DISTINCT name FROM custom_fields WHERE project_id = ANY($1)").bind(&visible).fetch_all(&state.db).await?;
+            let custom: Vec<String> =
+                sqlx::query_scalar("SELECT DISTINCT name FROM custom_fields WHERE project_id = ANY($1)").bind(&visible).fetch_all(&state.db).await?;
             let mut all: Vec<String> = [
-                "project", "key", "title", "text", "type", "status", "category", "priority", "assignee", "reporter", "labels", "sprint", "version", "component", "parent",
-                "points", "estimate", "created", "updated", "resolved", "due", "start", "watcher", "blocked", "comment",
+                "project",
+                "key",
+                "title",
+                "text",
+                "type",
+                "status",
+                "category",
+                "priority",
+                "assignee",
+                "reporter",
+                "labels",
+                "sprint",
+                "version",
+                "component",
+                "parent",
+                "points",
+                "estimate",
+                "created",
+                "updated",
+                "resolved",
+                "due",
+                "start",
+                "watcher",
+                "blocked",
+                "comment",
             ]
             .iter()
             .map(|s| s.to_string())
@@ -368,8 +439,12 @@ pub async fn suggest(State(state): State<AppState>, CurrentUser(user): CurrentUs
             all
         }
         "project" => sqlx::query_scalar("SELECT key FROM projects WHERE id = ANY($1) ORDER BY key").bind(&visible).fetch_all(&state.db).await?,
-        "status" => sqlx::query_scalar("SELECT DISTINCT name FROM statuses WHERE project_id = ANY($1) ORDER BY name").bind(&visible).fetch_all(&state.db).await?,
-        "type" | "issuetype" => sqlx::query_scalar("SELECT DISTINCT name FROM issue_types WHERE project_id = ANY($1) ORDER BY name").bind(&visible).fetch_all(&state.db).await?,
+        "status" => {
+            sqlx::query_scalar("SELECT DISTINCT name FROM statuses WHERE project_id = ANY($1) ORDER BY name").bind(&visible).fetch_all(&state.db).await?
+        }
+        "type" | "issuetype" => {
+            sqlx::query_scalar("SELECT DISTINCT name FROM issue_types WHERE project_id = ANY($1) ORDER BY name").bind(&visible).fetch_all(&state.db).await?
+        }
         "category" | "statuscategory" => vec!["todo".into(), "in_progress".into(), "done".into()],
         "priority" => crate::query::PRIORITIES.iter().rev().map(|s| s.to_string()).collect(),
         "assignee" | "reporter" | "watcher" | "creator" => {
@@ -382,12 +457,14 @@ pub async fn suggest(State(state): State<AppState>, CurrentUser(user): CurrentUs
             );
             v
         }
-        "labels" | "label" => sqlx::query_scalar(
-            "SELECT DISTINCT l.label FROM issue_labels l JOIN issues i ON i.id = l.issue_id WHERE i.project_id = ANY($1) ORDER BY l.label LIMIT 200",
-        )
-        .bind(&visible)
-        .fetch_all(&state.db)
-        .await?,
+        "labels" | "label" => {
+            sqlx::query_scalar(
+                "SELECT DISTINCT l.label FROM issue_labels l JOIN issues i ON i.id = l.issue_id WHERE i.project_id = ANY($1) ORDER BY l.label LIMIT 200",
+            )
+            .bind(&visible)
+            .fetch_all(&state.db)
+            .await?
+        }
         "sprint" => {
             let mut v = vec!["openSprints()".to_string(), "futureSprints()".into(), "closedSprints()".into()];
             v.extend(
@@ -400,16 +477,27 @@ pub async fn suggest(State(state): State<AppState>, CurrentUser(user): CurrentUs
         }
         "version" | "fixversion" | "release" => {
             let mut v = vec!["unreleasedVersions()".to_string(), "releasedVersions()".into()];
-            v.extend(sqlx::query_scalar::<_, String>("SELECT DISTINCT name FROM versions WHERE project_id = ANY($1) ORDER BY name").bind(&visible).fetch_all(&state.db).await?);
+            v.extend(
+                sqlx::query_scalar::<_, String>("SELECT DISTINCT name FROM versions WHERE project_id = ANY($1) ORDER BY name")
+                    .bind(&visible)
+                    .fetch_all(&state.db)
+                    .await?,
+            );
             v
         }
-        "component" => sqlx::query_scalar("SELECT DISTINCT name FROM components WHERE project_id = ANY($1) ORDER BY name").bind(&visible).fetch_all(&state.db).await?,
+        "component" => {
+            sqlx::query_scalar("SELECT DISTINCT name FROM components WHERE project_id = ANY($1) ORDER BY name").bind(&visible).fetch_all(&state.db).await?
+        }
         "created" | "updated" | "resolved" | "due" | "start" => {
             ["-1d", "-7d", "-30d", "today()", "startOfWeek()", "endOfWeek()", "startOfMonth()", "endOfMonth()", "now()"].iter().map(|s| s.to_string()).collect()
         }
         "blocked" => vec!["true".into(), "false".into()],
         other => {
-            let opts: Vec<Value> = sqlx::query_scalar("SELECT options FROM custom_fields WHERE project_id = ANY($1) AND lower(name) = $2").bind(&visible).bind(other).fetch_all(&state.db).await?;
+            let opts: Vec<Value> = sqlx::query_scalar("SELECT options FROM custom_fields WHERE project_id = ANY($1) AND lower(name) = $2")
+                .bind(&visible)
+                .bind(other)
+                .fetch_all(&state.db)
+                .await?;
             opts.iter().flat_map(|o| o.as_array().cloned().unwrap_or_default()).filter_map(|o| o["label"].as_str().map(str::to_string)).collect()
         }
     };
@@ -463,7 +551,12 @@ pub struct LinkReq {
     target: String,
 }
 
-pub async fn add_link(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Json(req): Json<LinkReq>) -> ApiResult<(StatusCode, Json<Value>)> {
+pub async fn add_link(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(key): Path<String>,
+    Json(req): Json<LinkReq>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
     let (id, project, _) = issue_for(&state, &user, &key, Role::Member).await?;
     let (target, tproject, _) = issues::resolve(&state, &user, &req.target, false).await?;
     if target == id {
@@ -488,8 +581,14 @@ pub async fn add_link(State(state): State<AppState>, CurrentUser(user): CurrentU
         .bind(user.id)
         .execute(&mut *tx)
         .await?;
-    let tkey: String = sqlx::query_scalar("SELECT p.key || '-' || i.number FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1").bind(target).fetch_one(&mut *tx).await?;
-    let skey: String = sqlx::query_scalar("SELECT p.key || '-' || i.number FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1").bind(id).fetch_one(&mut *tx).await?;
+    let tkey: String = sqlx::query_scalar("SELECT p.key || '-' || i.number FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1")
+        .bind(target)
+        .fetch_one(&mut *tx)
+        .await?;
+    let skey: String = sqlx::query_scalar("SELECT p.key || '-' || i.number FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
     let c = issues::Change { field: "link", old: Value::Null, new: json!({"kind": req.kind, "key": tkey}) };
     issues::record(&mut tx, id, project, Some(user.id), "link", Some(&c)).await?;
     let back = issues::Change { field: "link", old: Value::Null, new: json!({"kind": link_label(kind, src != id), "key": skey}) };
@@ -507,12 +606,17 @@ pub async fn delete_link(State(state): State<AppState>, CurrentUser(user): Curre
     let (src, tgt) = row.ok_or(ApiError::NotFound("link"))?;
     let (_, project, _) = issue_for(&state, &user, &src.to_string(), Role::Member).await?;
     sqlx::query("DELETE FROM issue_links WHERE id = $1").bind(id).execute(&state.db).await?;
+    sqlx::query("UPDATE issues SET updated_at = now() WHERE id = ANY($1)").bind(vec![src, tgt]).execute(&state.db).await?;
     events::publish(&state, Event::new(user.workspace_id, "issue").project(project).actor(user.id)).await;
-    let _ = tgt;
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn add_web_link(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Json(req): Json<Value>) -> ApiResult<(StatusCode, Json<Value>)> {
+pub async fn add_web_link(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(key): Path<String>,
+    Json(req): Json<Value>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
     let (id, project, _) = issue_for(&state, &user, &key, Role::Member).await?;
     let url = req["url"].as_str().map(str::trim).unwrap_or("");
     if !(url.starts_with("https://") || url.starts_with("http://")) || url.len() > 2000 {
@@ -521,7 +625,8 @@ pub async fn add_web_link(State(state): State<AppState>, CurrentUser(user): Curr
     let wiki_base = crate::wikicraft::base_url(&state);
     let is_wiki = wiki_base.as_deref().is_some_and(|b| crate::wikicraft::parse_page_url(b, url).is_some());
     let mut title = req["title"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(str::to_string);
-    if title.is_none() && is_wiki
+    if title.is_none()
+        && is_wiki
         && let Some(c) = crate::wikicraft::conn(&state, &user).await
         && let Ok(Some(p)) = crate::wikicraft::lookup(&state, &c, url).await
     {
@@ -547,7 +652,8 @@ pub async fn add_web_link(State(state): State<AppState>, CurrentUser(user): Curr
 }
 
 pub async fn delete_web_link(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>) -> ApiResult<StatusCode> {
-    let issue: Uuid = sqlx::query_scalar("SELECT issue_id FROM web_links WHERE id = $1").bind(id).fetch_optional(&state.db).await?.ok_or(ApiError::NotFound("link"))?;
+    let issue: Uuid =
+        sqlx::query_scalar("SELECT issue_id FROM web_links WHERE id = $1").bind(id).fetch_optional(&state.db).await?.ok_or(ApiError::NotFound("link"))?;
     let (_, project, _) = issue_for(&state, &user, &issue.to_string(), Role::Member).await?;
     sqlx::query("DELETE FROM web_links WHERE id = $1").bind(id).execute(&state.db).await?;
     events::publish(&state, Event::new(user.workspace_id, "issue").project(project).actor(user.id)).await;
@@ -587,7 +693,8 @@ pub async fn clone_issue(State(state): State<AppState>, CurrentUser(user): Curre
 
 /// The signed-in person's work: assigned, due soon, reported, recently viewed and watched.
 pub async fn my_work(State(state): State<AppState>, CurrentUser(user): CurrentUser) -> ApiResult<Json<Value>> {
-    let assigned = run_search(&state, &user, "assignee = me() and category != done", None, 200, 0, "i.due_date ASC NULLS LAST, i.priority DESC, i.rank").await?;
+    let assigned =
+        run_search(&state, &user, "assignee = me() and category != done", None, 200, 0, "i.due_date ASC NULLS LAST, i.priority DESC, i.rank").await?;
     let reported = run_search(&state, &user, "reporter = me() and category != done and assignee != me()", None, 50, 0, "i.updated_at DESC").await?;
     let done = run_search(&state, &user, "assignee = me() and resolved >= -7d", None, 50, 0, "i.resolved_at DESC").await?;
     let watching = run_search(&state, &user, "watcher = me() and updated >= -7d and assignee != me()", None, 30, 0, "i.updated_at DESC").await?;
@@ -602,10 +709,11 @@ pub async fn my_work(State(state): State<AppState>, CurrentUser(user): CurrentUs
     recent.retain(|s| visible.contains(&s.project_id));
     let pos: std::collections::HashMap<Uuid, usize> = recent_ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
     recent.sort_by_key(|s| pos.get(&s.id).copied().unwrap_or(usize::MAX));
-    let logged: Option<i64> = sqlx::query_scalar("SELECT sum(minutes) FROM worklogs WHERE user_id = $1 AND work_date >= date_trunc('week', current_date)::date")
-        .bind(user.id)
-        .fetch_one(&state.db)
-        .await?;
+    let logged: Option<i64> =
+        sqlx::query_scalar("SELECT sum(minutes) FROM worklogs WHERE user_id = $1 AND work_date >= date_trunc('week', current_date)::date")
+            .bind(user.id)
+            .fetch_one(&state.db)
+            .await?;
     Ok(Json(json!({
         "assigned": assigned.issues, "reported": reported.issues, "doneThisWeek": done.issues, "watching": watching.issues, "recent": recent,
         "loggedThisWeek": logged.unwrap_or(0),
@@ -613,7 +721,11 @@ pub async fn my_work(State(state): State<AppState>, CurrentUser(user): CurrentUs
 }
 
 /// Quick search for pickers and the command palette: issues by key or words.
-pub async fn quick(State(state): State<AppState>, CurrentUser(user): CurrentUser, Query(q): Query<std::collections::HashMap<String, String>>) -> ApiResult<Json<Value>> {
+pub async fn quick(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> ApiResult<Json<Value>> {
     let text = q.get("q").map(|s| s.trim().to_string()).unwrap_or_default();
     if text.is_empty() {
         return my_recent(&state, &user).await;
@@ -624,7 +736,8 @@ pub async fn quick(State(state): State<AppState>, CurrentUser(user): CurrentUser
 }
 
 async fn my_recent(state: &AppState, user: &User) -> ApiResult<Json<Value>> {
-    let ids: Vec<Uuid> = sqlx::query_scalar("SELECT issue_id FROM recent_issues WHERE user_id = $1 ORDER BY viewed_at DESC LIMIT 10").bind(user.id).fetch_all(&state.db).await?;
+    let ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT issue_id FROM recent_issues WHERE user_id = $1 ORDER BY viewed_at DESC LIMIT 10").bind(user.id).fetch_all(&state.db).await?;
     let visible = crate::access::visible_projects(state, user).await?;
     let mut list = issues::load_many(state, &ids).await?;
     list.retain(|s| visible.contains(&s.project_id));
@@ -634,7 +747,11 @@ async fn my_recent(state: &AppState, user: &User) -> ApiResult<Json<Value>> {
 }
 
 /// Recent activity in the projects the caller can see (or one project).
-pub async fn activity(State(state): State<AppState>, CurrentUser(user): CurrentUser, Query(q): Query<std::collections::HashMap<String, String>>) -> ApiResult<Json<Value>> {
+pub async fn activity(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> ApiResult<Json<Value>> {
     let mut visible = crate::access::visible_projects(&state, &user).await?;
     if let Some(k) = q.get("project").filter(|k| !k.is_empty()) {
         let (p, _) = super::projects::by_key(&state, &user, k, Role::Viewer).await?;

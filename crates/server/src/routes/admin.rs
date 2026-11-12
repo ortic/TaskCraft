@@ -55,7 +55,9 @@ pub async fn stats(State(state): State<AppState>, CurrentUser(user): CurrentUser
     .bind(user.workspace_id)
     .fetch_one(&state.db)
     .await?;
-    Ok(Json(json!({"users": users, "projects": projects, "issues": issues, "comments": comments, "attachments": attachments, "attachmentBytes": bytes.unwrap_or(0)})))
+    Ok(Json(
+        json!({"users": users, "projects": projects, "issues": issues, "comments": comments, "attachments": attachments, "attachmentBytes": bytes.unwrap_or(0)}),
+    ))
 }
 
 pub async fn webhooks(State(state): State<AppState>, CurrentUser(user): CurrentUser) -> ApiResult<Json<Value>> {
@@ -79,7 +81,14 @@ pub async fn create_webhook(State(state): State<AppState>, CurrentUser(user): Cu
     require_admin(&user)?;
     let url = req["url"].as_str().unwrap_or("");
     crate::webhooks::validate_url(url).map_err(ApiError::BadRequest)?;
-    let events: Vec<String> = req["events"].as_array().into_iter().flatten().filter_map(|e| e.as_str()).filter(|e| crate::webhooks::EVENTS.contains(e) || *e == "*").map(str::to_string).collect();
+    let events: Vec<String> = req["events"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.as_str())
+        .filter(|e| crate::webhooks::EVENTS.contains(e) || *e == "*")
+        .map(str::to_string)
+        .collect();
     let project = match req["projectKey"].as_str().filter(|k| !k.is_empty()) {
         Some(k) => Some(super::projects::by_key(&state, &user, k, crate::access::Role::Admin).await?.0.id),
         None => None,
@@ -100,14 +109,25 @@ pub async fn create_webhook(State(state): State<AppState>, CurrentUser(user): Cu
     Ok((StatusCode::CREATED, Json(json!({"id": id, "secret": secret}))))
 }
 
-pub async fn update_webhook(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>, Json(req): Json<Value>) -> ApiResult<StatusCode> {
+pub async fn update_webhook(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<Value>,
+) -> ApiResult<StatusCode> {
     require_admin(&user)?;
     if let Some(a) = req["active"].as_bool() {
         sqlx::query("UPDATE webhooks SET active = $3 WHERE id = $1 AND workspace_id = $2").bind(id).bind(user.workspace_id).bind(a).execute(&state.db).await?;
     }
     if let Some(ev) = req["events"].as_array() {
-        let events: Vec<String> = ev.iter().filter_map(|e| e.as_str()).filter(|e| crate::webhooks::EVENTS.contains(e) || *e == "*").map(str::to_string).collect();
-        sqlx::query("UPDATE webhooks SET events = $3 WHERE id = $1 AND workspace_id = $2").bind(id).bind(user.workspace_id).bind(&events).execute(&state.db).await?;
+        let events: Vec<String> =
+            ev.iter().filter_map(|e| e.as_str()).filter(|e| crate::webhooks::EVENTS.contains(e) || *e == "*").map(str::to_string).collect();
+        sqlx::query("UPDATE webhooks SET events = $3 WHERE id = $1 AND workspace_id = $2")
+            .bind(id)
+            .bind(user.workspace_id)
+            .bind(&events)
+            .execute(&state.db)
+            .await?;
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -121,11 +141,21 @@ pub async fn delete_webhook(State(state): State<AppState>, CurrentUser(user): Cu
 /// Sends a `ping` right away and reports how it went.
 pub async fn test_webhook(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>) -> ApiResult<Json<Value>> {
     require_admin(&user)?;
-    let row: Option<(String, String)> =
-        sqlx::query_as("SELECT url, secret FROM webhooks WHERE id = $1 AND workspace_id = $2").bind(id).bind(user.workspace_id).fetch_optional(&state.db).await?;
+    let row: Option<(String, String)> = sqlx::query_as("SELECT url, secret FROM webhooks WHERE id = $1 AND workspace_id = $2")
+        .bind(id)
+        .bind(user.workspace_id)
+        .fetch_optional(&state.db)
+        .await?;
     let (url, secret) = row.ok_or(ApiError::NotFound("webhook"))?;
     let payload = json!({"event": "ping", "timestamp": chrono::Utc::now(), "webhookId": id, "deliveryId": new_id(), "data": {}});
-    Ok(Json(match crate::webhooks::deliver(&state, &url, &secret, &payload).await {
+    let result = crate::webhooks::deliver(&state, &url, &secret, &payload).await;
+    sqlx::query("UPDATE webhooks SET last_status = $2, last_error = $3, last_sent_at = now() WHERE id = $1")
+        .bind(id)
+        .bind(result.as_ref().ok().map(|s| *s as i32))
+        .bind(result.as_ref().err())
+        .execute(&state.db)
+        .await?;
+    Ok(Json(match result {
         Ok(status) => json!({"ok": true, "status": status}),
         Err(e) => json!({"ok": false, "error": e}),
     }))

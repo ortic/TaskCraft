@@ -66,10 +66,7 @@ pub fn text(v: &Value) -> String {
 }
 
 fn is_block(n: &Value) -> bool {
-    matches!(
-        n["type"].as_str(),
-        Some("paragraph" | "heading" | "codeBlock" | "blockquote" | "listItem" | "taskItem" | "horizontalRule" | "tableRow" | "image")
-    )
+    matches!(n["type"].as_str(), Some("paragraph" | "heading" | "codeBlock" | "blockquote" | "listItem" | "taskItem" | "horizontalRule" | "tableRow" | "image"))
 }
 
 /// People mentioned with `@` (their ids).

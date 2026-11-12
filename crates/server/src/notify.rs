@@ -58,7 +58,16 @@ pub async fn changes(state: &AppState, actor: &Actor, s: &Summary, changes: &[Ch
             }
             "status" => {
                 for w in watchers(state, s.id).await {
-                    send(state, actor.workspace, w, s, actor.user, "status", json!({"from": c.old["name"], "to": c.new["name"], "category": c.new["category"]})).await;
+                    send(
+                        state,
+                        actor.workspace,
+                        w,
+                        s,
+                        actor.user,
+                        "status",
+                        json!({"from": c.old["name"], "to": c.new["name"], "category": c.new["category"]}),
+                    )
+                    .await;
                 }
             }
             _ => {}

@@ -11,7 +11,8 @@ use uuid::Uuid;
 
 use crate::app::{AppState, audit, new_id};
 use crate::auth::{
-    API_TOKEN_PREFIX, CurrentUser, MaybeUser, SessionUser, create_session, hash_password, random_token, session_cookie, session_token, token_hash, verify_password,
+    API_TOKEN_PREFIX, CurrentUser, MaybeUser, SessionUser, create_session, hash_password, random_token, session_cookie, session_token, token_hash,
+    verify_password,
 };
 use crate::error::{ApiError, ApiResult};
 
@@ -198,7 +199,12 @@ pub struct PasswordChange {
     new_password: String,
 }
 
-pub async fn change_password(State(state): State<AppState>, SessionUser(user): SessionUser, headers: HeaderMap, Json(req): Json<PasswordChange>) -> ApiResult<StatusCode> {
+pub async fn change_password(
+    State(state): State<AppState>,
+    SessionUser(user): SessionUser,
+    headers: HeaderMap,
+    Json(req): Json<PasswordChange>,
+) -> ApiResult<StatusCode> {
     validate_password(&req.new_password)?;
     let hash: Option<String> = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1").bind(user.id).fetch_one(&state.db).await?;
     let key = format!("password:{}", user.id);

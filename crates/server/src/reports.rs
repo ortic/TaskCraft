@@ -122,7 +122,8 @@ fn replay(events: &[Ev], sprint_id: Uuid, t0: DateTime<Utc>, t1: DateTime<Utc>, 
         apply_event(states.entry(events[i].issue_id).or_default(), &events[i]);
         i += 1;
     }
-    let in_sprint = |states: &HashMap<Uuid, IssueState>| -> Vec<Uuid> { states.iter().filter(|(_, s)| s.sprint.as_deref() == Some(&sid)).map(|(k, _)| *k).collect() };
+    let in_sprint =
+        |states: &HashMap<Uuid, IssueState>| -> Vec<Uuid> { states.iter().filter(|(_, s)| s.sprint.as_deref() == Some(&sid)).map(|(k, _)| *k).collect() };
     let start_members = in_sprint(&states);
     let committed_points: f64 = start_members.iter().filter_map(|id| states.get(id)).map(weight).sum();
     let committed_issues = start_members.len() as i64;
@@ -172,7 +173,10 @@ fn replay(events: &[Ev], sprint_id: Uuid, t0: DateTime<Utc>, t1: DateTime<Utc>, 
 
 async fn keys(state: &AppState, project: Uuid) -> ApiResult<HashMap<Uuid, String>> {
     let rows: Vec<(Uuid, String)> =
-        sqlx::query_as("SELECT i.id, p.key || '-' || i.number FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.project_id = $1").bind(project).fetch_all(&state.db).await?;
+        sqlx::query_as("SELECT i.id, p.key || '-' || i.number FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.project_id = $1")
+            .bind(project)
+            .fetch_all(&state.db)
+            .await?;
     Ok(rows.into_iter().collect())
 }
 

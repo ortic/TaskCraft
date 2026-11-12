@@ -29,7 +29,12 @@ pub async fn enqueue(state: &AppState, workspace: Uuid, project: Option<Uuid>, e
     .unwrap_or_default();
     for h in hooks {
         let payload = json!({"event": event, "timestamp": chrono::Utc::now(), "webhookId": h, "deliveryId": new_id(), "data": data});
-        let _ = sqlx::query("INSERT INTO webhook_outbox (id, webhook_id, payload) VALUES ($1, $2, $3)").bind(new_id()).bind(h).bind(payload).execute(&state.db).await;
+        let _ = sqlx::query("INSERT INTO webhook_outbox (id, webhook_id, payload) VALUES ($1, $2, $3)")
+            .bind(new_id())
+            .bind(h)
+            .bind(payload)
+            .execute(&state.db)
+            .await;
     }
 }
 

@@ -87,9 +87,7 @@ fn decode(s: &str) -> String {
 }
 
 fn enc(s: &str) -> String {
-    s.bytes()
-        .map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
-        .collect()
+    s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
 }
 
 async fn get(state: &AppState, c: &Conn, path: &str) -> ApiResult<Value> {
