@@ -50,7 +50,8 @@ pub async fn upload(
 }
 
 /// Stores a file on an issue (the caller checked the permission and size) with a history
-/// entry; `by` names an uploader without an account (a requester writing by e-mail).
+/// entry; `by` names an uploader without an account (the issue's requester, writing by e-mail,
+/// on the request form or in the portal): their files are the ones they see in the portal.
 pub async fn store(
     state: &AppState,
     issue: Uuid,
@@ -66,7 +67,7 @@ pub async fn store(
     let size = data.len() as i64;
     state.blobs.put(&ObjPath::from(storage_key.clone()), data.into()).await.map_err(|e| ApiError::Internal(anyhow::anyhow!("storage: {e}")))?;
     let mut tx = state.db.begin().await?;
-    sqlx::query("INSERT INTO attachments (id, issue_id, name, mime, size, storage_key, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6, $7)")
+    sqlx::query("INSERT INTO attachments (id, issue_id, name, mime, size, storage_key, uploaded_by, by_requester) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)")
         .bind(id)
         .bind(issue)
         .bind(name)
@@ -74,6 +75,7 @@ pub async fn store(
         .bind(size)
         .bind(&storage_key)
         .bind(uploader)
+        .bind(uploader.is_none() && by.is_some())
         .execute(&mut *tx)
         .await?;
     let mut new = json!({"name": name});
@@ -99,6 +101,11 @@ async fn attachment(state: &AppState, id: Uuid) -> ApiResult<(Uuid, String, Stri
 pub async fn download(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>) -> ApiResult<Response> {
     let (issue, name, mime, key, size) = attachment(&state, id).await?;
     issue_for(&state, &user, &issue.to_string(), Role::Viewer).await?;
+    serve(&state, &name, mime, key, size).await
+}
+
+/// Streams a stored file (the caller checked who may see it).
+pub async fn serve(state: &AppState, name: &str, mime: String, key: String, size: i64) -> ApiResult<Response> {
     let got = state.blobs.get(&ObjPath::from(key)).await.map_err(|_| ApiError::NotFound("file"))?;
     let stream = got.into_stream().map(|r| r.map_err(std::io::Error::other));
     let inline = (mime.starts_with("image/") && mime != "image/svg+xml") || mime == "application/pdf" || mime.starts_with("video/") || mime == "text/plain";

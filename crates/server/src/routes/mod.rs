@@ -12,6 +12,7 @@ pub mod issues;
 pub mod mail_in;
 pub mod moves;
 pub mod passkeys;
+pub mod portal;
 pub mod projects;
 pub mod reports;
 pub mod security;
@@ -167,6 +168,17 @@ pub fn api() -> Router<AppState> {
         // e-mail in: messages from mail servers, a project's e-mail settings
         .route("/integrations/mail-in", post(mail_in::receive))
         .route("/projects/{key}/mail-in", get(mail_in::settings).put(mail_in::put_settings))
+        // service desk portal (public: requesters sign in by e-mailed links) and request forms
+        .route("/portal", get(portal::info))
+        .route("/portal/sign-in", post(portal::sign_in))
+        .route("/portal/session", post(portal::start_session).delete(portal::end_session))
+        .route("/portal/requests", get(portal::requests))
+        .route("/portal/requests/{key}", get(portal::request))
+        .route("/portal/requests/{key}/comments", post(portal::reply))
+        .route("/portal/requests/{key}/resolve", post(portal::resolve))
+        .route("/portal/attachments/{id}", get(portal::download))
+        .route("/portal/forms/{path}", get(portal::form).post(portal::submit))
+        .route("/projects/{key}/portal", get(portal::settings).put(portal::put_settings))
         // administration
         .route("/admin/workspace", put(admin::put_workspace))
         .route("/admin/audit", get(admin::audit_log))

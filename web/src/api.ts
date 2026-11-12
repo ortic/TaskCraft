@@ -160,8 +160,9 @@ export interface IssueDetail extends Issue {
   permissions: { edit: boolean; comment: boolean; admin: boolean }
   /** service-level goals (projects with service levels) */
   sla: import('./components/SlaBadges').SlaGoal[]
-  /** who it was opened for by e-mail (no account); `mail`: comments can be e-mailed to them */
-  requester: { email: string; name: string | null; mail: boolean } | null
+  /** who it was opened for (no account): by e-mail, on the request form or in the portal;
+   *  `mail`: comments for them are e-mailed and they can sign in to the portal */
+  requester: { email: string; name: string | null; mail: boolean; source?: 'email' | 'form' | 'portal' } | null
 }
 
 export interface Status extends StatusRef {
@@ -267,7 +268,7 @@ export interface BoardData {
 export interface Comment {
   id: string
   author: Named | null
-  /** written by someone without an account (an issue's requester, by e-mail) */
+  /** written by someone without an account (an issue's requester: by e-mail or in the portal) */
   external?: { email: string; name: string | null } | null
   body: any
   createdAt: string
@@ -275,6 +276,10 @@ export interface Comment {
   edited: boolean
   /** it came in by e-mail */
   viaEmail?: boolean
+  /** written in the service desk portal */
+  viaPortal?: boolean
+  /** the issue's requester sees it (marked for them, or their own) */
+  forRequester?: boolean
   /** when it was e-mailed to the requester */
   emailedAt?: string | null
   reactions: { reaction: string; people: Named[] }[]

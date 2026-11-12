@@ -92,6 +92,17 @@ gets an acknowledgement, and comments marked for them go out by e-mail, so the c
 on by mail. Auto-replies, bulk mail, bounces and loops are kept out. TaskCraft reads an IMAP
 mailbox or takes messages from your mail server. See [E-mail in](#e-mail-in).
 
+**Service desk portal**: requesters follow their requests on a small portal of their own — they
+sign in with a link e-mailed to them (no account, no password), see their requests across
+projects with the status in plain words, the description, their files and the comments marked
+*visible to the requester* (never internal ones), answer, add files and, where the project allows
+it, mark a request resolved. Projects can publish a **public request form** (title, introduction,
+which fields — description, name, type, priority, custom fields — and a message after sending);
+each submission becomes an issue with the sender as requester, kept free of spam by a hidden
+field, a minimum fill time and rate limits, without outside services. Acknowledgements and replies
+link to the request in the portal; the portal follows the visitor's browser language. See
+[Service desk portal](#service-desk-portal).
+
 **Dashboards**: pages people put together from widgets — an issue list or a count for any query
 or saved filter, a breakdown by status / category / assignee / priority / type / project / label /
 sprint, the sprint burndown, velocity, cumulative flow, created vs resolved, recent activity, your
@@ -469,10 +480,12 @@ What happens to a message:
 - **Who may write**: people with an account write from its address and act as themselves, with
   their permissions (members open issues, viewers comment). For support trackers, *Anyone* also
   lets in people without an account: the sender becomes the issue's **requester** (shown on the
-  issue), gets an acknowledgement with the key, and their answers become comments. Comments stay
-  internal unless *E-mail this comment to the requester* is ticked (API: `emailRequester: true`);
-  those go out under the project's name with its address as Reply-To, so the conversation goes on
-  by e-mail. Replies team members send by e-mail stay internal. The assignee (else the project
+  issue), gets an acknowledgement with the key and a link to the request in the
+  [portal](#service-desk-portal), and their answers become comments. Comments stay internal unless
+  *Visible to the requester* is ticked (API: `forRequester: true`, also under its earlier name
+  `emailRequester`); those show in the portal and go out under the project's name with its
+  address as Reply-To, so the conversation goes on by e-mail. Replies team members send by e-mail
+  stay internal. The assignee (else the project
   lead) follows issues requesters open; for service levels, a team member's comment is the first
   response, the requester's own aren't.
 - **Kept out**: automatic replies (`Auto-Submitted`, `X-Autoreply`, …), bulk and list mail
@@ -485,6 +498,45 @@ What happens to a message:
 
 *Project settings → E-mail* lists the latest messages and what became of each (workspace admins
 also see those that reached no project); the log is kept for 90 days.
+
+### Service desk portal
+
+Requesters — people without an account who wrote in by e-mail or sent a request form — follow
+their requests at `/portal` (it needs outgoing e-mail, `TASKCRAFT_SMTP_URL`):
+
+- **Signing in**: they give their e-mail address and get a link that works once, within 30
+  minutes. The answer is the same whether the address has requests or not; links go out only to
+  addresses with requests, at most 3 per quarter hour, and each IP address may ask 10 times per
+  quarter hour. The portal session (7 days) is a cookie of its own, sent only to `/api/portal`: it
+  never signs anyone in to TaskCraft. Behind a reverse proxy the client's address is taken from
+  `X-Forwarded-For` (the last public address in it), since the proxy is on a private network.
+- **What they see**: their own requests in every project — title, status in plain words (open, in
+  progress, resolved), opened and last updated (by what they can see), the description, the files
+  they added, their own messages and the comments marked *Visible to the requester*, with the
+  author's name. Never internal comments, other files, other people's requests, e-mail addresses
+  of the team or anything else of the workspace (mentions show as plain names).
+- **What they do**: answer (a comment by them, like an answer by e-mail: watchers are told, the
+  service-level clock keeps running), add files (up to 5 per message, 20 MB together or
+  `TASKCRAFT_MAX_UPLOAD_MB` if smaller, 30 messages per hour) and — where *Project settings →
+  Service desk* allows it — mark a request resolved: it moves to the first done status (or the one
+  chosen there), in their name.
+
+**Request forms**: *Project settings → Service desk* publishes a project's form at
+`/portal/forms/<key>` (or a short name of its own, like `/portal/forms/it-help`), listed on the
+portal's start page unless switched off. The admin sets the title, an introduction, the message
+after sending and the fields: a summary and the e-mail address always, the description and name
+not asked / optional / required, a choice of issue types, a priority (low to urgent) and the
+project's custom fields (except people fields), each optional or required. A submission becomes an
+issue with the sender as requester (requesters signed in to the portal send it under their
+address) and gets an acknowledgement with the portal link — and "reply to this e-mail" only when
+the project takes e-mail. Against spam, without outside services: a hidden field people never see
+(bots that fill it are told it worked), a minimum fill time of 3 seconds (the form carries a
+signed time stamp, valid for a day), 20 requests per IP address and 5 per e-mail address and hour,
+and size limits (summary 200 characters, texts 20,000).
+
+On the team's side, the issue shows the requester and where the request came from (by e-mail, the
+request form or the portal), comments written in the portal are marked, and so are the comments
+the requester sees.
 
 ## API
 
@@ -502,7 +554,8 @@ on writes.
 | WikiCraft | `GET /issues/{KEY}/wiki-pages`, `POST /issues/{KEY}/wiki-page`, `POST /sprints/{id}/wiki-page`, `POST /versions/{id}/wiki-page`, `GET /projects/{KEY}/wiki`, `GET /wiki-links?url=` (issues linking a page) |
 | Dashboards | `GET/POST /dashboards`, `GET/PATCH/DELETE /dashboards/{id}`, `GET /search/groups?q=<TQL>&by=status\|category\|assignee\|priority\|type\|project\|labels\|sprint`, `GET /portfolio?projects=KEY,KEY` |
 | Git | `GET/POST /projects/{KEY}/git` (connected repositories; the secret comes back once), `PUT /projects/{KEY}/git/rules`, `DELETE /git-integrations/{id}`, `POST /git-integrations/{id}/secret`, `GET /issues/{KEY}/development`, webhooks `POST /integrations/git/{github,gitlab,generic}/{key}` |
-| E-mail in | `POST /integrations/mail-in` (one raw RFC 822 message as the body, or the form field `email` / `body-mime`; `Authorization: Bearer <TASKCRAFT_MAIL_IN_TOKEN>`, `X-TaskCraft-Token` or `?token=`; answers what became of it), `GET/PUT /projects/{KEY}/mail-in` (`enabled`, `address`, `senders`: `members` / `anyone`; with the latest messages), `POST /issues/{KEY}/comments` with `emailRequester: true` e-mails the comment to the issue's requester |
+| E-mail in | `POST /integrations/mail-in` (one raw RFC 822 message as the body, or the form field `email` / `body-mime`; `Authorization: Bearer <TASKCRAFT_MAIL_IN_TOKEN>`, `X-TaskCraft-Token` or `?token=`; answers what became of it), `GET/PUT /projects/{KEY}/mail-in` (`enabled`, `address`, `senders`: `members` / `anyone`; with the latest messages), `POST /issues/{KEY}/comments` with `forRequester: true` (or `emailRequester: true`) shows the comment to the issue's requester in the portal and e-mails it |
+| Service desk | Staff: `GET/PUT /projects/{KEY}/portal` (`resolve`, `resolveStatus`, `form`: `enabled`, `slug`, `listed`, `title`, `intro`, `success`, `description` / `name`: `off` / `optional` / `required`, `types`, `typeId`, `priority`, `custom`: `[{id, required}]`). Public (the portal; writes need `x-taskcraft: 1`): `GET /portal`, `POST /portal/sign-in` (`email`, `request`), `POST/DELETE /portal/session` (`token` from the link), `GET /portal/requests`, `GET /portal/requests/{KEY}`, `POST /portal/requests/{KEY}/comments` (multipart `text`, `files`), `POST /portal/requests/{KEY}/resolve`, `GET /portal/attachments/{id}`, `GET/POST /portal/forms/{key or slug}` (the form with its `stamp`; a submission: `stamp`, `email`, `name`, `summary`, `description`, `typeId`, `priority`, `custom`) |
 | MCP | `POST /mcp` (streamable HTTP, see above) |
 | Live | `GET /events` (Server-Sent Events) |
 | Account & admin | `/me`, `/me/tokens`, `/notifications`, `/views`, `/timesheet`, `/people`, `/teams`, `/users`, `/auth/forgot`, `/admin/{workspace,stats,audit,webhooks,mail}`, `POST /admin/mail/test` |
@@ -551,7 +604,7 @@ web/              React 19 + Vite, TanStack Query, Tiptap (rich text), hand-draw
 crates/tql        the query language: lexer, parser and syntax tree (no I/O)
 crates/server     axum 0.8 HTTP API, sqlx / PostgreSQL, TQL → SQL, history replay for reports,
                   automation, webhooks, live updates (SSE + LISTEN/NOTIFY), WikiCraft client, Git webhooks,
-                  MCP server, e-mail in (IMAP / HTTP) → single binary
+                  MCP server, e-mail in (IMAP / HTTP), service desk portal → single binary
 ```
 
 Every change to an issue is written to `issue_events`; the activity stream, notifications,

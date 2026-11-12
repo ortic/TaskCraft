@@ -140,6 +140,100 @@ test('dashboards and portfolio', async ({ page }) => {
   await a11y(page, 'main')
 })
 
+/** The sign-in link the mail sink (mail-sink.mjs) got for `email`. */
+async function signInLink(email: string): Promise<string> {
+  const sink = `http://127.0.0.1:${process.env.E2E_MAIL_PORT ?? '8797'}/messages`
+  for (let i = 0; i < 60; i++) {
+    const mails: { to: string[]; text: string }[] = await (await fetch(sink)).json()
+    const link = mails
+      .filter((m) => m.to.includes(email))
+      .map((m) => /https?:\/\/\S+\/portal\/sign-in\?token=[\w-]+(&request=[\w-]+)?/.exec(m.text)?.[0])
+      .filter(Boolean)
+      .pop()
+    if (link) return link
+    await new Promise((r) => setTimeout(r, 500))
+  }
+  throw new Error(`no sign-in link for ${email}`)
+}
+
+test('service desk: a public request form, the portal, answers both ways', async ({ page, browser, baseURL }) => {
+  test.setTimeout(120_000)
+  // an admin publishes a request form for the support project
+  await login(page)
+  await page.goto('/projects/SUP/settings/service-desk')
+  await page.getByLabel(/Publish a request form for/).check()
+  await page.getByLabel('Title', { exact: true }).fill('Ask the support team')
+  await page.getByLabel('Description', { exact: true }).selectOption('required')
+  await page.getByLabel('Requesters can mark their requests as resolved').check()
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.locator('.toast', { hasText: 'Saved' })).toBeVisible()
+  await a11y(page, '.ps-content')
+
+  // someone without an account sends it
+  const visitor = await browser.newContext({ baseURL, locale: 'en-US' })
+  const p = await visitor.newPage()
+  const email = `jane.${Date.now()}@example.org`
+  await p.goto('/portal/forms/sup')
+  await expect(p.getByRole('heading', { name: 'Ask the support team', level: 1 })).toBeVisible()
+  await a11y(p)
+  await p.getByLabel('Your e-mail address').fill(email)
+  await p.getByLabel('Your name (optional)').fill('Jane Doe')
+  await p.getByLabel('Summary').fill('The invoice shows the wrong address')
+  await p.getByLabel('Description', { exact: true }).fill('Invoice 4711 has our old address.')
+  await p.getByRole('button', { name: 'Send request' }).click()
+  await expect(p.getByRole('heading', { name: 'Request sent' })).toBeVisible()
+  await a11y(p)
+
+  // she signs in with a link e-mailed to her
+  await p.goto('/portal')
+  await expect(p.getByRole('heading', { name: 'Follow your requests', level: 1 })).toBeVisible()
+  await p.keyboard.press('Tab')
+  await expect(p.getByRole('link', { name: 'Skip to content' })).toBeFocused()
+  await p.getByLabel('Your e-mail address').fill(email)
+  await p.getByRole('button', { name: 'E-mail me a sign-in link' }).click()
+  await expect(p.getByText('Check your e-mail.')).toBeVisible()
+  await a11y(p)
+  await p.goto(await signInLink(email))
+  await p.getByRole('button', { name: 'Continue' }).click()
+  await expect(p.getByRole('heading', { name: 'Your requests', level: 1 })).toBeVisible()
+  await a11y(p)
+  await p.getByRole('link', { name: /The invoice shows the wrong address/ }).click()
+  await expect(p.getByRole('heading', { name: 'The invoice shows the wrong address', level: 1 })).toBeVisible()
+  await expect(p.getByText('Invoice 4711 has our old address.')).toBeVisible()
+  const key = new URL(p.url()).pathname.split('/').pop()!
+
+  // she answers
+  await p.getByLabel('Your message').fill('The new address is Main Street 1.')
+  await p.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(p.locator('.portal-message.mine', { hasText: 'Main Street 1' })).toBeVisible()
+  await a11y(p)
+
+  // the team sees where it came from, notes something internal and answers her
+  await page.goto(`/issues/${key}`)
+  await expect(page.getByText('via the request form')).toBeVisible()
+  await expect(page.locator('.comment-box', { hasText: 'Main Street 1' })).toBeVisible()
+  const box = page.locator('.rte.boxed .ProseMirror')
+  await box.click()
+  await page.keyboard.type('Internal: check the billing export.')
+  await page.getByRole('button', { name: 'Comment', exact: true }).click()
+  await expect(page.locator('.comment-box', { hasText: 'billing export' })).toBeVisible()
+  await box.click()
+  await page.keyboard.type('Thanks, we fixed the address.')
+  await page.getByLabel(/Visible to the requester/).check()
+  await page.getByRole('button', { name: 'Send reply' }).click()
+  await expect(page.locator('.comment-box', { hasText: 'we fixed the address' })).toBeVisible()
+
+  // she sees the answer, not the internal note, and marks the request resolved
+  await p.reload()
+  await expect(p.locator('.portal-message', { hasText: 'we fixed the address' })).toBeVisible()
+  await expect(p.getByText('billing export')).toHaveCount(0)
+  await p.getByRole('button', { name: 'Mark as resolved' }).click()
+  await expect(p.locator('.portal-news')).toContainText('Marked as resolved')
+  await expect(p.locator('.portal-meta .portal-state')).toHaveText('Resolved')
+  await a11y(p)
+  await visitor.close()
+})
+
 test('command palette finds issues', async ({ page }) => {
   await login(page)
   await page.keyboard.press('Control+k')

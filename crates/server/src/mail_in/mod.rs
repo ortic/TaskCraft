@@ -14,8 +14,9 @@
 //!   → description; HTML is turned into text, never shown as HTML). Files become attachments.
 //! - **Senders**: people with an account act as themselves, with their permissions (creating
 //!   issues needs member access, commenting viewer access). Others only where the project lets
-//!   anyone write: they become the issue's *requester*, get an acknowledgement, can answer by
-//!   e-mail, and comments marked "e-mail to requester" are sent to them.
+//!   anyone write: they become the issue's *requester*, get an acknowledgement with a link to
+//!   the request in the portal ([`crate::portal`]), can answer by e-mail, and comments marked
+//!   "visible to the requester" are sent to them (and shown in the portal).
 //! - **Safety**: auto-replies, bulk mail and bounces are ignored, as are our own e-mails; a
 //!   sender may send 30 messages an hour; messages over 40 MB are refused; each Message-ID is
 //!   handled once; DMARC failures reported by the receiving server are refused. Every message
@@ -443,13 +444,16 @@ async fn handle(state: &AppState, m: &Inbound, size: usize, entry: &mut Entry) -
 
 // ---- issues and comments ---------------------------------------------------------------------
 
-/// The person outside the workspace an issue was opened for by e-mail.
+/// The person outside the workspace an issue was opened for (by e-mail, on the request form or
+/// in the portal).
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Requester {
     pub email: String,
     pub name: Option<String>,
     pub reply_to: Option<String>,
     pub last_message_id: Option<String>,
+    /// email | form | portal
+    pub source: String,
 }
 
 impl Requester {
@@ -460,7 +464,10 @@ impl Requester {
 }
 
 pub async fn requester(state: &AppState, issue: Uuid) -> sqlx::Result<Option<Requester>> {
-    sqlx::query_as("SELECT email, name, reply_to, last_message_id FROM issue_requesters WHERE issue_id = $1").bind(issue).fetch_optional(&state.db).await
+    sqlx::query_as("SELECT email, name, reply_to, last_message_id, source FROM issue_requesters WHERE issue_id = $1")
+        .bind(issue)
+        .fetch_optional(&state.db)
+        .await
 }
 
 /// Stores a message's files on an issue (as large as uploads may be); notes what was left out.
@@ -529,7 +536,8 @@ async fn reply(state: &AppState, m: &Inbound, from: &str, issue: &issues::Row, p
         return Ok(Outcome::ignored("empty"));
     }
     let by = external.as_ref().map(|(e, n)| n.clone().unwrap_or_else(|| e.clone()));
-    let opts = crate::routes::comments::CommentOpts { via_email: true, external: external.clone() };
+    // the requester's own messages are part of their conversation in the portal
+    let opts = crate::routes::comments::CommentOpts { via_email: true, for_requester: external.is_some(), external: external.clone(), ..Default::default() };
     if let Err(e) = crate::routes::comments::add_with(state, &actor, issue.id, parse::text_to_doc(&text), &opts).await {
         return Ok(Outcome::rejected("invalid", lasting(e)?));
     }
@@ -547,20 +555,33 @@ async fn reply(state: &AppState, m: &Inbound, from: &str, issue: &issues::Row, p
     Ok(Outcome::done("commented", key, (!notes.is_empty()).then(|| notes.join("; "))))
 }
 
+/// Who an issue was opened for (someone without an account).
+pub struct NewRequester<'a> {
+    pub email: &'a str,
+    pub name: Option<&'a str>,
+    /// the address replies to them name as Reply-To (where they wrote to)
+    pub reply_to: Option<&'a str>,
+    /// Message-ID of their e-mail
+    pub message_id: Option<&'a str>,
+    /// email | form | portal
+    pub source: &'static str,
+}
+
 /// Notes who an issue was opened for, names them in its history and has someone follow it (the
 /// assignee, else the project lead), so their answers reach the team.
-async fn add_requester(state: &AppState, s: &Summary, from: &str, m: &Inbound, address: &str, by: Option<&str>) -> anyhow::Result<()> {
-    sqlx::query("INSERT INTO issue_requesters (issue_id, email, name, reply_to, last_message_id) VALUES ($1, $2, $3, $4, $5)")
+pub async fn add_requester(state: &AppState, s: &Summary, r: &NewRequester<'_>) -> anyhow::Result<()> {
+    sqlx::query("INSERT INTO issue_requesters (issue_id, email, name, reply_to, last_message_id, source) VALUES ($1, $2, $3, $4, $5, $6)")
         .bind(s.id)
-        .bind(from)
-        .bind(&m.from_name)
-        .bind(address)
-        .bind(&m.message_id)
+        .bind(r.email)
+        .bind(r.name)
+        .bind(r.reply_to)
+        .bind(r.message_id)
+        .bind(r.source)
         .execute(&state.db)
         .await?;
     sqlx::query("UPDATE issue_events SET new_value = new_value || jsonb_build_object('by', $2::text) WHERE issue_id = $1 AND kind = 'created'")
         .bind(s.id)
-        .bind(by)
+        .bind(r.name.unwrap_or(r.email))
         .execute(&state.db)
         .await?;
     sqlx::query(
@@ -602,13 +623,14 @@ async fn new_issue(state: &AppState, m: &Inbound, from: &str, project: &Project,
     // the issue exists: from here on, trouble is noted rather than tried again (that would make
     // a second issue)
     let mut notes = Vec::new();
-    if external && let Err(e) = add_requester(state, &s, from, m, address, by.as_deref()).await {
+    let r = NewRequester { email: from, name: m.from_name.as_deref(), reply_to: Some(address), message_id: m.message_id.as_deref(), source: "email" };
+    if external && let Err(e) = add_requester(state, &s, &r).await {
         tracing::warn!(issue = %s.key, "e-mail in: noting the requester failed: {e:#}");
         notes.push("the requester couldn't be noted".to_string());
     }
     notes.extend(attach(state, m, &s, actor.user, by.as_deref()).await);
     if external {
-        match acknowledge(state, &s, project, from, m.from_name.as_deref(), address, m.message_id.as_deref()).await {
+        match acknowledge(state, &s, &project.name, from, m.from_name.as_deref(), Some(address), m.message_id.as_deref()).await {
             Ok(true) => {}
             Ok(false) => notes.push("no acknowledgement sent".into()),
             Err(e) => {
@@ -651,13 +673,14 @@ fn requester_headers(state: &AppState, issue: Uuid, project_name: &str, reply_to
 }
 
 /// The acknowledgement for a new issue from a requester (at most a few per hour and address).
-async fn acknowledge(
+/// `reply_to`: the project's address when it takes e-mail (they may answer by e-mail).
+pub async fn acknowledge(
     state: &AppState,
     s: &Summary,
-    project: &Project,
+    project_name: &str,
     to: &str,
     name: Option<&str>,
-    address: &str,
+    reply_to: Option<&str>,
     their_id: Option<&str>,
 ) -> anyhow::Result<bool> {
     if !state.mailer.enabled() {
@@ -671,45 +694,78 @@ async fn acknowledge(
     if recent >= ACKS_PER_HOUR {
         return Ok(false);
     }
-    let (subject, text, html) = acknowledgement_mail(&s.key, &s.title, name, &project.name);
-    let mut headers = requester_headers(state, s.id, &project.name, Some(address.to_string()), their_id);
+    let follow = FollowUp { portal: &crate::portal::request_url(state, &s.key), by_mail: reply_to.is_some() };
+    let (subject, text, html) = acknowledgement_mail(&s.key, &s.title, name, project_name, &follow);
+    let mut headers = requester_headers(state, s.id, project_name, reply_to.map(str::to_string), their_id);
     headers.auto_submitted = Some("auto-replied".into());
     crate::mail::queue_with(state, &Mail { to: to.to_string(), subject, text, html, purpose: "mail-in-ack" }, Some(&headers)).await
 }
 
+/// How a requester follows up on a request: in the portal, and by e-mail when the project
+/// takes e-mail.
+pub struct FollowUp<'a> {
+    /// the request's page in the portal
+    pub portal: &'a str,
+    /// answers by e-mail reach the project
+    pub by_mail: bool,
+}
+
+/// A link styled as a button, for e-mails to requesters.
+fn button(url: &str, label: &str) -> String {
+    format!(
+        "<p style=\"margin:16px 0\"><a href=\"{url}\" style=\"background:#4f5fe0;color:#ffffff;padding:9px 16px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block\">{}</a></p>",
+        esc(label),
+        url = esc(url)
+    )
+}
+
 /// (subject, text, html) of an acknowledgement.
-pub fn acknowledgement_mail(key: &str, title: &str, name: Option<&str>, project: &str) -> (String, String, String) {
+pub fn acknowledgement_mail(key: &str, title: &str, name: Option<&str>, project: &str, follow: &FollowUp) -> (String, String, String) {
     let subject = format!("[{key}] {title}");
     let greeting = match name {
         Some(n) => format!("Hi {n},"),
         None => "Hi,".to_string(),
     };
     let intro = format!("thanks for your message. It's filed as {key}, and we'll get back to you.");
-    let how = format!("To add anything, reply to this e-mail and keep [{key}] in the subject.");
-    let text = format!("{greeting}\n\n{intro}\n\n{how}\n\n— {project}\n");
+    let online = "Follow your request and answer online:";
+    let how = if follow.by_mail {
+        format!("To add anything, you can also reply to this e-mail and keep [{key}] in the subject.")
+    } else {
+        "Replies to this e-mail don't reach us: please answer on that page.".to_string()
+    };
+    let text = format!("{greeting}\n\n{intro}\n\n{online}\n{}\n\n{how}\n\n— {project}\n", follow.portal);
+    let p = |s: &str| format!("<p style=\"margin:0 0 12px\">{}</p>", esc(s));
     let html = conversation_html(
         &subject,
-        &format!(
-            "<p style=\"margin:0 0 12px\">{}</p><p style=\"margin:0 0 12px\">{}</p><p style=\"margin:0 0 12px\">{}</p>",
-            esc(&greeting),
-            esc(&intro),
-            esc(&how)
-        ),
+        &format!("{}{}{}{}", p(&greeting), p(&intro), button(follow.portal, "View your request"), p(&how)),
         &format!("— {}", esc(project)),
     );
     (subject, text, html)
 }
 
 /// (subject, text, html) of a comment e-mailed to the requester; the comment as Markdown.
-pub fn reply_mail(key: &str, title: &str, markdown: &str, author: &str, project: &str) -> (String, String, String) {
+pub fn reply_mail(key: &str, title: &str, markdown: &str, author: &str, project: &str, follow: &FollowUp) -> (String, String, String) {
     let subject = format!("Re: [{key}] {title}");
-    let how = format!("Reply to this e-mail to answer; please keep [{key}] in the subject.");
+    let how = if follow.by_mail {
+        format!("Reply to this e-mail to answer; please keep [{key}] in the subject. Or answer online: {}", follow.portal)
+    } else {
+        format!("Answer online: {} (replies to this e-mail don't reach us)", follow.portal)
+    };
     let text = format!("{}\n\n— {author}, {project}\n\n{how}\n", markdown.trim());
     let mut options = comrak::Options::default();
     options.render.r#unsafe = false;
     options.extension.autolink = true;
     let body = comrak::markdown_to_html(markdown, &options);
-    let html = conversation_html(&subject, &format!("{body}<p style=\"margin:16px 0 0\">— {}, {}</p>", esc(author), esc(project)), &esc(&how));
+    let footer = if follow.by_mail {
+        format!("Reply to this e-mail to answer; please keep [{}] in the subject.", esc(key))
+    } else {
+        "Replies to this e-mail don't reach us: please answer online.".to_string()
+    };
+    let html = conversation_html(
+        &subject,
+        &format!("{body}<p style=\"margin:16px 0 0\">— {}, {}</p>{}", esc(author), esc(project), button(follow.portal, "View your request")),
+        &footer,
+    );
     (subject, text, html)
 }
 
@@ -722,8 +778,11 @@ pub async fn mail_requester(state: &AppState, issue: Uuid, comment: Uuid, body: 
     let s = issues::summary(state, issues::load(state, issue).await.map_err(|e| anyhow::anyhow!("{e:#}"))?);
     let Some(p) = project(state, s.project_id).await? else { return Ok(false) };
     let markdown = crate::doc::to_markdown(body);
-    let (subject, text, html) = reply_mail(&s.key, &s.title, &markdown, author, &p.name);
-    let reply_to = Settings::of(&p.settings).address.or(r.reply_to.clone()).or_else(|| plus_address(state, &p.key));
+    // answers by e-mail reach the project only while it takes e-mail
+    let settings = Settings::of(&p.settings);
+    let reply_to = if settings.enabled { settings.address.or(r.reply_to.clone()).or_else(|| plus_address(state, &p.key)) } else { None };
+    let follow = FollowUp { portal: &crate::portal::request_url(state, &s.key), by_mail: reply_to.is_some() };
+    let (subject, text, html) = reply_mail(&s.key, &s.title, &markdown, author, &p.name, &follow);
     let headers = requester_headers(state, issue, &p.name, reply_to, r.last_message_id.as_deref());
     let queued = crate::mail::queue_with(state, &Mail { to: r.email.clone(), subject, text, html, purpose: "requester" }, Some(&headers)).await?;
     if queued {
@@ -804,16 +863,25 @@ mod tests {
         assert_eq!(s, Settings { enabled: true, address: Some("support@acme.com".into()), senders: Senders::Anyone });
         assert_eq!(Settings::of(&json!({"mailIn": {"senders": "nobody"}})), Settings::default(), "invalid settings mean off");
 
-        let (subject, text, html) = acknowledgement_mail("SUP-12", "Printer <on> fire", Some("Jane & Co"), "Customer Support");
+        let url = "https://tasks.acme.com/portal/requests/SUP-12";
+        let by_mail = FollowUp { portal: url, by_mail: true };
+        let (subject, text, html) = acknowledgement_mail("SUP-12", "Printer <on> fire", Some("Jane & Co"), "Customer Support", &by_mail);
         assert_eq!(subject, "[SUP-12] Printer <on> fire");
         assert!(text.starts_with("Hi Jane & Co,\n\nthanks for your message. It's filed as SUP-12"), "{text}");
         assert!(text.contains("keep [SUP-12] in the subject") && text.ends_with("— Customer Support\n"));
+        assert!(text.contains(&format!("answer online:\n{url}\n")), "{text}");
         assert!(html.contains("Hi Jane &amp; Co,") && html.contains("Printer &lt;on&gt; fire") && !html.contains("<on>"), "{html}");
+        assert!(html.contains(&format!("href=\"{url}\"")), "{html}");
+        let online = FollowUp { portal: url, by_mail: false };
+        let (_, text, _) = acknowledgement_mail("SUP-12", "Printer", None, "Customer Support", &online);
+        assert!(text.starts_with("Hi,\n\n") && !text.contains("keep [SUP-12]") && text.contains("don't reach us"), "{text}");
 
-        let (subject, text, html) = reply_mail("SUP-12", "Printer", "We **restarted** it. <script>x</script>", "Mira", "Customer Support");
+        let (subject, text, html) = reply_mail("SUP-12", "Printer", "We **restarted** it. <script>x</script>", "Mira", "Customer Support", &by_mail);
         assert_eq!(subject, "Re: [SUP-12] Printer");
         assert!(text.starts_with("We **restarted** it."), "{text}");
-        assert!(text.contains("— Mira, Customer Support"));
-        assert!(html.contains("<strong>restarted</strong>") && !html.contains("<script>"), "{html}");
+        assert!(text.contains("— Mira, Customer Support") && text.contains(url));
+        assert!(html.contains("<strong>restarted</strong>") && !html.contains("<script>") && html.contains(url), "{html}");
+        let (_, text, _) = reply_mail("SUP-12", "Printer", "Done.", "Mira", "Customer Support", &online);
+        assert!(text.contains(&format!("Answer online: {url}")) && !text.contains("Reply to this e-mail"), "{text}");
     }
 }

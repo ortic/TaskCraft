@@ -18,6 +18,7 @@ pub mod markup;
 pub mod mcp;
 pub mod mfa;
 pub mod notify;
+pub mod portal;
 pub mod query;
 pub mod reports;
 pub mod routes;
