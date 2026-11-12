@@ -17,7 +17,8 @@ use crate::events::{self, Event};
 use crate::issues::{self, Actor, Change};
 
 pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>) -> ApiResult<Json<Value>> {
-    let (id, _, _) = issue_for(&state, &user, &key, Role::Viewer).await?;
+    let (id, _, role) = issue_for(&state, &user, &key, Role::Viewer).await?;
+    let teams = teams_of(&state, user.id).await?;
     #[derive(sqlx::FromRow)]
     struct Row {
         id: Uuid,
@@ -33,16 +34,21 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser,
         to_requester_at: Option<chrono::DateTime<chrono::Utc>>,
         for_requester: bool,
         via_portal: bool,
+        visibility: Option<String>,
+        team_name: Option<String>,
     }
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT c.id, c.author_id, u.name, c.body, c.created_at, c.updated_at, c.edited, c.author_email, c.author_name, c.via_email, c.to_requester_at,
-                c.for_requester, c.via_portal
+                c.for_requester, c.via_portal, c.visibility,
+                (SELECT t.name FROM teams t WHERE 'team:' || t.id::text = c.visibility) AS team_name
            FROM comments c LEFT JOIN users u ON u.id = c.author_id
           WHERE c.issue_id = $1 ORDER BY c.created_at",
     )
     .bind(id)
     .fetch_all(&state.db)
     .await?;
+    // restricted comments only for those they're for
+    let rows: Vec<Row> = rows.into_iter().filter(|r| readable(r.visibility.as_deref(), role, user.id, r.author_id, &teams)).collect();
     let reactions: Vec<(Uuid, String, Uuid, String)> = sqlx::query_as(
         "SELECT r.comment_id, r.reaction, r.user_id, u.name FROM comment_reactions r JOIN users u ON u.id = r.user_id JOIN comments c ON c.id = r.comment_id WHERE c.issue_id = $1",
     )
@@ -64,6 +70,7 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser,
                     "id": c.id, "author": c.author_id.map(|a| json!({"id": a, "name": c.name})), "external": external, "body": c.body,
                     "createdAt": c.created_at, "updatedAt": c.updated_at, "edited": c.edited, "viaEmail": c.via_email, "viaPortal": c.via_portal,
                     "forRequester": c.for_requester, "emailedAt": c.to_requester_at,
+                    "visibility": c.visibility, "visibleTo": c.team_name,
                     "reactions": by_kind.into_iter().map(|(k, people)| json!({"reaction": k, "people": people})).collect::<Vec<_>>()
                 })
             })
@@ -82,6 +89,75 @@ pub struct CommentOpts {
     pub for_requester: bool,
     /// written by someone without an account (an issue's requester): e-mail address and name
     pub external: Option<(String, Option<String>)>,
+    /// who may read it besides its author and project admins: members, admins or team:<id>
+    pub visibility: Option<String>,
+}
+
+/// Whether someone may read a comment: everyone who sees the issue, or — for a restricted one —
+/// its author, project admins, and members / the team it's for.
+pub fn readable(visibility: Option<&str>, role: Role, me: Uuid, author: Option<Uuid>, my_teams: &[Uuid]) -> bool {
+    let Some(v) = visibility else { return true };
+    if author == Some(me) || role >= Role::Admin {
+        return true;
+    }
+    match v {
+        "members" => role >= Role::Member,
+        "admins" => false,
+        team => team.strip_prefix("team:").and_then(|t| t.parse::<Uuid>().ok()).is_some_and(|t| my_teams.contains(&t)),
+    }
+}
+
+/// The teams someone is in.
+pub async fn teams_of(state: &AppState, user: Uuid) -> ApiResult<Vec<Uuid>> {
+    Ok(sqlx::query_scalar("SELECT team_id FROM team_members WHERE user_id = $1").bind(user).fetch_all(&state.db).await?)
+}
+
+/// The restricted comments on these issues that `user` may not read (to leave them out of
+/// history and activity).
+pub async fn hidden_comments(state: &AppState, user: &crate::auth::User, issues: &[Uuid]) -> ApiResult<std::collections::HashSet<Uuid>> {
+    let rows: Vec<(Uuid, Option<String>, Option<Uuid>, Option<i32>)> = sqlx::query_as(
+        "SELECT c.id, c.visibility, c.author_id, r.rank FROM comments c JOIN issues i ON i.id = c.issue_id
+           LEFT JOIN tc_project_roles($2) r ON r.project_id = i.project_id
+          WHERE c.issue_id = ANY($1) AND c.visibility IS NOT NULL",
+    )
+    .bind(issues)
+    .bind(user.id)
+    .fetch_all(&state.db)
+    .await?;
+    if rows.is_empty() {
+        return Ok(Default::default());
+    }
+    let teams = teams_of(state, user.id).await?;
+    Ok(rows.into_iter().filter(|(_, v, a, rank)| !readable(v.as_deref(), Role::from_rank(rank.unwrap_or(0)), user.id, *a, &teams)).map(|r| r.0).collect())
+}
+
+/// Checks a comment's visibility as the person setting it (`role` in the project).
+async fn check_visibility(state: &AppState, user: &crate::auth::User, role: Role, v: Option<&str>) -> ApiResult<Option<String>> {
+    let Some(v) = v.map(str::trim).filter(|v| !v.is_empty() && *v != "everyone") else { return Ok(None) };
+    match v {
+        "members" | "admins" => {
+            if v == "admins" && role < Role::Admin {
+                return Err(ApiError::bad("only project admins can write comments for project admins"));
+            }
+            Ok(Some(v.to_string()))
+        }
+        _ => {
+            let team: Uuid =
+                v.strip_prefix("team:").and_then(|t| t.parse().ok()).ok_or_else(|| ApiError::bad("visibility is members, admins or team:<team id>"))?;
+            let in_team: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM teams t WHERE t.id = $1 AND t.workspace_id = $2)")
+                .bind(team)
+                .bind(user.workspace_id)
+                .fetch_one(&state.db)
+                .await?;
+            if !in_team {
+                return Err(ApiError::bad("unknown team"));
+            }
+            if role < Role::Admin && !teams_of(state, user.id).await?.contains(&team) {
+                return Err(ApiError::bad("you can only write comments for a team you're in"));
+            }
+            Ok(Some(format!("team:{team}")))
+        }
+    }
 }
 
 /// Adds a comment as `actor` (people and automation rules).
@@ -103,8 +179,8 @@ pub async fn add_with(state: &AppState, actor: &Actor, issue: Uuid, body: Value,
     let by = opts.external.as_ref().map(|(e, n)| n.clone().unwrap_or_else(|| e.clone()));
     let mut tx = state.db.begin().await?;
     sqlx::query(
-        "INSERT INTO comments (id, issue_id, author_id, body, body_text, author_email, author_name, via_email, via_portal, for_requester)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+        "INSERT INTO comments (id, issue_id, author_id, body, body_text, author_email, author_name, via_email, via_portal, for_requester, visibility)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
     )
     .bind(id)
     .bind(issue)
@@ -116,6 +192,7 @@ pub async fn add_with(state: &AppState, actor: &Actor, issue: Uuid, body: Value,
     .bind(opts.via_email)
     .bind(opts.via_portal)
     .bind(opts.for_requester)
+    .bind(&opts.visibility)
     .execute(&mut *tx)
     .await?;
     let excerpt: String = text.chars().take(200).collect();
@@ -130,7 +207,7 @@ pub async fn add_with(state: &AppState, actor: &Actor, issue: Uuid, body: Value,
     sqlx::query("UPDATE issues SET updated_at = now() WHERE id = $1").bind(issue).execute(&mut *tx).await?;
     tx.commit().await?;
     let s = issues::summary(state, issues::load(state, issue).await?);
-    crate::notify::comment(state, actor, &s, id, &body, by.as_deref()).await;
+    crate::notify::comment(state, actor, &s, id, &body, by.as_deref(), opts.visibility.as_deref()).await;
     let mut e = Event::new(actor.workspace, "comment").project(project).issue(issue, &s.key);
     e.actor_id = actor.user;
     events::publish(state, e).await;
@@ -139,7 +216,7 @@ pub async fn add_with(state: &AppState, actor: &Actor, issue: Uuid, body: Value,
         actor.workspace,
         Some(project),
         "comment.created",
-        json!({"issue": {"id": s.id, "key": s.key, "title": s.title}, "comment": {"id": id, "text": text}}),
+        json!({"issue": {"id": s.id, "key": s.key, "title": s.title}, "comment": {"id": id, "text": text, "visibility": opts.visibility}}),
     )
     .await;
     crate::automation::run_commented(state, actor, &s).await;
@@ -158,6 +235,8 @@ pub struct CommentReq {
     /// the earlier name of `forRequester`
     #[serde(default)]
     email_requester: bool,
+    /// who may read it besides its author and project admins: `members`, `admins` or `team:<id>`
+    visibility: Option<String>,
 }
 
 impl CommentReq {
@@ -187,8 +266,12 @@ pub async fn create(
             return Err(ApiError::bad("this issue has no requester"));
         }
     }
+    let visibility = check_visibility(&state, &user, role, req.visibility.as_deref()).await?;
+    if visibility.is_some() && to_requester {
+        return Err(ApiError::bad("a comment for the requester can't be restricted"));
+    }
     let body = req.doc()?;
-    let opts = CommentOpts { for_requester: to_requester, ..Default::default() };
+    let opts = CommentOpts { for_requester: to_requester, visibility, ..Default::default() };
     let id = add_with(&state, &Actor::of(&user), issue, body.clone(), &opts).await?;
     let emailed = to_requester
         && crate::mail_in::mail_requester(&state, issue, id, &body, &user.name).await.unwrap_or_else(|e| {

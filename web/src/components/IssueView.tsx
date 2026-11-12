@@ -6,7 +6,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Link2, Paperclip, Eye, EyeOff, Ellipsis, Heart, FolderInput, Pencil, Copy, Trash, ExternalLink, Plus, X, Ban, BookOpen, Clock, CornerDownRight, MessageSquare, Activity, Timer, FileText, Check,
-  Mail, MailCheck, LifeBuoy, ClipboardList,
+  Mail, MailCheck, LifeBuoy, ClipboardList, Lock,
 } from 'lucide-react'
 import {
   api, ago, dateTime, duration, may, shortDate, type Comment, type HistoryEvent, type Issue, type IssueDetail, type Named, type Project, type WikiPage,
@@ -837,6 +837,10 @@ function Comments({ issue, meId }: { issue: IssueDetail; meId?: string }) {
   const requester = issue.requester
   const canReply = !!requester && issue.permissions.edit
   const [toRequester, setToRequester] = useState(false)
+  // who may read a new comment: everyone, members, project admins or one of the writer's teams
+  const [visibility, setVisibility] = useState('')
+  const teams = useQuery({ queryKey: ['teams'], queryFn: () => api.get<{ id: string; name: string; memberIds: string[] }[]>('/teams'), staleTime: 60_000 })
+  const myTeams = (teams.data ?? []).filter((tm) => issue.permissions.admin || (meId && tm.memberIds.includes(meId)))
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['comments', issue.key] })
     qc.invalidateQueries({ queryKey: ['issue', issue.key] })
@@ -859,7 +863,7 @@ function Comments({ issue, meId }: { issue: IssueDetail; meId?: string }) {
                 if (isEmptyDoc(doc)) return
                 try {
                   const send = canReply && toRequester
-                  const r = await api.post<{ id: string; emailed?: boolean }>(`/issues/${issue.key}/comments`, { body: doc, forRequester: send })
+                  const r = await api.post<{ id: string; emailed?: boolean }>(`/issues/${issue.key}/comments`, { body: doc, forRequester: send, visibility: send ? undefined : visibility || undefined })
                   if (send) {
                     toast(
                       r.emailed
@@ -870,6 +874,7 @@ function Comments({ issue, meId }: { issue: IssueDetail; meId?: string }) {
                     )
                   }
                   setToRequester(false)
+                  setVisibility('')
                   refresh()
                 } catch (e) {
                   toast((e as Error).message)
@@ -877,6 +882,18 @@ function Comments({ issue, meId }: { issue: IssueDetail; meId?: string }) {
                 }
               }}
             />
+            {issue.permissions.edit && (
+              <label className="row small comment-visibility">
+                <Lock size={13} aria-hidden className="faint" />
+                <span className="faint">{t('Who can read it')}</span>
+                <select className="select input-sm" value={visibility} disabled={canReply && toRequester} onChange={(e) => setVisibility(e.target.value)}>
+                  <option value="">{t('Everyone who sees the issue')}</option>
+                  <option value="members">{t('Members (not viewers or guests)')}</option>
+                  {issue.permissions.admin && <option value="admins">{t('Project admins')}</option>}
+                  {myTeams.map((tm) => <option key={tm.id} value={`team:${tm.id}`}>{t('Team {name}', { name: tm.name })}</option>)}
+                </select>
+              </label>
+            )}
             {canReply && (
               <div className="comment-requester">
                 <label className="row small">
@@ -908,6 +925,11 @@ function Comments({ issue, meId }: { issue: IssueDetail; meId?: string }) {
               {c.edited && <span className="faint small">({t('edited')})</span>}
               {c.viaEmail && <span className="badge" title={t('Came in by e-mail')}><Mail size={11} aria-hidden /> {t('by e-mail')}</span>}
               {c.viaPortal && <span className="badge" title={t('Written in the portal')}><LifeBuoy size={11} aria-hidden /> {t('in the portal')}</span>}
+              {c.visibility && (
+                <span className="badge badge-warning" title={t('Only these people (and its author and project admins) can read it')}>
+                  <Lock size={11} aria-hidden /> {c.visibility === 'members' ? t('Members') : c.visibility === 'admins' ? t('Project admins') : t('Team {name}', { name: c.visibleTo ?? '?' })}
+                </span>
+              )}
               {c.emailedAt ? (
                 <span className="badge badge-accent" title={t('Visible to the requester; e-mailed to them {when}', { when: dateTime(c.emailedAt) })}>
                   <MailCheck size={11} aria-hidden /> {t('sent to requester')}

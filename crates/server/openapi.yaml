@@ -4494,7 +4494,7 @@ paths:
       - Comments & time
       summary: Comments of an issue
       operationId: listComments
-      description: Oldest first, internal ones included.
+      description: Oldest first, internal ones included; restricted comments only for those they're for.
       parameters:
       - name: key
         in: path
@@ -11596,6 +11596,17 @@ components:
           - 'null'
           format: date-time
           description: when it was e-mailed to the requester
+        visibility:
+          type:
+          - string
+          - 'null'
+          description: 'restricted comments: `members`, `admins` or `team:<id>` (its author and project admins read it too);
+            null: everyone who sees the issue'
+        visibleTo:
+          type:
+          - string
+          - 'null'
+          description: the team's name for a team comment
         reactions:
           type: array
           items:
@@ -11650,6 +11661,13 @@ components:
         emailRequester:
           type: boolean
           description: the earlier name of forRequester
+        visibility:
+          type:
+          - string
+          - 'null'
+          description: 'new comments: who may read it besides its author and project admins — `members` (not viewers or guests),
+            `admins` (project admins writing), `team:<id>` (a team the writer is in); not with forRequester. Restricted comments
+            are left out of history, activity, notifications and comment search for everyone else.'
       description: '`body` or `markdown` is required; mentions in rich text notify the people mentioned.'
     Worklog:
       type: object

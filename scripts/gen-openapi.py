@@ -1631,6 +1631,8 @@ schemas["Comment"] = obj(
         "viaPortal": d(boolean, "written in the service desk portal"),
         "forRequester": d(boolean, "the issue's requester sees it (in the portal, and by e-mail)"),
         "emailedAt": ndt("when it was e-mailed to the requester"),
+        "visibility": ntxt("restricted comments: `members`, `admins` or `team:<id>` (its author and project admins read it too); null: everyone who sees the issue"),
+        "visibleTo": ntxt("the team's name for a team comment"),
         "reactions": arr(obj({"reaction": S("Reaction"), "people": arr(S("Named"))}, ["reaction", "people"])),
     },
     ["id", "author", "external", "body", "createdAt", "updatedAt", "edited", "viaEmail", "viaPortal", "forRequester", "emailedAt", "reactions"],
@@ -1642,6 +1644,7 @@ schemas["CommentInput"] = obj(
         "markdown": d(txt, "the comment as Markdown (instead of body)"),
         "forRequester": d(boolean, "new comments: visible to the issue's requester (in the portal, and e-mailed when outgoing mail is set up); people who can edit the issue, issues with a requester only"),
         "emailRequester": d(boolean, "the earlier name of forRequester"),
+        "visibility": ntxt("new comments: who may read it besides its author and project admins — `members` (not viewers or guests), `admins` (project admins writing), `team:<id>` (a team the writer is in); not with forRequester. Restricted comments are left out of history, activity, notifications and comment search for everyone else."),
     },
     desc="`body` or `markdown` is required; mentions in rich text notify the people mentioned.",
 )
@@ -1960,7 +1963,7 @@ op(
 
 # ---- Comments & time
 
-op("get", "/issues/{key}/comments", "listComments", "Comments & time", "Comments of an issue", desc="Oldest first, internal ones included.", res=ok(arr(S("Comment"))))
+op("get", "/issues/{key}/comments", "listComments", "Comments & time", "Comments of an issue", desc="Oldest first, internal ones included; restricted comments only for those they're for.", res=ok(arr(S("Comment"))))
 op(
     "post",
     "/issues/{key}/comments",

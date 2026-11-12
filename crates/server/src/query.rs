@@ -352,7 +352,10 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
                     qb.push(")");
                 }
                 "comment" | "comments" => {
-                    qb.push("EXISTS (SELECT 1 FROM comments c WHERE c.issue_id = i.id AND c.body_text ILIKE ");
+                    // restricted comments are searched by their authors only (others may not read them)
+                    qb.push("EXISTS (SELECT 1 FROM comments c WHERE c.issue_id = i.id AND (c.visibility IS NULL OR c.author_id = ");
+                    qb.push_bind(ctx.user);
+                    qb.push(") AND c.body_text ILIKE ");
                     qb.push_bind(like(&t));
                     qb.push(")");
                 }

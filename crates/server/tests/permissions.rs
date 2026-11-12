@@ -76,3 +76,66 @@ async fn projects_choose_who_may_do_what() {
     let (s, _) = send(&mia, Method::POST, app.url(&format!("/issues/{c}/move-project")), json!({"projectKey": "OTHER"})).await;
     assert_eq!(s, 403);
 }
+
+#[tokio::test]
+async fn restricted_comments_reach_only_those_they_are_for() {
+    let app = spawn().await;
+    let admin = app.setup(false).await;
+    post(&admin, app.url("/projects"), json!({"key": "SEC", "name": "Secrets", "template": "kanban"})).await;
+    let (mia, mia_id) = app.user(&admin, "Mia Member", "mia@example.com", "member").await;
+    let (max, max_id) = app.user(&admin, "Max Member", "max@example.com", "member").await;
+    let (vic, vic_id) = app.user(&admin, "Vic Viewer", "vic@example.com", "guest").await;
+    let (s, _) = send(&admin, Method::PUT, app.url("/projects/SEC/members"), json!([{"subjectType": "user", "subjectId": vic_id, "role": "viewer"}])).await;
+    assert!(s < 300);
+    let qa = post(&admin, app.url("/teams"), json!({"name": "QA", "memberIds": [mia_id]})).await;
+    let key = post(&mia, app.url("/issues"), json!({"projectKey": "SEC", "title": "Login leaks"})).await["key"].as_str().unwrap().to_string();
+    for w in [&max_id, &vic_id] {
+        let (s, _) = send(&admin, Method::PUT, app.url(&format!("/issues/{key}/watch")), json!({"watching": true, "userId": w})).await;
+        assert!(s < 300);
+    }
+    let comments = |c: &reqwest::Client| {
+        let (c, url) = (c.clone(), app.url(&format!("/issues/{key}/comments")));
+        async move { get(&c, url).await.as_array().unwrap().iter().map(|x| x["body"].to_string()).collect::<Vec<_>>().join(" ") }
+    };
+
+    // who may write what
+    assert_eq!(send(&mia, Method::POST, app.url(&format!("/issues/{key}/comments")), json!({"markdown": "x", "visibility": "admins"})).await.0, 400);
+    let other_team = post(&admin, app.url("/teams"), json!({"name": "Ops", "memberIds": [max_id]})).await;
+    let (s, _) = send(
+        &mia,
+        Method::POST,
+        app.url(&format!("/issues/{key}/comments")),
+        json!({"markdown": "x", "visibility": format!("team:{}", other_team["id"].as_str().unwrap())}),
+    )
+    .await;
+    assert_eq!(s, 400, "only for a team you're in");
+
+    post(&admin, app.url(&format!("/issues/{key}/comments")), json!({"markdown": "admins only: the root cause", "visibility": "admins"})).await;
+    post(&mia, app.url(&format!("/issues/{key}/comments")), json!({"markdown": "members: patch ready", "visibility": "members"})).await;
+    post(
+        &mia,
+        app.url(&format!("/issues/{key}/comments")),
+        json!({"markdown": "QA: reproduce with token X @Max Member", "visibility": format!("team:{}", qa["id"].as_str().unwrap())}),
+    )
+    .await;
+    post(&mia, app.url(&format!("/issues/{key}/comments")), json!({"markdown": "everyone: fixed soon"})).await;
+
+    let a = comments(&admin).await;
+    assert!(a.contains("root cause") && a.contains("patch ready") && a.contains("token X") && a.contains("fixed soon"), "admins see all");
+    let m = comments(&mia).await;
+    assert!(!m.contains("root cause") && m.contains("patch ready") && m.contains("token X"), "{m}");
+    let x = comments(&max).await;
+    assert!(!x.contains("root cause") && x.contains("patch ready") && !x.contains("token X") && x.contains("fixed soon"), "{x}");
+    let v = comments(&vic).await;
+    assert!(!v.contains("patch ready") && !v.contains("token X") && v.contains("fixed soon"), "viewers see only open comments: {v}");
+    // no trace in history or activity, no notification for those who can't read it
+    let history = get(&vic, app.url(&format!("/issues/{key}/history"))).await.to_string();
+    assert!(!history.contains("patch ready") && !history.contains("root cause") && history.contains("fixed soon"), "{history}");
+    let activity = get(&max, app.url("/activity")).await.to_string();
+    assert!(!activity.contains("token X") && !activity.contains("root cause"), "{activity}");
+    let notes = get(&max, app.url("/notifications")).await.to_string();
+    assert!(!notes.contains("token X") && notes.contains("patch ready"), "mentioned but not in the team: not told: {notes}");
+    // and comment search doesn't give it away
+    let found: serde_json::Value = max.get(app.url("/search")).query(&[("q", "comment ~ \"token X\"")]).send().await.unwrap().json().await.unwrap();
+    assert_eq!(found["total"], 0);
+}

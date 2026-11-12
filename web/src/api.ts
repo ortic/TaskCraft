@@ -294,6 +294,10 @@ export interface Comment {
   forRequester?: boolean
   /** when it was e-mailed to the requester */
   emailedAt?: string | null
+  /** restricted: only `members`, `admins` or `team:<id>` (and its author) read it */
+  visibility?: string | null
+  /** the team's name for a team comment */
+  visibleTo?: string | null
   reactions: { reaction: string; people: Named[] }[]
 }
 

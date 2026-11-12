@@ -84,6 +84,19 @@ pub async fn changes(state: &AppState, actor: &Actor, s: &Summary, changes: &[Ch
 }
 
 /// People mentioned in a description or comment.
+/// Whether `user` may read a comment of `visibility` written by `author` in `project`.
+async fn may_read(state: &AppState, project: Uuid, user: Uuid, visibility: Option<&str>, author: Option<Uuid>) -> bool {
+    let rank: Option<i32> = sqlx::query_scalar("SELECT rank FROM tc_project_roles($1) WHERE project_id = $2")
+        .bind(user)
+        .bind(project)
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten();
+    let teams = crate::routes::comments::teams_of(state, user).await.unwrap_or_default();
+    rank.is_some_and(|r| r >= 1) && crate::routes::comments::readable(visibility, crate::access::Role::from_rank(rank.unwrap_or(0)), user, author, &teams)
+}
+
 pub async fn mentions(state: &AppState, actor: &Actor, s: &Summary, body: &Value, comment: Option<Uuid>) -> Vec<Uuid> {
     let people = crate::doc::mentioned_people(body);
     for u in &people {
@@ -94,7 +107,24 @@ pub async fn mentions(state: &AppState, actor: &Actor, s: &Summary, body: &Value
 
 /// A new comment: mentioned people and watchers. `by` names an author without an account (an
 /// issue's requester writing by e-mail).
-pub async fn comment(state: &AppState, actor: &Actor, s: &Summary, comment: Uuid, body: &Value, by: Option<&str>) {
+pub async fn comment(state: &AppState, actor: &Actor, s: &Summary, comment: Uuid, body: &Value, by: Option<&str>, visibility: Option<&str>) {
+    // a restricted comment tells only those who may read it
+    if visibility.is_some() {
+        let mut told: Vec<Uuid> = Vec::new();
+        let excerpt: String = crate::doc::text(body).chars().take(140).collect();
+        for u in crate::doc::mentioned_people(body) {
+            if may_read(state, s.project_id, u, visibility, actor.user).await {
+                send(state, actor.workspace, u, s, actor.user, "mentioned", json!({"commentId": comment})).await;
+                told.push(u);
+            }
+        }
+        for w in watchers(state, s.id).await {
+            if !told.contains(&w) && may_read(state, s.project_id, w, visibility, actor.user).await {
+                send(state, actor.workspace, w, s, actor.user, "commented", json!({"commentId": comment, "excerpt": excerpt})).await;
+            }
+        }
+        return;
+    }
     let mentioned = mentions(state, actor, s, body, Some(comment)).await;
     let excerpt: String = crate::doc::text(body).chars().take(140).collect();
     let mut data = json!({"commentId": comment, "excerpt": excerpt});

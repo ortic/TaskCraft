@@ -568,8 +568,12 @@ pub async fn history(State(state): State<AppState>, CurrentUser(user): CurrentUs
     .bind(id)
     .fetch_all(&state.db)
     .await?;
+    // restricted comments the caller may not read leave no trace either
+    let hidden = super::comments::hidden_comments(&state, &user, &[id]).await?;
     Ok(Json(json!(
         rows.into_iter()
+            .filter(|r| !(r.3 == "comment"
+                && r.6.as_ref().and_then(|n| n["id"].as_str()).and_then(|c| c.parse::<Uuid>().ok()).is_some_and(|c| hidden.contains(&c))))
             .map(|(id, aid, an, kind, field, old, new, at)| json!({
                 "id": id, "actor": aid.map(|a| json!({"id": a, "name": an})), "kind": kind, "field": field, "old": old, "new": new, "at": at
             }))
@@ -811,19 +815,22 @@ pub async fn activity(
         let (p, _) = super::projects::by_key(&state, &user, k, Role::Viewer).await?;
         visible = vec![p.id];
     }
-    let rows: Vec<(Uuid, Option<Uuid>, Option<String>, String, Option<String>, Option<Value>, Option<Value>, chrono::DateTime<chrono::Utc>, String, String)> =
-        sqlx::query_as(
-            "SELECT e.id, e.actor_id, u.name, e.kind, e.field, e.old_value, e.new_value, e.created_at, p.key || '-' || i.number, i.title
+    type Row = (Uuid, Option<Uuid>, Option<String>, String, Option<String>, Option<Value>, Option<Value>, chrono::DateTime<chrono::Utc>, String, String, Uuid);
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT e.id, e.actor_id, u.name, e.kind, e.field, e.old_value, e.new_value, e.created_at, p.key || '-' || i.number, i.title, e.issue_id
                FROM issue_events e JOIN issues i ON i.id = e.issue_id JOIN projects p ON p.id = e.project_id LEFT JOIN users u ON u.id = e.actor_id
               WHERE e.project_id = ANY($1) AND i.deleted_at IS NULL AND (e.field IS NULL OR e.field NOT IN ('description'))
               ORDER BY e.created_at DESC LIMIT 60",
-        )
-        .bind(&visible)
-        .fetch_all(&state.db)
-        .await?;
+    )
+    .bind(&visible)
+    .fetch_all(&state.db)
+    .await?;
+    let issues: Vec<Uuid> = rows.iter().filter(|r| r.3 == "comment").map(|r| r.10).collect();
+    let hidden = super::comments::hidden_comments(&state, &user, &issues).await?;
     Ok(Json(json!(
         rows.into_iter()
-            .map(|(id, aid, an, kind, field, old, new, at, key, title)| json!({
+            .filter(|r| !(r.3 == "comment" && r.6.as_ref().and_then(|n| n["id"].as_str()).and_then(|c| c.parse::<Uuid>().ok()).is_some_and(|c| hidden.contains(&c))))
+            .map(|(id, aid, an, kind, field, old, new, at, key, title, _)| json!({
                 "id": id, "actor": aid.map(|a| json!({"id": a, "name": an})), "kind": kind, "field": field, "old": old, "new": new, "at": at, "key": key, "title": title
             }))
             .collect::<Vec<_>>()
