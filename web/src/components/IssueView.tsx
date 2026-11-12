@@ -222,7 +222,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
             tabs={[
               { id: 'comments', label: <span className="row" style={{ gap: 6 }}><MessageSquare size={14} />{t('Comments')}{issue.commentCount > 0 && <span className="badge">{issue.commentCount}</span>}</span> },
               { id: 'history', label: <span className="row" style={{ gap: 6 }}><Activity size={14} />{t('History')}</span> },
-              { id: 'work', label: <span className="row" style={{ gap: 6 }}><Timer size={14} />{t('Time')}</span> },
+              { id: 'work', label: <span className="row" style={{ gap: 6 }}><Timer size={14} />{t('Time [[tracking]]')}</span> },
             ]}
           />
           {tab === 'comments' && <Comments issue={issue} meId={me?.user?.id} />}

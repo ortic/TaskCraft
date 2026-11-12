@@ -1499,6 +1499,7 @@
  "This workspace knows WikiCraft at {url}, but your account has no access token. Add a personal WikiCraft token under Profile & settings.",
  "This workspace signs in with single sign-on. Log in with your provider as {email}.",
  "Time",
+ "Time [[tracking]]",
  "Time logged this week",
  "Time range",
  "Time spent",

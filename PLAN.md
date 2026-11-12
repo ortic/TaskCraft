@@ -46,7 +46,7 @@
 - [ ] E-mail in (create issues / comments by mail) for support trackers
 - [x] Git integration: link commits, branches and merge requests by issue key
 - [x] MCP server so assistants can search, create and update issues with the user's permissions
-- [ ] Translations beyond English and German
+- [x] Translations beyond English and German: French and Italian
 - [x] Accessibility audit (axe, WCAG 2.2 AA) in the e2e suite
 - [x] Browser (Playwright) journey tests in CI
 - [ ] Backup / restore command; Kubernetes manifests

@@ -55,11 +55,14 @@ if (cmd === 'extract') {
     const cat = JSON.parse(fs.readFileSync(path.join(localesDir, `${code}.json`), 'utf8'))
     const missing = keys.filter((k) => !(k in cat))
     const unused = Object.keys(cat).filter((k) => !keys.includes(k))
-    // placeholders must survive translation
+    // every placeholder must survive translation (the `one` form may spell out its number), and none may be invented
     const broken = keys.filter((k) => k in cat).filter((k) => {
-      const want = (k.match(/\{\w+\}/g) ?? []).sort().join()
-      const vals = typeof cat[k] === 'string' ? [cat[k]] : Object.values(cat[k])
-      return vals.some((v) => !(want === '' || (v.match(/\{\w+\}/g) ?? []).filter((x) => want.includes(x)).length > 0))
+      const want = new Set(k.match(/\{\w+\}/g) ?? [])
+      const forms = typeof cat[k] === 'string' ? { other: cat[k] } : cat[k]
+      return Object.entries(forms).some(([form, v]) => {
+        const have = new Set(v.match(/\{\w+\}/g) ?? [])
+        return [...have].some((x) => !want.has(x)) || (form !== 'one' && [...want].some((x) => !have.has(x)))
+      })
     })
     console.log(`${code}: ${keys.length - missing.length}/${keys.length} translated, ${unused.length} unused, ${broken.length} with lost placeholders`)
     for (const k of missing.slice(0, 20)) console.log(`  missing: ${k}`)
