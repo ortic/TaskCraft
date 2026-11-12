@@ -49,6 +49,7 @@ const FIELDS: &[&str] = &[
     "due",
     "created",
     "resolved",
+    "resolution",
 ];
 
 /// A field for a header name (case and punctuation don't matter).
@@ -76,6 +77,7 @@ pub fn suggest(header: &str) -> Option<&'static str> {
         "due" | "duedate" | "deadline" | "enddate" => "due",
         "created" | "createdat" | "createddate" | "opened" => "created",
         "resolved" | "resolvedat" | "closed" | "closedat" | "completed" | "donedate" => "resolved",
+        "resolution" | "resolutionname" | "closereason" => "resolution",
         _ => return None,
     })
 }
@@ -439,6 +441,7 @@ pub async fn run(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
     // messages that would repeat on many rows are given once
     let mut once: std::collections::HashSet<String> = Default::default();
     let mut sees: HashMap<Uuid, bool> = HashMap::new();
+    let mut resolutions = crate::workflow::resolutions(&p.settings);
     let mut errors: Vec<Value> = Vec::new();
     let mut warnings: Vec<Value> = Vec::new();
     let mut created: Vec<(Uuid, String)> = Vec::new();
@@ -688,6 +691,36 @@ pub async fn run(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
         if let Some((Some(sid), _)) = status {
             let mut patch = Map::new();
             patch.insert("statusId".into(), json!(sid));
+            // why it's done, when it is (unknown names join the project's list with "create missing")
+            if let Some(r) = one("resolution")
+                && lookup.statuses.iter().any(|x| x.0 == sid && x.2 == "done")
+            {
+                let known = resolutions.iter().find(|n| n.eq_ignore_ascii_case(r.trim())).cloned();
+                match known {
+                    Some(n) => {
+                        patch.insert("resolution".into(), json!(n));
+                    }
+                    None if req.create_missing && resolutions.len() < 20 => {
+                        resolutions.push(r.trim().to_string());
+                        sqlx::query("UPDATE projects SET settings = jsonb_set(settings, '{resolutions}', $2) WHERE id = $1")
+                            .bind(p.id)
+                            .bind(json!(resolutions))
+                            .execute(&state.db)
+                            .await?;
+                        patch.insert("resolution".into(), json!(r.trim()));
+                        let m = format!("new resolution “{}”", r.trim());
+                        if once.insert(m.clone()) {
+                            warnings.push(json!({"row": line, "message": m}));
+                        }
+                    }
+                    None => {
+                        let m = format!("unknown resolution “{}”: the default is used", r.trim());
+                        if once.insert(m.clone()) {
+                            warnings.push(json!({"row": line, "message": m}));
+                        }
+                    }
+                }
+            }
             if let Err(e) = issues::update(&state, &actor, s.id, &patch).await {
                 warnings.push(json!({"row": line, "message": e.to_string()}));
             }

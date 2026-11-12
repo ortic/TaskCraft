@@ -267,6 +267,7 @@ schemas = {
             "labels": arr(txt),
             "custom": d(anyobj, "custom field values by field id (see CustomField for the value of each kind)"),
             "resolvedAt": ndt("when it reached a done status"),
+            "resolution": ntxt("why a done issue is done (one of the project's resolutions: Done, Won't do, …); null while open"),
             "statusChangedAt": dt,
             "createdAt": dt,
             "updatedAt": dt,
@@ -344,7 +345,9 @@ schemas = {
             "description": one(S("PmNode"), d(txt, "plain text"), {"type": "null"}, desc="rich text (ProseMirror JSON), plain text, or null to clear"),
             "descriptionMarkdown": d(txt, "the description as Markdown (instead of `description`)"),
             "typeId": d(uuid, "an issue type of the project"),
-            "statusId": d(uuid, "a status of the project (restricted workflows only allow configured transitions)"),
+            "statusId": d(uuid, "a status of the project (restricted workflows only allow configured transitions; the status's rules may require fields, a comment or a resolution, see StatusRules)"),
+            "resolution": ntxt("for done issues: one of the project's resolutions (matched by name, any case); entering a done status without one sets the status's default or the first; leaving done clears it"),
+            "comment": d(txt, "a comment (Markdown) added with the change: what a status's rules may ask for when moving into it"),
             "priority": one(S("Priority"), {"type": "integer", "minimum": 0, "maximum": 4}, desc="name, or 0 (none) to 4 (urgent)"),
             "assigneeId": nuuid("someone with access to the project; null unassigns"),
             "reporterId": nuuid(),
@@ -396,7 +399,17 @@ schemas = {
         "An entry of an issue's history.",
     ),
     "SearchResult": obj({"total": d(num, "all matches (not just this page)"), "issues": arr(S("IssueSummary"))}, ["total", "issues"]),
-    "Status": obj({"id": uuid, "name": txt, "category": S("StatusCategory"), "color": ntxt(), "position": number}, ["id", "name", "category"]),
+    "Status": obj({"id": uuid, "name": txt, "category": S("StatusCategory"), "color": ntxt(), "position": number, "rules": S("StatusRules")}, ["id", "name", "category"]),
+    "StatusRules": obj(
+        {
+            "who": enum("everyone", "admins", "teams", desc="who may move issues into the status (project admins always may); default everyone who can edit"),
+            "teams": arr(uuid, "with who = teams: the teams whose members may"),
+            "require": arr(txt, "fields the issue must have afterwards: assignee, resolution, version, component, dueDate, startDate, estimate, storyPoints, custom:<field id>"),
+            "comment": enum("off", "optional", "required", desc="whether a comment comes with the move (`comment` in the change)"),
+            "resolution": d(txt, "done statuses: the resolution set when none is chosen"),
+        },
+        desc="What it takes for a person to move an issue into the status (automation and imports aren't held up). A refused move answers 403 (who) or 400 naming what's missing.",
+    ),
     "IssueType": obj(
         {"id": uuid, "name": txt, "icon": txt, "color": txt, "level": d(num, "1 = epic, 0 = standard, -1 = sub-task"), "template": null(S("PmNode"), "description new issues of this type start with")},
         ["id", "name", "icon", "color", "level"],
@@ -965,11 +978,12 @@ schemas["ProjectSettings"] = obj(
         "wikiParentPage": d(txt, "WikiCraft page id new pages from the project go under"),
         "defaultAssignee": d(uuid, "who new issues without an assignee get"),
         "doneAfterDays": d(number, "stored as given (not used by the server)"),
+        "resolutions": arr(txt, "the project's resolutions, 1–20 distinct names (default Done, Won't do, Duplicate, Cannot reproduce); the first is the default"),
         "template": {**enum("scrum", "kanban", "tracker", "business"), "readOnly": True, "description": "the template the project was created from"},
         "mailIn": {"type": "object", "readOnly": True, "description": "e-mail settings (GET/PUT /projects/{key}/mail-in)"},
         "portal": {"type": "object", "readOnly": True, "description": "service desk settings (GET/PUT /projects/{key}/portal)"},
     },
-    desc="Project settings. Changes merge into the current ones key by key (null removes a key); only estimation, workflow, sla, wikiSpace, wikiParentPage, defaultAssignee and doneAfterDays can be set here, anything else is a 400.",
+    desc="Project settings. Changes merge into the current ones key by key (null removes a key); only estimation, workflow, sla, resolutions, wikiSpace, wikiParentPage, defaultAssignee and doneAfterDays can be set here, anything else is a 400.",
     additional=True,
 )
 schemas["NewProject"] = obj(
@@ -1194,8 +1208,8 @@ op("post", "/projects/{key}/statuses", "createStatus", "Project configuration", 
    desc="Added at the end of the workflow and reachable from every status and back.",
    req=body(obj({"name": txt, "category": d(S("StatusCategory"), "also accepts to do, open, new, backlog, in progress, doing, closed, resolved, …"), "color": txt}, ["name", "category"])),
    res=created(B_ID), err="409")
-op("patch", "/statuses/{id}", "updateStatus", "Project configuration", "Rename a status or change its category or colour (project admins)",
-   req=body(obj({"name": txt, "category": S("StatusCategory"), "color": ntxt()})), res=NO, err="409")
+op("patch", "/statuses/{id}", "updateStatus", "Project configuration", "Rename a status, change its category or colour, or set its rules (project admins)",
+   req=body(obj({"name": txt, "category": S("StatusCategory"), "color": ntxt(), "rules": d(S("StatusRules"), "replaces the rules ({} or null: none)")})), res=NO, err="409")
 op("delete", "/statuses/{id}", "deleteStatus", "Project configuration", "Delete a status (project admins)",
    desc="Its issues move to `moveTo`; boards drop it from their columns. A project keeps at least one status.", query=B_MOVE_TO("status"), res=NO)
 op("put", "/projects/{key}/order/{what}", "reorderProjectItems", "Project configuration", "Put statuses, types, fields or versions in order (project admins)",
@@ -1329,6 +1343,8 @@ op("post", "/issues/{key}/move", "moveIssue", "Issues", "Move an issue on a boar
        "sprintId": nuuid("present: move into this sprint; null = the backlog"),
        "after": d(uuid, "place it right after this issue"),
        "before": d(uuid, "place it right before this issue"),
+       "fields": d(S("IssueFields"), "fields set along with the move (what the target status requires, a resolution)"),
+       "comment": d(txt, "a comment (Markdown) added with the move"),
    })),
    res=ok(S("IssueSummary")))
 op("post", "/issues/{key}/clone", "cloneIssue", "Issues", "Copy an issue",
@@ -2993,7 +3009,7 @@ Search (`GET /search?q=`), CSV export, saved filters, dashboards and automation 
 `project = WEB and sprint in openSprints() and assignee = me() order by rank` or
 `type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status
 category priority assignee reporter creator labels sprint version component parent/epic points estimate spent created
-updated resolved due start watcher blocked` and custom fields by name (quoted when they contain spaces). Operators
+updated resolved resolution due start watcher blocked` and custom fields by name (quoted when they contain spaces). Operators
 `= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,
 `futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates like `-7d`, `+2w`,

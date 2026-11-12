@@ -205,3 +205,11 @@ a.field-hint { display: inline-flex; align-items: center; gap: 4px; }
   .ps-flow-row > svg { display: none; }
   .ps-savebar { bottom: 8px; }
 }
+
+/* workflow rules */
+.ps-fieldset { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px 10px; margin: 0 0 12px; }
+.ps-fieldset legend { font-size: 13px; font-weight: 600; padding: 0 4px; }
+.ps-fieldset .row { margin: 0; min-height: 28px; }
+.ps-fieldset input[type=radio], .ps-fieldset input[type=checkbox] { width: 16px; height: 16px; margin: 0; }
+.ps-rule-teams { padding-left: 24px; }
+.ps-rule-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 12px; }

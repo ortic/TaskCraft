@@ -113,8 +113,8 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser)
 /// open sprints, boards and the allowed moves.
 pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>) -> ApiResult<Json<Value>> {
     let (p, role) = by_key(&state, &user, &key, Role::Viewer).await?;
-    let statuses: Vec<(Uuid, String, String, Option<String>, f64)> =
-        sqlx::query_as("SELECT id, name, category, color, position FROM statuses WHERE project_id = $1 ORDER BY position")
+    let statuses: Vec<(Uuid, String, String, Option<String>, f64, Value)> =
+        sqlx::query_as("SELECT id, name, category, color, position, rules FROM statuses WHERE project_id = $1 ORDER BY position")
             .bind(p.id)
             .fetch_all(&state.db)
             .await?;
@@ -165,7 +165,7 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
         json!({
             "starred": starred,
             "leadName": lead_name,
-            "statuses": statuses.iter().map(|(id, n, c, col, pos)| json!({"id": id, "name": n, "category": c, "color": col, "position": pos})).collect::<Vec<_>>(),
+            "statuses": statuses.iter().map(|(id, n, c, col, pos, rules)| json!({"id": id, "name": n, "category": c, "color": col, "position": pos, "rules": rules})).collect::<Vec<_>>(),
             "types": types.iter().map(|(id, n, i, c, l, t)| json!({"id": id, "name": n, "icon": i, "color": c, "level": l, "template": t})).collect::<Vec<_>>(),
             "versions": versions.iter().map(|(id, n, d, s, sd, rd, ra)| json!({"id": id, "name": n, "description": d, "status": s, "startDate": sd, "releaseDate": rd, "releasedAt": ra})).collect::<Vec<_>>(),
             "components": components.iter().map(|(id, n, d, l)| json!({"id": id, "name": n, "description": d, "leadId": l})).collect::<Vec<_>>(),
@@ -489,6 +489,12 @@ pub async fn update(
                         "estimation" if !matches!(sv.as_str(), Some("points" | "hours")) => return Err(ApiError::bad("estimation must be points or hours")),
                         "workflow" if !matches!(sv.as_str(), Some("free" | "restricted")) => return Err(ApiError::bad("workflow must be free or restricted")),
                         "sla" => check_sla(sv)?,
+                        "resolutions" if !sv.is_null() => {
+                            let tidy = crate::workflow::check_resolutions(sv)?;
+                            cur.insert(sk.clone(), tidy);
+                            continue;
+                        }
+                        "resolutions" => {}
                         "estimation" | "workflow" | "wikiSpace" | "defaultAssignee" | "wikiParentPage" | "doneAfterDays" => {}
                         other => return Err(ApiError::bad(format!("unknown setting {other}"))),
                     }
@@ -701,6 +707,11 @@ pub async fn update_status(
     }
     if req.get("color").is_some() {
         sqlx::query("UPDATE statuses SET color = $2 WHERE id = $1").bind(id).bind(req["color"].as_str()).execute(&state.db).await?;
+    }
+    // what it takes to move an issue here (crate::workflow)
+    if let Some(r) = req.get("rules") {
+        let rules = crate::workflow::check_rules(r)?;
+        sqlx::query("UPDATE statuses SET rules = $2 WHERE id = $1").bind(id).bind(&rules).execute(&state.db).await?;
     }
     changed(&state, &user, project).await;
     Ok(StatusCode::NO_CONTENT)

@@ -11,6 +11,8 @@ The first release.
 - **Work**: projects from scrum, kanban, issue-tracker and work-plan templates; issues with rich
   text, sub-tasks, links, attachments, comments, watchers, time logs and history; custom fields,
   components, releases; templates and recurring issues; moving issues between projects.
+- **Workflows**: free or restricted transitions; rules per status (who may move there, required
+  fields, a comment) with a form that asks for what's missing; resolutions.
 - **Views**: board with WIP limits and swimlanes, backlog with sprints and a velocity hint, list
   with TQL, timeline, calendar, timesheet, dashboards, portfolio, your work, command palette.
 - **Reports** replayed from history: burndown, velocity, cumulative flow, cycle and lead time,

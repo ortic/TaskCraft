@@ -16,6 +16,7 @@ import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
 import { RichText, RichView, EMPTY_DOC, isEmptyDoc } from './Editor'
 import Development, { describeDevEvent } from './Development'
 import { SlaList } from './SlaBadges'
+import { resolutionLabel, resolutionsOf, useTransition } from './Transition'
 import {
   ComponentPicker, CustomFieldValue, DateValue, LabelsEditor, NumberValue, ParentPicker, PersonPicker, PriorityPicker, SprintPicker, StatusPicker, TypePicker, VersionPicker,
 } from './fields'
@@ -51,11 +52,18 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
       qc.setQueryData(['issue', issue.key], (old: IssueDetail | undefined) => (old ? { ...old, ...s } : old))
       qc.invalidateQueries({ queryKey: ['issue', issue.key] })
       qc.invalidateQueries({ queryKey: ['history', issue.key] })
+      qc.invalidateQueries({ queryKey: ['comments', issue.key] })
       refreshIssues(qc)
     },
     onError: (e: Error) => toast(e.message),
   })
   const set = (patch: Record<string, unknown>) => save.mutate(patch)
+  // a status's rules may ask for fields, a comment or a resolution first
+  const transition = useTransition()
+  const moveTo = async (statusId: string) => {
+    const extra = await transition(issue, project, statusId)
+    if (extra) set({ statusId, ...extra })
+  }
   const [title, setTitle] = useState(issue.title)
   useEffect(() => setTitle(issue.title), [issue.title])
   const titleRef = useRef<HTMLTextAreaElement>(null)
@@ -234,7 +242,19 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
 
       <aside className="issue-side">
         <div className="row" style={{ marginBottom: 12 }}>
-          <StatusPicker project={project} status={issue.status} disabled={!can} onChange={(id) => set({ statusId: id })} />
+          <StatusPicker project={project} status={issue.status} disabled={!can} onChange={(id) => void moveTo(id)} />
+          {issue.status.category === 'done' && issue.resolution && (
+            <select
+              className="select input-sm issue-resolution"
+              aria-label={t('Resolution')}
+              title={t('Resolution')}
+              value={issue.resolution}
+              disabled={!can}
+              onChange={(e) => set({ resolution: e.target.value })}
+            >
+              {[...new Set([issue.resolution, ...resolutionsOf(project)])].map((n) => <option key={n} value={n}>{resolutionLabel(n)}</option>)}
+            </select>
+          )}
           {issue.blocked && (
             <span className="badge badge-danger" title={t('An open issue blocks this one')}>
               <Ban size={12} /> {t('Blocked')}
@@ -992,6 +1012,8 @@ export function describeEvent(e: HistoryEvent): React.ReactNode {
       return t('changed the {field} date to {date}', { field: field === 'due' ? t('due') : t('start'), date: e.new ? shortDate(e.new) : t('none') })
     case 'estimate':
       return t('changed the estimate to {time}', { time: e.new == null ? t('none') : duration(e.new) })
+    case 'resolution':
+      return e.new ? t('set the resolution to {resolution}', { resolution: resolutionLabel(String(e.new)) }) : t('cleared the resolution')
     default:
       return t('changed {field} from {a} to {b}', { field: FIELD_LABELS[field]?.() ?? field, a: name(e.old), b: name(e.new) })
   }

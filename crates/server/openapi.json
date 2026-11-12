@@ -4,7 +4,7 @@
   "title": "TaskCraft API",
   "version": "0.1.0",
   "summary": "Self-hosted issue and project management",
-  "description": "Everything the TaskCraft web app does, as a REST API with JSON bodies.\n\n## Base paths\n\n`/api/v1` is the versioned base path for integrations; the web app calls the same API under `/api`. The paths in this\ndocument are relative to either, e.g. `GET /api/v1/issues/WEB-12`. The MCP server for AI assistants lives at `/api/mcp`\n(streamable HTTP, not described here).\n\n## Authentication\n\n- **API token**: `Authorization: Bearer tct_…`, a personal token (*Profile & settings → API tokens*) that acts with its\n  owner's permissions. Read-only tokens may only read (GET, plus `POST /query/validate`); anything else answers 403.\n  API tokens, the password, sessions, two-factor and passkey changes, the two-factor policy and the backup import are\n  managed in the browser only and refuse tokens (403).\n- **Browser session**: the `tc_session` cookie that signing in sets. Requests that change something must also send the\n  header `x-taskcraft: 1` (CSRF protection), else 400.\n- **Public operations** have an empty security requirement (`{}`): health and readiness, first-run setup, the sign-in\n  flows, the service desk portal and request forms (the portal has a session cookie of its own, `tc_portal`), the Git\n  and e-mail-in receivers (they check secrets of their own), metrics (a bearer token of its own) and this document.\n- When the workspace requires two-factor authentication, browser sessions of people without a second factor get 403\n  on everything but setting one up.\n\nResults are always limited to what the caller may see; things they may not see answer 404.\n\n## Issues and rich text\n\nIssues are addressed by key (`WEB-12`; keys an issue had before a move or a project rename keep working) or by id;\nprojects by key or id. Descriptions are ProseMirror / Tiptap JSON (`PmNode`, a document is\n`{\"type\": \"doc\", \"content\": [...]}`); where noted, Markdown (`descriptionMarkdown`, comments' `markdown`) or plain text\nis accepted instead. Writing an issue takes the fields of `IssueFields`; only the fields sent change.\n\n## TQL, the query language\n\nSearch (`GET /search?q=`), CSV export, saved filters, dashboards and automation conditions take TQL, e.g.\n`project = WEB and sprint in openSprints() and assignee = me() order by rank` or\n`type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status\ncategory priority assignee reporter creator labels sprint version component parent/epic points estimate spent created\nupdated resolved due start watcher blocked` and custom fields by name (quoted when they contain spaces). Operators\n`= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions\n`me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,\n`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates like `-7d`, `+2w`,\n`-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n`POST /query/validate` checks a query and `GET /query/suggest` completes field names and values.\n\n## Pagination\n\n`GET /search` pages with `limit` (default 100, at most 1,000) and `offset` and answers `{total, issues}`; other\noperations that take `limit` / `offset` say so. Everything else answers a bounded list (e.g. the latest 60 activity\nentries, the latest 200 trashed issues), as each operation describes.\n\n## Errors\n\nErrors answer with a status code and `{\"error\": \"<code>\", \"message\": \"<text>\"}` (schema `Error`): 400 `bad_request`\n(invalid input; the message says what), 401 `unauthorized`, 403 `forbidden`, 404 `not_found`, 409 `conflict`, 413\n`too_large` (uploads above `TASKCRAFT_MAX_UPLOAD_MB`), 429 `too_many_requests`, 503 `unavailable`, 500 `internal`.\nRequests the framework refuses before they reach the API answer plain text instead: a body that isn't valid JSON (400),\na JSON body without `Content-Type: application/json` (415), a typed body with a missing or mistyped field (422), a\nmalformed id in the path (400) and a body above the server's overall size limit (413).\n\n## Rate limits\n\nFailed sign-ins are limited to 10 per e-mail address in 15 minutes and wrong two-factor codes to 5 per sign-in; both\nanswer 400 with a message. The service desk portal answers 429 for sign-in links (10 requests per IP address per\nquarter hour; at most 3 links go out per address, silently), messages from requesters (30 per hour) and request forms\n(20 per IP address and 5 per e-mail address per hour).\n\n## Webhooks\n\nAdmins register endpoints under `/admin/webhooks` for `issue.created`, `issue.updated`, `issue.deleted`,\n`comment.created`, `sprint.started`, `sprint.completed` and `version.released` (all projects or one). Each delivery is\na JSON `POST` with the `WebhookEvent` body and the headers `X-TaskCraft-Event: <event>` and\n`X-TaskCraft-Signature: sha256=<hex>`, the HMAC-SHA256 of the raw body with the webhook's secret (shown once, when the\nwebhook is created); compare it in constant time. A delivery counts when the endpoint answers 2xx within 10 seconds;\nothers are retried up to 7 times with growing pauses (30 seconds, 2 minutes, 8 minutes, … at most 4 hours; about 11 hours in all).\n\n## Live updates\n\n`GET /events` is a Server-Sent Events stream of changes in the caller's projects (`LiveEvent`); refetch what an event\ntouches.",
+  "description": "Everything the TaskCraft web app does, as a REST API with JSON bodies.\n\n## Base paths\n\n`/api/v1` is the versioned base path for integrations; the web app calls the same API under `/api`. The paths in this\ndocument are relative to either, e.g. `GET /api/v1/issues/WEB-12`. The MCP server for AI assistants lives at `/api/mcp`\n(streamable HTTP, not described here).\n\n## Authentication\n\n- **API token**: `Authorization: Bearer tct_…`, a personal token (*Profile & settings → API tokens*) that acts with its\n  owner's permissions. Read-only tokens may only read (GET, plus `POST /query/validate`); anything else answers 403.\n  API tokens, the password, sessions, two-factor and passkey changes, the two-factor policy and the backup import are\n  managed in the browser only and refuse tokens (403).\n- **Browser session**: the `tc_session` cookie that signing in sets. Requests that change something must also send the\n  header `x-taskcraft: 1` (CSRF protection), else 400.\n- **Public operations** have an empty security requirement (`{}`): health and readiness, first-run setup, the sign-in\n  flows, the service desk portal and request forms (the portal has a session cookie of its own, `tc_portal`), the Git\n  and e-mail-in receivers (they check secrets of their own), metrics (a bearer token of its own) and this document.\n- When the workspace requires two-factor authentication, browser sessions of people without a second factor get 403\n  on everything but setting one up.\n\nResults are always limited to what the caller may see; things they may not see answer 404.\n\n## Issues and rich text\n\nIssues are addressed by key (`WEB-12`; keys an issue had before a move or a project rename keep working) or by id;\nprojects by key or id. Descriptions are ProseMirror / Tiptap JSON (`PmNode`, a document is\n`{\"type\": \"doc\", \"content\": [...]}`); where noted, Markdown (`descriptionMarkdown`, comments' `markdown`) or plain text\nis accepted instead. Writing an issue takes the fields of `IssueFields`; only the fields sent change.\n\n## TQL, the query language\n\nSearch (`GET /search?q=`), CSV export, saved filters, dashboards and automation conditions take TQL, e.g.\n`project = WEB and sprint in openSprints() and assignee = me() order by rank` or\n`type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status\ncategory priority assignee reporter creator labels sprint version component parent/epic points estimate spent created\nupdated resolved resolution due start watcher blocked` and custom fields by name (quoted when they contain spaces). Operators\n`= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions\n`me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,\n`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates like `-7d`, `+2w`,\n`-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n`POST /query/validate` checks a query and `GET /query/suggest` completes field names and values.\n\n## Pagination\n\n`GET /search` pages with `limit` (default 100, at most 1,000) and `offset` and answers `{total, issues}`; other\noperations that take `limit` / `offset` say so. Everything else answers a bounded list (e.g. the latest 60 activity\nentries, the latest 200 trashed issues), as each operation describes.\n\n## Errors\n\nErrors answer with a status code and `{\"error\": \"<code>\", \"message\": \"<text>\"}` (schema `Error`): 400 `bad_request`\n(invalid input; the message says what), 401 `unauthorized`, 403 `forbidden`, 404 `not_found`, 409 `conflict`, 413\n`too_large` (uploads above `TASKCRAFT_MAX_UPLOAD_MB`), 429 `too_many_requests`, 503 `unavailable`, 500 `internal`.\nRequests the framework refuses before they reach the API answer plain text instead: a body that isn't valid JSON (400),\na JSON body without `Content-Type: application/json` (415), a typed body with a missing or mistyped field (422), a\nmalformed id in the path (400) and a body above the server's overall size limit (413).\n\n## Rate limits\n\nFailed sign-ins are limited to 10 per e-mail address in 15 minutes and wrong two-factor codes to 5 per sign-in; both\nanswer 400 with a message. The service desk portal answers 429 for sign-in links (10 requests per IP address per\nquarter hour; at most 3 links go out per address, silently), messages from requesters (30 per hour) and request forms\n(20 per IP address and 5 per e-mail address per hour).\n\n## Webhooks\n\nAdmins register endpoints under `/admin/webhooks` for `issue.created`, `issue.updated`, `issue.deleted`,\n`comment.created`, `sprint.started`, `sprint.completed` and `version.released` (all projects or one). Each delivery is\na JSON `POST` with the `WebhookEvent` body and the headers `X-TaskCraft-Event: <event>` and\n`X-TaskCraft-Signature: sha256=<hex>`, the HMAC-SHA256 of the raw body with the webhook's secret (shown once, when the\nwebhook is created); compare it in constant time. A delivery counts when the endpoint answers 2xx within 10 seconds;\nothers are retried up to 7 times with growing pauses (30 seconds, 2 minutes, 8 minutes, … at most 4 hours; about 11 hours in all).\n\n## Live updates\n\n`GET /events` is a Server-Sent Events stream of changes in the caller's projects (`LiveEvent`); refetch what an event\ntouches.",
   "license": {
    "name": "MIT OR Apache-2.0",
    "identifier": "MIT OR Apache-2.0"
@@ -3471,7 +3471,7 @@
     "tags": [
      "Project configuration"
     ],
-    "summary": "Rename a status or change its category or colour (project admins)",
+    "summary": "Rename a status, change its category or colour, or set its rules (project admins)",
     "operationId": "updateStatus",
     "parameters": [
      {
@@ -3503,6 +3503,10 @@
            "string",
            "null"
           ]
+         },
+         "rules": {
+          "$ref": "#/components/schemas/StatusRules",
+          "description": "replaces the rules ({} or null: none)"
          }
         }
        }
@@ -6011,6 +6015,14 @@
           "type": "string",
           "format": "uuid",
           "description": "place it right before this issue"
+         },
+         "fields": {
+          "$ref": "#/components/schemas/IssueFields",
+          "description": "fields set along with the move (what the target status requires, a resolution)"
+         },
+         "comment": {
+          "type": "string",
+          "description": "a comment (Markdown) added with the move"
          }
         }
        }
@@ -12732,6 +12744,13 @@
       "format": "date-time",
       "description": "when it reached a done status"
      },
+     "resolution": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "why a done issue is done (one of the project's resolutions: Done, Won't do, …); null while open"
+     },
      "statusChangedAt": {
       "type": "string",
       "format": "date-time"
@@ -13129,7 +13148,18 @@
      "statusId": {
       "type": "string",
       "format": "uuid",
-      "description": "a status of the project (restricted workflows only allow configured transitions)"
+      "description": "a status of the project (restricted workflows only allow configured transitions; the status's rules may require fields, a comment or a resolution, see StatusRules)"
+     },
+     "resolution": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "for done issues: one of the project's resolutions (matched by name, any case); entering a done status without one sets the status's default or the first; leaving done clears it"
+     },
+     "comment": {
+      "type": "string",
+      "description": "a comment (Markdown) added with the change: what a status's rules may ask for when moving into it"
      },
      "priority": {
       "oneOf": [
@@ -13364,6 +13394,9 @@
      },
      "position": {
       "type": "number"
+     },
+     "rules": {
+      "$ref": "#/components/schemas/StatusRules"
      }
     },
     "required": [
@@ -13371,6 +13404,49 @@
      "name",
      "category"
     ]
+   },
+   "StatusRules": {
+    "type": "object",
+    "properties": {
+     "who": {
+      "type": "string",
+      "enum": [
+       "everyone",
+       "admins",
+       "teams"
+      ],
+      "description": "who may move issues into the status (project admins always may); default everyone who can edit"
+     },
+     "teams": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "format": "uuid"
+      },
+      "description": "with who = teams: the teams whose members may"
+     },
+     "require": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "fields the issue must have afterwards: assignee, resolution, version, component, dueDate, startDate, estimate, storyPoints, custom:<field id>"
+     },
+     "comment": {
+      "type": "string",
+      "enum": [
+       "off",
+       "optional",
+       "required"
+      ],
+      "description": "whether a comment comes with the move (`comment` in the change)"
+     },
+     "resolution": {
+      "type": "string",
+      "description": "done statuses: the resolution set when none is chosen"
+     }
+    },
+    "description": "What it takes for a person to move an issue into the status (automation and imports aren't held up). A refused move answers 403 (who) or 400 naming what's missing."
    },
    "IssueType": {
     "type": "object",
@@ -14850,6 +14926,13 @@
       "type": "number",
       "description": "stored as given (not used by the server)"
      },
+     "resolutions": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "the project's resolutions, 1–20 distinct names (default Done, Won't do, Duplicate, Cannot reproduce); the first is the default"
+     },
      "template": {
       "type": "string",
       "enum": [
@@ -14872,7 +14955,7 @@
       "description": "service desk settings (GET/PUT /projects/{key}/portal)"
      }
     },
-    "description": "Project settings. Changes merge into the current ones key by key (null removes a key); only estimation, workflow, sla, wikiSpace, wikiParentPage, defaultAssignee and doneAfterDays can be set here, anything else is a 400.",
+    "description": "Project settings. Changes merge into the current ones key by key (null removes a key); only estimation, workflow, sla, resolutions, wikiSpace, wikiParentPage, defaultAssignee and doneAfterDays can be set here, anything else is a 400.",
     "additionalProperties": true
    },
    "NewProject": {

@@ -1,4 +1,5 @@
 import { t } from '../i18n'
+import { TransitionProvider } from './Transition'
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -91,6 +92,7 @@ export default function Layout() {
 
   return (
     <CreateCtx.Provider value={startCreate}>
+     <TransitionProvider>
       <div className={`shell ${mobileOpen ? 'sidebar-open' : ''}`}>
         <header className="topbar">
           <button className="icon-btn mobile-only" onClick={() => setMobileOpen((o) => !o)} aria-label={t('Menu')}>
@@ -184,6 +186,7 @@ export default function Layout() {
         {palette && <CommandPalette onClose={() => setPalette(false)} onCreate={() => { setPalette(false); startCreate() }} />}
         {create && <CreateIssue defaults={create} onClose={() => setCreate(null)} />}
       </div>
+     </TransitionProvider>
     </CreateCtx.Provider>
   )
 }

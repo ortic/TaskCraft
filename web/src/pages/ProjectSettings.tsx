@@ -12,8 +12,9 @@ import {
 } from 'lucide-react'
 import {
   api, ago, dateTime, PRIORITIES, type Category, type CustomField, type FieldOption, type IssueType, type Named, type Priority, type Project, type Role,
-  type BoardData, type BoardConfig, type BoardColumn, type Status, type WikiPage,
+  type BoardData, type BoardConfig, type BoardColumn, type Status, type StatusRules, type WikiPage,
 } from '../api'
+import { requirementLabel, resolutionLabel, resolutionsOf } from '../components/Transition'
 import { Avatar, Choices, Confirm, Empty, ErrorBox, Loading, Lozenge, Modal, PopButton, useMe, usePeople, useProject, useToast } from '../ui'
 import { PROJECT_COLORS, PROJECT_ICONS, ProjectIcon, TYPE_ICONS, TypeIcon, priorityLabel } from '../icons'
 import { OptionChip, PersonPicker } from '../components/fields'
@@ -1032,6 +1033,7 @@ function MembersSection() {
 function WorkflowSection() {
   const { project, run, patch } = useSettings()
   const [deleting, setDeleting] = useState<Status | null>(null)
+  const [ruling, setRuling] = useState<Status | null>(null)
   const [name, setName] = useState('')
   const [cat, setCat] = useState<Category>('todo')
   const [color, setColor] = useState('#5b8def')
@@ -1065,6 +1067,14 @@ function WorkflowSection() {
               <InlineText className="ps-grow" value={s.name} label={t('Status name')} onSave={(v) => update(s, { name: v })} />
               <CategoryPick value={s.category} onChange={(c) => update(s, { category: c })} />
               <button
+                className="btn btn-sm"
+                onClick={() => setRuling(s)}
+                title={t('What it takes to move an issue to {name}', { name: s.name })}
+                aria-label={`${ruleCount(s.rules) ? t('{count} rules', { count: ruleCount(s.rules) }) : t('Rules')} · ${s.name}`}
+              >
+                <ListChecks size={14} /> {ruleCount(s.rules) ? t('{count} rules', { count: ruleCount(s.rules) }) : t('Rules')}
+              </button>
+              <button
                 className="icon-btn"
                 title={t('Delete status')}
                 aria-label={t('Delete {name}', { name: s.name })}
@@ -1092,6 +1102,10 @@ function WorkflowSection() {
 
       <TransitionsEditor key={`${statuses.map((s) => s.id).join()}|${project.settings.workflow}|${project.transitions.map((x) => x.from + x.to).join()}`} />
 
+      <ResolutionsEditor key={resolutionsOf(project).join('|')} />
+
+      {ruling && <RulesDialog status={ruling} onSave={(rules) => { update(ruling, { rules }); setRuling(null) }} onClose={() => setRuling(null)} />}
+
       {deleting && (
         <DeleteMoveDialog
           title={t('Delete status {name}?', { name: deleting.name })}
@@ -1105,6 +1119,143 @@ function WorkflowSection() {
         />
       )}
     </>
+  )
+}
+
+/** How many rules a status has (for the button). */
+function ruleCount(r: StatusRules | undefined): number {
+  if (!r) return 0
+  return (r.who && r.who !== 'everyone' ? 1 : 0) + (r.require?.length ?? 0) + (r.comment && r.comment !== 'off' ? 1 : 0)
+}
+
+/** What it takes to move an issue into a status: who may, the fields it needs, a comment. */
+function RulesDialog({ status, onSave, onClose }: { status: Status; onSave: (r: StatusRules) => void; onClose: () => void }) {
+  const { project } = useSettings()
+  const teams = useQuery({ queryKey: ['teams'], queryFn: () => api.get<{ id: string; name: string }[]>('/teams') })
+  const r = status.rules ?? {}
+  const [who, setWho] = useState<NonNullable<StatusRules['who']>>(r.who ?? 'everyone')
+  const [teamIds, setTeamIds] = useState<string[]>(r.teams ?? [])
+  const [require, setRequire] = useState<string[]>(r.require ?? [])
+  const [comment, setComment] = useState<NonNullable<StatusRules['comment']>>(r.comment ?? 'off')
+  const done = status.category === 'done'
+  const names = resolutionsOf(project)
+  const [resolution, setResolution] = useState(r.resolution ?? '')
+  const fields = ['assignee', ...(done ? ['resolution'] : []), 'version', 'component', 'dueDate', 'startDate', 'estimate', 'storyPoints', ...project.fields.filter((f) => f.kind !== 'checkbox').map((f) => `custom:${f.id}`)]
+  const toggle = (k: string) => setRequire((x) => (x.includes(k) ? x.filter((y) => y !== k) : [...x, k]))
+  const invalid = who === 'teams' && teamIds.length === 0
+  const save = () => {
+    const out: StatusRules = {}
+    if (who !== 'everyone') out.who = who
+    if (who === 'teams') out.teams = teamIds
+    const req = require.filter((k) => fields.includes(k))
+    if (req.length) out.require = req
+    if (comment !== 'off') out.comment = comment
+    if (done && resolution) out.resolution = resolution
+    onSave(out)
+  }
+  return (
+    <Modal
+      title={t('Moving issues to {name}', { name: status.name })}
+      onClose={onClose}
+      width={560}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>{t('Cancel')}</button>
+          <button className="btn btn-primary" disabled={invalid} onClick={save}>{t('Save')}</button>
+        </>
+      }
+    >
+      <p className="muted small" style={{ marginTop: 0 }}>{t('These rules apply when people move an issue here — on the board, in the issue or in a bulk change. Automation and imports aren’t held up by them, and project admins may always move.')}</p>
+      <fieldset className="ps-fieldset">
+        <legend>{t('Who may move issues here')}</legend>
+        <label className="row small"><input type="radio" name="who" checked={who === 'everyone'} onChange={() => setWho('everyone')} /> {t('Everyone who can edit issues')}</label>
+        <label className="row small"><input type="radio" name="who" checked={who === 'admins'} onChange={() => setWho('admins')} /> {t('Project admins')}</label>
+        <label className="row small"><input type="radio" name="who" checked={who === 'teams'} onChange={() => setWho('teams')} /> {t('These teams (and project admins)')}</label>
+        {who === 'teams' && (
+          <div className="ps-rule-teams">
+            {(teams.data ?? []).map((tm) => (
+              <label key={tm.id} className="row small">
+                <input type="checkbox" checked={teamIds.includes(tm.id)} onChange={() => setTeamIds((x) => (x.includes(tm.id) ? x.filter((y) => y !== tm.id) : [...x, tm.id]))} /> {tm.name}
+              </label>
+            ))}
+            {teams.data?.length === 0 && <span className="faint small">{t('There are no teams yet (People & teams).')}</span>}
+            {invalid && <span className="error-text small">{t('Choose at least one team.')}</span>}
+          </div>
+        )}
+      </fieldset>
+      <fieldset className="ps-fieldset">
+        <legend>{t('Fields it needs')}</legend>
+        <p className="faint small" style={{ margin: '0 0 6px' }}>{t('Empty ones are asked for when someone moves an issue here.')}</p>
+        <div className="ps-rule-fields">
+          {fields.map((k) => (
+            <label key={k} className="row small"><input type="checkbox" checked={require.includes(k)} onChange={() => toggle(k)} /> {requirementLabel(k, project)}</label>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="ps-fieldset">
+        <legend>{t('Comment')}</legend>
+        <div className="seg" role="radiogroup" aria-label={t('Ask for a comment')}>
+          {(['off', 'optional', 'required'] as const).map((c) => (
+            <button key={c} type="button" role="radio" aria-checked={comment === c} className={comment === c ? 'active' : ''} onClick={() => setComment(c)}>
+              {c === 'off' ? t('Don’t ask') : c === 'optional' ? t('Optional') : t('Required')}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      {done && (
+        <div className="field">
+          <label htmlFor="ps-rule-res">{t('Resolution when none is chosen')}</label>
+          <select id="ps-rule-res" className="select" value={resolution} onChange={(e) => setResolution(e.target.value)}>
+            <option value="">{t('The first in the list ({name})', { name: resolutionLabel(names[0]) })}</option>
+            {names.map((n) => <option key={n} value={n}>{resolutionLabel(n)}</option>)}
+          </select>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+/** The project's resolutions: why a done issue is done. */
+function ResolutionsEditor() {
+  const { project, run } = useSettings()
+  const [list, setList] = useState<string[]>(resolutionsOf(project))
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const base = resolutionsOf(project)
+  const dirty = list.join('|') !== base.join('|')
+  const add = () => {
+    const n = name.trim()
+    if (!n || list.some((x) => x.toLowerCase() === n.toLowerCase())) return
+    setList([...list, n])
+    setName('')
+  }
+  const save = async () => {
+    setBusy(true)
+    await run(() => api.patch(`/projects/${project.key}`, { settings: { resolutions: list } }), t('Resolutions saved'))
+    setBusy(false)
+  }
+  return (
+    <Section
+      title={t('Resolutions')}
+      description={t('Why a done issue is done. Moving an issue into a done status sets one (the first unless someone chooses), moving it out clears it. Issues keep the one they have when you change the list.')}
+    >
+      <Sortable items={list.map((n) => ({ id: n }))} onReorder={(ids) => setList(ids)} className="ps-list">
+        {(it, grip) => (
+          <div className="ps-row">
+            {grip}
+            <span className="ps-grow">{resolutionLabel(it.id)}</span>
+            <button className="icon-btn" disabled={list.length <= 1} aria-label={t('Remove {name}', { name: resolutionLabel(it.id) })} title={t('Remove')} onClick={() => setList(list.filter((x) => x !== it.id))}>
+              <Trash size={15} />
+            </button>
+          </div>
+        )}
+      </Sortable>
+      <form className="ps-row ps-add-row" onSubmit={(e) => { e.preventDefault(); add() }}>
+        <input className="input input-sm ps-grow" placeholder={t('New resolution, e.g. Fixed')} aria-label={t('New resolution')} value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
+        <button className="btn btn-sm" type="submit" disabled={!name.trim() || list.length >= 20}><Plus size={14} /> {t('Add')}</button>
+      </form>
+      <SaveBar dirty={dirty} busy={busy} onSave={save} onReset={() => setList(base)} />
+    </Section>
   )
 }
 

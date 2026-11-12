@@ -1,4 +1,5 @@
 // The issue list: a TQL query shown as a table with chosen columns, sorting, grouping, inline
+import { useTransition } from '../components/Transition'
 // editing and bulk changes. Project-scoped at /projects/:key/list, workspace-wide at /search
 // (with saved filters).
 import { t } from '../i18n'
@@ -462,6 +463,8 @@ function BulkBar({ ids, issues, onDone }: { ids: string[]; issues: Issue[]; onDo
   const projects = useProjects()
   const sameProject = new Set(issues.map((i) => i.projectKey)).size === 1 ? issues[0]?.projectKey : undefined
   const project = useProject(sameProject).data
+  // the target status's rules may ask for fields, a comment or a resolution (for all of them)
+  const transition = useTransition()
   const run = async (body: Record<string, unknown>) => {
     const r = await api.post<{ updated: number; errors: { error: string }[] }>('/issues/bulk', { ids, ...body })
     refreshIssues(qc)
@@ -474,7 +477,7 @@ function BulkBar({ ids, issues, onDone }: { ids: string[]; issues: Issue[]; onDo
       <strong>{t('{n} selected', { n: ids.length })}</strong>
       {project && (
         <PopButton className="btn btn-sm" label={t('Status')} width={220}>
-          {(close) => project.statuses.map((s) => <button key={s.id} className="menu-item" onClick={() => { close(); void run({ patch: { statusId: s.id } }) }}><span className={`lozenge lozenge-${s.category}`}>{s.name}</span></button>)}
+          {(close) => project.statuses.map((s) => <button key={s.id} className="menu-item" onClick={async () => { close(); const extra = await transition(null, project, s.id); if (extra) void run({ patch: { statusId: s.id, ...extra } }) }}><span className={`lozenge lozenge-${s.category}`}>{s.name}</span></button>)}
         </PopButton>
       )}
       <PersonPicker className="btn btn-sm" value={null} label={t('Assign')} onChange={(id) => run({ patch: { assigneeId: id } })} />

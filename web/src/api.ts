@@ -129,6 +129,8 @@ export interface Issue {
   labels: string[]
   custom: Record<string, any>
   resolvedAt: string | null
+  /** why a done issue is done (Done, Won't do, …) */
+  resolution?: string | null
   statusChangedAt: string
   createdAt: string
   updatedAt: string
@@ -165,8 +167,18 @@ export interface IssueDetail extends Issue {
   requester: { email: string; name: string | null; mail: boolean; source?: 'email' | 'form' | 'portal' } | null
 }
 
+/** What it takes to move an issue into a status (crate::workflow). */
+export interface StatusRules {
+  who?: 'everyone' | 'admins' | 'teams'
+  teams?: string[]
+  require?: string[]
+  comment?: 'off' | 'optional' | 'required'
+  resolution?: string
+}
+
 export interface Status extends StatusRef {
   position: number
+  rules?: StatusRules
 }
 
 export interface IssueType extends TypeRef {

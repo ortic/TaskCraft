@@ -1,4 +1,5 @@
 import { t } from '../i18n'
+import { useTransition } from '../components/Transition'
 import { Fragment, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -108,6 +109,7 @@ function BoardView({ project, data, quick, setQuick, onBoard, onSprint }: { proj
     return list
   }, [issues, lanes])
 
+  const transition = useTransition()
   const move = async (issue: Issue, colId: string, laneId: string, index: number, colIssues: Issue[]) => {
     const col = cfg.columns.find((c) => c.id === colId)
     if (!col) return
@@ -117,11 +119,21 @@ function BoardView({ project, data, quick, setQuick, onBoard, onSprint }: { proj
       toast(t('The workflow doesn’t allow moving {key} to {column}', { key: issue.key, column: col.name }))
       return
     }
+    // the target status's rules may ask for fields, a comment or a resolution first
+    let extra: Record<string, unknown> = {}
+    if (status !== issue.status.id) {
+      const asked = await transition(issue, project, status)
+      if (!asked) return
+      extra = asked
+    }
     const others = colIssues.filter((i) => i.id !== issue.id)
     const after = others[index - 1]?.id ?? null
     const before = others[index]?.id ?? null
     const patch: Record<string, unknown> = { after, before: after ? null : before }
     if (status !== issue.status.id) patch.statusId = status
+    const { comment, ...fields } = extra
+    if (Object.keys(fields).length) patch.fields = fields
+    if (comment) patch.comment = comment
     // lanes by person / priority: dropping in another lane changes that too
     const lanePatch: Record<string, unknown> = {}
     if (lanes === 'assignee' && laneId !== (issue.assignee?.id ?? 'none')) lanePatch.assigneeId = laneId === 'none' ? null : laneId

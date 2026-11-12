@@ -138,6 +138,7 @@ const BUILTIN: &[&str] = &[
     "created",
     "updated",
     "resolved",
+    "resolution",
     "due",
     "duedate",
     "start",
@@ -369,6 +370,13 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
             let neg = only_eq(field, op)?;
             let names: Vec<String> = texts(field, values)?.into_iter().map(|s| s.to_lowercase()).collect();
             qb.push(if neg { "NOT (lower(s.name) = ANY(" } else { "(lower(s.name) = ANY(" });
+            qb.push_bind(names);
+            qb.push("))");
+        }
+        "resolution" => {
+            let neg = only_eq(field, op)?;
+            let names: Vec<String> = texts(field, values)?.into_iter().map(|s| s.to_lowercase()).collect();
+            qb.push(if neg { "NOT (lower(i.resolution) = ANY(" } else { "(lower(i.resolution) = ANY(" });
             qb.push_bind(names);
             qb.push("))");
         }
@@ -887,6 +895,7 @@ fn empty(qb: &mut Qb, ctx: &Ctx, field: &str, negated: bool) -> ApiResult<()> {
         "due" | "duedate" => "i.due_date",
         "start" | "startdate" => "i.start_date",
         "resolved" => "i.resolved_at",
+        "resolution" => "i.resolution",
         "labels" | "label" => {
             qb.push(if negated { "EXISTS" } else { "NOT EXISTS" });
             qb.push(" (SELECT 1 FROM issue_labels l WHERE l.issue_id = i.id)");
@@ -932,6 +941,7 @@ pub fn push_order(qb: &mut Qb, ctx: &Ctx, order: &[Order], default: &str) -> Api
             "created" => "i.created_at",
             "updated" => "i.updated_at",
             "resolved" => "i.resolved_at",
+            "resolution" => "lower(i.resolution)",
             "due" | "duedate" => "i.due_date",
             "start" | "startdate" => "i.start_date",
             "priority" => "i.priority",

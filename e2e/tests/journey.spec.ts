@@ -340,6 +340,41 @@ test('API reference', async ({ page }) => {
   await a11y(page, 'main')
 })
 
+test('workflow rules ask for what a status needs', async ({ page }) => {
+  await login(page)
+  // In review needs a due date and a comment
+  await page.goto('/projects/WEB/settings/workflow')
+  await page.getByRole('button', { name: 'Rules · In review' }).click()
+  const rules = page.getByRole('dialog')
+  await rules.getByLabel('Due date').check()
+  await rules.getByRole('radio', { name: 'Required' }).click()
+  await a11y(page, '[role=dialog]')
+  await rules.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByRole('button', { name: '2 rules · In review' })).toBeVisible()
+  // dragging a card there asks for them
+  await page.goto('/projects/WEB/board')
+  const card = page.locator('.issue-card', { hasText: 'Write the merge rules' })
+  const review = page.locator('.column', { has: page.locator('.column-head', { hasText: 'In review' }) }).locator('.column-body')
+  await card.dragTo(review)
+  const form = page.getByRole('dialog')
+  await expect(form.getByText('In review needs these filled in:')).toBeVisible()
+  await form.getByRole('button', { name: 'Move' }).click()
+  await expect(form.getByRole('alert')).toContainText('Due date')
+  await form.locator('input[type=date]').fill('2030-01-31')
+  await form.getByLabel(/Comment/).fill('Ready for review.')
+  await a11y(page, '[role=dialog]')
+  const saved = page.waitForResponse((r) => r.url().includes('/move') && r.request().method() === 'POST')
+  await form.getByRole('button', { name: 'Move' }).click()
+  expect((await saved).ok()).toBe(true)
+  await expect(review.locator('.issue-card', { hasText: 'Write the merge rules' })).toBeVisible()
+  // no rules again for the steps after this one
+  await page.evaluate(async () => {
+    const p = await (await fetch('/api/projects/WEB')).json()
+    const id = p.statuses.find((s: { name: string }) => s.name === 'In review').id
+    await fetch(`/api/statuses/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json', 'x-taskcraft': '1' }, body: JSON.stringify({ rules: {} }) })
+  })
+})
+
 test('command palette finds issues', async ({ page }) => {
   await login(page)
   await page.keyboard.press('Control+k')

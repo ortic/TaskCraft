@@ -48,6 +48,7 @@ const FIELD_LABELS: Record<string, () => string> = {
   due: () => t('Due date'),
   created: () => t('Created'),
   resolved: () => t('Resolved'),
+  resolution: () => t('Resolution'),
 }
 
 export function ImportSection({ project }: { project: Project }) {

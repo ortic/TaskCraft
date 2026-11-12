@@ -31,3 +31,4 @@ pub mod web_assets;
 pub mod webauthn;
 pub mod webhooks;
 pub mod wikicraft;
+pub mod workflow;

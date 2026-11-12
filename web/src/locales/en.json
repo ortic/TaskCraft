@@ -198,5 +198,9 @@
   "{count} operations": {
     "one": "{count} operation",
     "other": "{count} operations"
+  },
+  "{count} rules": {
+    "one": "{count} rule",
+    "other": "{count} rules"
   }
 }

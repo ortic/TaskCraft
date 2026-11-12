@@ -25,7 +25,7 @@ pub const SELECT: &str = "SELECT i.id, i.number, i.project_id, p.key AS project_
        i.sprint_id, sp.name AS sprint_name, sp.state AS sprint_state, i.version_id, v.name AS version_name,
        i.component_id, c.name AS component_name,
        i.story_points, i.estimate_minutes, i.spent_minutes, i.start_date, i.due_date, i.rank, i.custom,
-       i.resolved_at, i.status_changed_at, i.created_at, i.updated_at,
+       i.resolved_at, i.resolution, i.status_changed_at, i.created_at, i.updated_at,
        COALESCE((SELECT array_agg(l.label ORDER BY l.label) FROM issue_labels l WHERE l.issue_id = i.id), '{}') AS labels,
        (SELECT count(*) FROM issues ch WHERE ch.parent_id = i.id AND ch.deleted_at IS NULL) AS child_count,
        (SELECT count(*) FROM issues ch JOIN statuses chs ON chs.id = ch.status_id WHERE ch.parent_id = i.id AND ch.deleted_at IS NULL AND chs.category = 'done') AS child_done,
@@ -87,6 +87,8 @@ pub struct Row {
     pub rank: f64,
     pub custom: Value,
     pub resolved_at: Option<DateTime<Utc>>,
+    /// why a done issue is done (Done, Won't do, …); empty while open
+    pub resolution: Option<String>,
     pub status_changed_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -176,6 +178,8 @@ pub struct Summary {
     pub labels: Vec<String>,
     pub custom: Value,
     pub resolved_at: Option<DateTime<Utc>>,
+    /// why a done issue is done (Done, Won't do, …); empty while open
+    pub resolution: Option<String>,
     pub status_changed_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -218,6 +222,7 @@ pub fn summary(state: &AppState, r: Row) -> Summary {
         labels: r.labels,
         custom: r.custom,
         resolved_at: r.resolved_at,
+        resolution: r.resolution,
         status_changed_at: r.status_changed_at,
         created_at: r.created_at,
         updated_at: r.updated_at,
@@ -604,19 +609,37 @@ pub async fn apply(
         due_date: Option<NaiveDate>,
         custom: Value,
         workspace_id: Uuid,
+        resolution: Option<String>,
     }
     let cur: Cur = sqlx::query_as(
         "SELECT title, type_id, status_id, priority, assignee_id, reporter_id, parent_id, sprint_id, version_id, component_id, story_points,
-                estimate_minutes, start_date, due_date, custom, workspace_id FROM issues WHERE id = $1 FOR UPDATE",
+                estimate_minutes, start_date, due_date, custom, workspace_id, resolution FROM issues WHERE id = $1 FOR UPDATE",
     )
     .bind(id)
     .fetch_one(&mut **tx)
     .await?;
     let mut changes = Vec::new();
     let mut sets: Vec<(&'static str, SqlVal)> = Vec::new();
+    // a resolution asked for, and whether a comment comes with this change (added by the caller)
+    let mut resolution: Option<Option<String>> = None;
+    let mut comment = false;
 
     for (k, v) in patch {
         match k.as_str() {
+            "resolution" => {
+                resolution = Some(match v {
+                    Value::Null => None,
+                    Value::String(r) if !r.trim().is_empty() => Some(r.trim().to_string()),
+                    _ => return Err(ApiError::bad("resolution must be a name or null")),
+                });
+            }
+            "comment" => {
+                comment = match v {
+                    Value::Null => false,
+                    Value::String(c) => !c.trim().is_empty(),
+                    _ => return Err(ApiError::bad("comment must be text")),
+                };
+            }
             "title" => {
                 let t = clean_title(v.as_str().ok_or_else(|| ApiError::bad("title must be text"))?)?;
                 if t != cur.title {
@@ -874,6 +897,52 @@ pub async fn apply(
         };
         q.execute(&mut **tx).await?;
     }
+    // the resolution follows the status: set on entering done, kept while done, cleared after
+    let moved_to = changes.iter().find(|c| c.field == "status").and_then(|c| c.new["id"].as_str()).and_then(|s| s.parse::<Uuid>().ok());
+    let (category, rules, settings): (String, Value, Value) = sqlx::query_as(
+        "SELECT s.category, s.rules, p.settings FROM issues i JOIN statuses s ON s.id = i.status_id JOIN projects p ON p.id = i.project_id WHERE i.id = $1",
+    )
+    .bind(id)
+    .fetch_one(&mut **tx)
+    .await?;
+    let person = actor.user.filter(|_| !actor.is_quiet());
+    let new_resolution = if category == "done" {
+        let names = crate::workflow::resolutions(&settings);
+        match resolution {
+            Some(Some(r)) => Some(
+                names
+                    .iter()
+                    .find(|n| n.eq_ignore_ascii_case(&r))
+                    .cloned()
+                    .ok_or_else(|| ApiError::bad(format!("unknown resolution {r} (this project has {})", names.join(", "))))?,
+            ),
+            Some(None) => return Err(ApiError::bad("a done issue keeps a resolution")),
+            // a person must pick one when the status requires it; otherwise the default
+            None if cur.resolution.is_none() || moved_to.is_some() => {
+                let required = rules["require"].as_array().is_some_and(|r| r.iter().any(|f| f == "resolution"));
+                if required && person.is_some() && moved_to.is_some() {
+                    None
+                } else {
+                    let preferred = rules["resolution"].as_str().and_then(|d| names.iter().find(|n| n.eq_ignore_ascii_case(d)).cloned());
+                    Some(cur.resolution.clone().filter(|r| names.contains(r)).or(preferred).unwrap_or_else(|| names[0].clone()))
+                }
+            }
+            None => cur.resolution.clone(),
+        }
+    } else {
+        if matches!(resolution, Some(Some(_))) {
+            return Err(ApiError::bad("only done issues have a resolution"));
+        }
+        None
+    };
+    if new_resolution != cur.resolution {
+        sqlx::query("UPDATE issues SET resolution = $2 WHERE id = $1").bind(id).bind(&new_resolution).execute(&mut **tx).await?;
+        changes.push(Change { field: "resolution", old: json!(cur.resolution), new: json!(new_resolution) });
+    }
+    // what it takes to move there: who may, the fields it needs, a comment (people only)
+    if let (Some(to), Some(user)) = (moved_to, person) {
+        crate::workflow::enforce(tx, user, id, to, comment).await?;
+    }
     if !changes.is_empty() {
         sqlx::query("UPDATE issues SET updated_at = now() WHERE id = $1").bind(id).execute(&mut **tx).await?;
         if !quiet {
@@ -1014,6 +1083,7 @@ pub async fn update(state: &AppState, actor: &Actor, id: Uuid, patch: &Map<Strin
     let mut tx = state.db.begin().await?;
     let changes = apply(state, &mut tx, actor, id, project, patch, false).await?;
     tx.commit().await?;
+    add_move_comment(state, actor, id, patch).await?;
     let s = summary(state, load(state, id).await?);
     if !changes.is_empty() {
         after_change(state, actor, &s, &changes, false).await;
@@ -1025,6 +1095,14 @@ pub async fn update(state: &AppState, actor: &Actor, id: Uuid, patch: &Map<Strin
         }
     }
     Ok((s, changes))
+}
+
+/// The comment that came with a change (a status's rules may ask for one), in Markdown.
+async fn add_move_comment(state: &AppState, actor: &Actor, id: Uuid, patch: &Map<String, Value>) -> ApiResult<()> {
+    if let Some(text) = patch.get("comment").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty()) {
+        crate::routes::comments::add(state, actor, id, doc::from_markdown(text)).await?;
+    }
+    Ok(())
 }
 
 /// Notifications, live update, webhooks and automation after an issue changed.
@@ -1044,6 +1122,7 @@ pub async fn after_change(state: &AppState, actor: &Actor, s: &Summary, changes:
 
 /// Moves an issue on a board or in a backlog: optionally a new status and sprint, and a place
 /// between two neighbours.
+#[allow(clippy::too_many_arguments)]
 pub async fn move_issue(
     state: &AppState,
     actor: &Actor,
@@ -1052,13 +1131,17 @@ pub async fn move_issue(
     sprint: Option<Option<Uuid>>,
     after: Option<Uuid>,
     before: Option<Uuid>,
+    // fields set along with the move (what the status's rules ask for), and a comment
+    extra: &Map<String, Value>,
 ) -> ApiResult<Summary> {
     let project: Uuid = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1 AND deleted_at IS NULL")
         .bind(id)
         .fetch_optional(&state.db)
         .await?
         .ok_or(ApiError::NotFound("issue"))?;
-    let mut patch = Map::new();
+    let mut patch = extra.clone();
+    patch.remove("statusId");
+    patch.remove("sprintId");
     if let Some(s) = status {
         patch.insert("statusId".into(), json!(s));
     }
@@ -1072,6 +1155,7 @@ pub async fn move_issue(
         sqlx::query("UPDATE issues SET rank = $2 WHERE id = $1").bind(id).bind(r).execute(&mut *tx).await?;
     }
     tx.commit().await?;
+    add_move_comment(state, actor, id, &patch).await?;
     let s = summary(state, load(state, id).await?);
     if changes.is_empty() {
         // only the order changed: tell boards, nobody else

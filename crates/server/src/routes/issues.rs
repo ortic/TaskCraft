@@ -181,6 +181,10 @@ pub struct MoveReq {
     sprint_id: Option<Option<Uuid>>,
     after: Option<Uuid>,
     before: Option<Uuid>,
+    /// fields to set along with the move (e.g. what the target status requires) and a comment
+    #[serde(default)]
+    fields: Map<String, Value>,
+    comment: Option<String>,
 }
 
 fn double_option<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<Uuid>>, D::Error> {
@@ -194,7 +198,11 @@ pub async fn move_issue(
     Json(req): Json<MoveReq>,
 ) -> ApiResult<Json<Summary>> {
     let (id, _, _) = issue_for(&state, &user, &key, Role::Member).await?;
-    Ok(Json(issues::move_issue(&state, &Actor::of(&user), id, req.status_id, req.sprint_id, req.after, req.before).await?))
+    let mut extra = req.fields;
+    if let Some(c) = req.comment {
+        extra.insert("comment".into(), json!(c));
+    }
+    Ok(Json(issues::move_issue(&state, &Actor::of(&user), id, req.status_id, req.sprint_id, req.after, req.before, &extra).await?))
 }
 
 pub async fn delete(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>) -> ApiResult<StatusCode> {
@@ -372,6 +380,7 @@ pub async fn search_csv(State(state): State<AppState>, CurrentUser(user): Curren
         "Created",
         "Updated",
         "Resolved",
+        "Resolution",
     ]);
     let h = |m: Option<i32>| m.map(|m| format!("{:.1}", m as f64 / 60.0)).unwrap_or_default();
     for s in r.issues {
@@ -397,6 +406,7 @@ pub async fn search_csv(State(state): State<AppState>, CurrentUser(user): Curren
             s.created_at.format("%Y-%m-%d %H:%M").to_string(),
             s.updated_at.format("%Y-%m-%d %H:%M").to_string(),
             s.resolved_at.map(|d| d.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default(),
+            s.resolution.clone().unwrap_or_default(),
         ]);
     }
     let body = w.into_inner().map_err(|e| ApiError::Internal(anyhow::anyhow!("csv: {e}")))?;
@@ -454,6 +464,7 @@ pub async fn suggest(
                 "created",
                 "updated",
                 "resolved",
+                "resolution",
                 "due",
                 "start",
                 "watcher",
@@ -474,6 +485,19 @@ pub async fn suggest(
             sqlx::query_scalar("SELECT DISTINCT name FROM issue_types WHERE project_id = ANY($1) ORDER BY name").bind(&visible).fetch_all(&state.db).await?
         }
         "category" | "statuscategory" => vec!["todo".into(), "in_progress".into(), "done".into()],
+        "resolution" => {
+            // each project's list (or the defaults), then what issues actually carry
+            let settings: Vec<Value> = sqlx::query_scalar("SELECT settings FROM projects WHERE id = ANY($1)").bind(&visible).fetch_all(&state.db).await?;
+            let mut names: Vec<String> = Vec::new();
+            for s in &settings {
+                for r in crate::workflow::resolutions(s) {
+                    if !names.contains(&r) {
+                        names.push(r);
+                    }
+                }
+            }
+            names
+        }
         "priority" => crate::query::PRIORITIES.iter().rev().map(|s| s.to_string()).collect(),
         "assignee" | "reporter" | "watcher" | "creator" => {
             let mut v = vec!["me()".to_string()];

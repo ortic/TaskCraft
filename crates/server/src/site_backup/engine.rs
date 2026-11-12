@@ -575,7 +575,15 @@ impl<'a> Run<'a> {
         })
         .bind(lead)
         .bind(self.user.id)
-        .bind(json!({"estimation": estimation, "workflow": "free", "template": template, "importedFrom": "xml-site-backup"}))
+        .bind({
+            let mut settings = json!({"estimation": estimation, "workflow": "free", "template": template, "importedFrom": "xml-site-backup"});
+            // the backup's own resolutions (Done, Won't Do, …) become the project's list
+            let names = resolution_names(self.b);
+            if !names.is_empty() {
+                settings["resolutions"] = json!(names);
+            }
+            settings
+        })
         .execute(&mut **tx)
         .await?;
         sqlx::query("INSERT INTO project_members (project_id, subject_type, subject_id, role) VALUES ($1, 'user', $2, 'admin')")
@@ -1237,8 +1245,8 @@ impl<'a> Run<'a> {
         sqlx::query(
             "INSERT INTO issues (id, workspace_id, project_id, number, title, description, description_text, type_id, status_id, priority, assignee_id, reporter_id,
                                  sprint_id, version_id, component_id, story_points, estimate_minutes, start_date, due_date, rank, resolved_at, status_changed_at,
-                                 created_by, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)",
+                                 created_by, created_at, updated_at, resolution)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)",
         )
         .bind(id)
         .bind(self.user.workspace_id)
@@ -1265,6 +1273,17 @@ impl<'a> Run<'a> {
         .bind(self.person(i.creator.as_deref().or(i.reporter.as_deref())))
         .bind(created)
         .bind(updated)
+        .bind((status.2 == "done").then(|| {
+            // its own resolution, else the backup's "Done" (or first), else Done
+            let names = resolution_names(self.b);
+            i.resolution
+                .as_deref()
+                .and_then(|r| self.b.resolutions.get(r))
+                .filter(|n| !n.trim().is_empty())
+                .map(|n| n.trim().to_string())
+                .or_else(|| names.iter().find(|n| n.eq_ignore_ascii_case("done")).or(names.first()).cloned())
+                .unwrap_or_else(|| "Done".into())
+        }))
         .execute(&mut **tx)
         .await
         .with_context(|| format!("issue {}", t.key))?;
@@ -1864,4 +1883,19 @@ pub async fn summarize(state: &AppState, workspace: Uuid, source: &Source, b: &B
         });
     }
     Ok(Summary { origin, projects, people, files: source.file_count() as u64, has_sprints, warnings })
+}
+
+/// The backup's resolution names in the order they were made (by id), without duplicates.
+fn resolution_names(b: &Backup) -> Vec<String> {
+    let mut list: Vec<(&String, &String)> = b.resolutions.iter().filter(|(_, n)| !n.trim().is_empty()).collect();
+    list.sort_by(|a, b| id_order(a.0, b.0));
+    let mut out: Vec<String> = Vec::new();
+    for (_, n) in list {
+        let n = n.trim().to_string();
+        if !out.iter().any(|o| o.eq_ignore_ascii_case(&n)) {
+            out.push(n);
+        }
+    }
+    out.truncate(20);
+    out
 }

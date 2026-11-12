@@ -25,9 +25,9 @@ info:
     \ and automation conditions take TQL, e.g.\n`project = WEB and sprint in openSprints() and assignee = me() order by rank`\
     \ or\n`type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status\n\
     category priority assignee reporter creator labels sprint version component parent/epic points estimate spent created\n\
-    updated resolved due start watcher blocked` and custom fields by name (quoted when they contain spaces). Operators\n`=\
-    \ != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions\n`me()`,\
-    \ `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,\n`futureSprints()`,\
+    updated resolved resolution due start watcher blocked` and custom fields by name (quoted when they contain spaces). Operators\n\
+    `= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions\n\
+    `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,\n`futureSprints()`,\
     \ `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates like `-7d`, `+2w`,\n`-1m`. Bare words\
     \ search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n`POST /query/validate`\
     \ checks a query and `GET /query/suggest` completes field names and values.\n\n## Pagination\n\n`GET /search` pages with\
@@ -2329,7 +2329,7 @@ paths:
     patch:
       tags:
       - Project configuration
-      summary: Rename a status or change its category or colour (project admins)
+      summary: Rename a status, change its category or colour, or set its rules (project admins)
       operationId: updateStatus
       parameters:
       - name: id
@@ -2354,6 +2354,9 @@ paths:
                   type:
                   - string
                   - 'null'
+                rules:
+                  $ref: '#/components/schemas/StatusRules'
+                  description: 'replaces the rules ({} or null: none)'
       responses:
         '204':
           description: Done (no content)
@@ -4023,6 +4026,12 @@ paths:
                   type: string
                   format: uuid
                   description: place it right before this issue
+                fields:
+                  $ref: '#/components/schemas/IssueFields'
+                  description: fields set along with the move (what the target status requires, a resolution)
+                comment:
+                  type: string
+                  description: a comment (Markdown) added with the move
       responses:
         '200':
           description: OK
@@ -8525,6 +8534,11 @@ components:
           - 'null'
           format: date-time
           description: when it reached a done status
+        resolution:
+          type:
+          - string
+          - 'null'
+          description: 'why a done issue is done (one of the project''s resolutions: Done, Won''t do, …); null while open'
         statusChangedAt:
           type: string
           format: date-time
@@ -8811,7 +8825,17 @@ components:
         statusId:
           type: string
           format: uuid
-          description: a status of the project (restricted workflows only allow configured transitions)
+          description: a status of the project (restricted workflows only allow configured transitions; the status's rules
+            may require fields, a comment or a resolution, see StatusRules)
+        resolution:
+          type:
+          - string
+          - 'null'
+          description: 'for done issues: one of the project''s resolutions (matched by name, any case); entering a done status
+            without one sets the status''s default or the first; leaving done clears it'
+        comment:
+          type: string
+          description: 'a comment (Markdown) added with the change: what a status''s rules may ask for when moving into it'
         priority:
           oneOf:
           - $ref: '#/components/schemas/Priority'
@@ -8977,10 +9001,46 @@ components:
           - 'null'
         position:
           type: number
+        rules:
+          $ref: '#/components/schemas/StatusRules'
       required:
       - id
       - name
       - category
+    StatusRules:
+      type: object
+      properties:
+        who:
+          type: string
+          enum:
+          - everyone
+          - admins
+          - teams
+          description: who may move issues into the status (project admins always may); default everyone who can edit
+        teams:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: 'with who = teams: the teams whose members may'
+        require:
+          type: array
+          items:
+            type: string
+          description: 'fields the issue must have afterwards: assignee, resolution, version, component, dueDate, startDate,
+            estimate, storyPoints, custom:<field id>'
+        comment:
+          type: string
+          enum:
+          - 'off'
+          - optional
+          - required
+          description: whether a comment comes with the move (`comment` in the change)
+        resolution:
+          type: string
+          description: 'done statuses: the resolution set when none is chosen'
+      description: What it takes for a person to move an issue into the status (automation and imports aren't held up). A
+        refused move answers 403 (who) or 400 naming what's missing.
     IssueType:
       type: object
       properties:
@@ -10042,6 +10102,12 @@ components:
         doneAfterDays:
           type: number
           description: stored as given (not used by the server)
+        resolutions:
+          type: array
+          items:
+            type: string
+          description: the project's resolutions, 1–20 distinct names (default Done, Won't do, Duplicate, Cannot reproduce);
+            the first is the default
         template:
           type: string
           enum:
@@ -10060,7 +10126,8 @@ components:
           readOnly: true
           description: service desk settings (GET/PUT /projects/{key}/portal)
       description: Project settings. Changes merge into the current ones key by key (null removes a key); only estimation,
-        workflow, sla, wikiSpace, wikiParentPage, defaultAssignee and doneAfterDays can be set here, anything else is a 400.
+        workflow, sla, resolutions, wikiSpace, wikiParentPage, defaultAssignee and doneAfterDays can be set here, anything
+        else is a 400.
       additionalProperties: true
     NewProject:
       type: object

@@ -492,3 +492,8 @@ table.list tr:hover td { background: var(--bg-soft); }
 .pf-release-name { font-weight: 600; }
 .pf-nodates { position: absolute; top: 8px; left: 8px; }
 @media (max-width: 760px) { .pf-row { grid-template-columns: 150px 1fr; } }
+
+/* transition screen (components/Transition.tsx) */
+.tr-req { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--danger); margin-left: 4px; }
+.tr-form .field { margin-bottom: 12px; }
+.issue-resolution { max-width: 170px; }
