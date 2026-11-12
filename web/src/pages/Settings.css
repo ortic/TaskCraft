@@ -16,6 +16,8 @@
 .st-foot-msg { margin-inline-end: auto; }
 .st-subsection { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
 .st-subsection h3 { margin: 0 0 4px; font-size: 14px; }
+.st-email-modes { margin-top: 6px; }
+.st-email-hint { margin: 8px 0 0; }
 
 .st-grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 .st-grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 16px; }

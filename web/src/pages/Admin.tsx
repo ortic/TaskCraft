@@ -3,11 +3,11 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ChevronDown, CircleDot, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, Trash,
+  Check, ChevronDown, CircleDot, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, Mail, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, Trash,
   UserCheck, UserPlus, UserX, Users, Webhook,
 } from 'lucide-react'
 import { api, ago, dateTime, shortDate, type Me } from '../api'
-import { Avatar, Confirm, Empty, ErrorBox, Loading, Modal, PopButton, Tabs, useMe, usePeople, useProjects, useToast } from '../ui'
+import { Avatar, Confirm, Empty, ErrorBox, Loading, Modal, PopButton, Tabs, useMe, usePeople, useProjects, useSetup, useToast } from '../ui'
 import { PROJECT_COLORS } from '../icons'
 import { CopyField, Switch } from './Settings'
 import { DeleteTeam, TeamDialog, TeamMembers, useTeams, type Team } from './People'
@@ -98,7 +98,92 @@ function Overview({ me }: { me: Me }) {
         <Stat icon={<HardDrive size={16} />} value={s ? formatBytes(s.attachmentBytes) : undefined} label={t('Attachment storage')} />
       </div>
       <WorkspaceForm key={JSON.stringify(me.workspace)} me={me} />
+      <MailCard me={me} />
     </>
+  )
+}
+
+interface MailStatus {
+  enabled: boolean
+  from: string
+  server: string | null
+  pending: number
+  failed: number
+  sentLastDay: number
+  lastError: string | null
+  lastErrorAt: string | null
+}
+
+function MailCard({ me }: { me: Me }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const mail = useQuery({ queryKey: ['admin', 'mail'], queryFn: () => api.get<MailStatus>('/admin/mail') })
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const m = mail.data
+  const nf = new Intl.NumberFormat(locale())
+  const sendTest = async () => {
+    setBusy(true)
+    setErr('')
+    try {
+      const r = await api.post<{ to: string }>('/admin/mail/test')
+      toast(t('Test e-mail sent to {email}', { email: r.to }))
+      qc.invalidateQueries({ queryKey: ['admin', 'mail'] })
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="adm-card adm-mail" aria-labelledby="adm-mail-title">
+      <div className="adm-card-head">
+        <h2 id="adm-mail-title"><Mail size={15} /> {t('E-mail')}</h2>
+        <p className="small muted">{t('Invitations, password-reset links and notification e-mails.')}</p>
+      </div>
+      <div className="adm-card-body">
+        {mail.isLoading && <Loading />}
+        {mail.error && <ErrorBox error={mail.error} />}
+        {m && (m.enabled ? (
+          <>
+            <span className="badge badge-success"><Check size={12} /> {t('Configured')}</span>
+            <dl className="adm-mail-facts">
+              <dt>{t('Sender')}</dt>
+              <dd>{m.from}</dd>
+              <dt>{t('Mail server')}</dt>
+              <dd>{m.server}</dd>
+              <dt>{t('Sent in the last 24 hours')}</dt>
+              <dd>{nf.format(m.sentLastDay)}</dd>
+              <dt>{t('Waiting to be sent')}</dt>
+              <dd>{nf.format(m.pending)}</dd>
+              {m.failed > 0 && (
+                <>
+                  <dt>{t('Gave up (last 7 days)')}</dt>
+                  <dd>{nf.format(m.failed)}</dd>
+                </>
+              )}
+            </dl>
+            {m.lastError && (
+              <p className="error-text small adm-mail-error">
+                {t('Last error: {error}', { error: m.lastError })}{m.lastErrorAt && <span className="faint"> · {ago(m.lastErrorAt)}</span>}
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            <span className="badge badge-warning">{t('Not configured')}</span>
+            <p className="small muted">
+              {t('Set TASKCRAFT_SMTP_URL (and TASKCRAFT_MAIL_FROM for the sender) to e-mail invitations, password-reset links and notifications. Until then, you pass invitation and reset links on yourself.')}
+            </p>
+          </>
+        ))}
+      </div>
+      <div className="adm-card-foot">
+        {err && <span className="error-text adm-foot-msg" role="alert">{err}</span>}
+        {m?.enabled && me.user?.email && <span className="faint small">{t('Goes to {email}', { email: me.user.email })}</span>}
+        <button type="button" className="btn" disabled={busy || !m?.enabled} onClick={sendTest}><Send size={14} /> {busy ? t('Sending…') : t('Send test e-mail')}</button>
+      </div>
+    </section>
   )
 }
 
@@ -229,7 +314,7 @@ function UsersTab({ me }: { me: Me }) {
   const [q, setQ] = useState('')
   const [status, setStatus] = useState<'all' | AdminUser['status']>('all')
   const [adding, setAdding] = useState(false)
-  const [link, setLink] = useState<{ user: AdminUser; url: string } | null>(null)
+  const [link, setLink] = useState<{ user: AdminUser; url: string; emailed: boolean } | null>(null)
   const [deactivating, setDeactivating] = useState<AdminUser | null>(null)
   const myId = me.user!.id
   const refresh = () => {
@@ -248,8 +333,8 @@ function UsersTab({ me }: { me: Me }) {
   }
   const makeLink = async (u: AdminUser) => {
     try {
-      const r = await api.post<{ url: string }>(`/users/${u.id}/link`)
-      setLink({ user: u, url: r.url })
+      const r = await api.post<{ url: string; emailed?: boolean }>(`/users/${u.id}/link`)
+      setLink({ user: u, url: r.url, emailed: !!r.emailed })
     } catch (e) {
       toast((e as Error).message)
     }
@@ -379,7 +464,7 @@ function UsersTab({ me }: { me: Me }) {
       {adding && <AddPerson onClose={() => setAdding(false)} onCreated={refresh} />}
       {link && (
         <Modal title={link.user.status === 'invited' ? t('Invitation link') : t('Password-reset link')} onClose={() => setLink(null)} width={540} footer={<button className="btn btn-primary" onClick={() => setLink(null)}>{t('Done [[close]]')}</button>}>
-          <LinkResult name={link.user.name} url={link.url} invite={link.user.status === 'invited'} />
+          <LinkResult name={link.user.name} url={link.url} invite={link.user.status === 'invited'} emailedTo={link.emailed ? link.user.email : null} />
         </Modal>
       )}
       {deactivating && (
@@ -396,13 +481,17 @@ function UsersTab({ me }: { me: Me }) {
   )
 }
 
-function LinkResult({ name, url, invite }: { name: string; url: string; invite: boolean }) {
+function LinkResult({ name, url, invite, emailedTo }: { name: string; url: string; invite: boolean; emailedTo?: string | null }) {
   return (
     <div className="adm-link">
       <p>
-        {invite
-          ? t('TaskCraft doesn’t send e-mail. Send this link to {name} yourself: they choose a password and are signed in.', { name })
-          : t('TaskCraft doesn’t send e-mail. Send this link to {name} yourself: it lets them choose a new password and signs them out elsewhere.', { name })}
+        {emailedTo
+          ? invite
+            ? t('We e-mailed this invitation to {email}. You can also send {name} the link yourself: they choose a password and are signed in.', { name, email: emailedTo })
+            : t('We e-mailed this link to {email}. You can also pass it on yourself: it lets {name} choose a new password and signs them out elsewhere.', { name, email: emailedTo })
+          : invite
+            ? t('TaskCraft doesn’t send e-mail. Send this link to {name} yourself: they choose a password and are signed in.', { name })
+            : t('TaskCraft doesn’t send e-mail. Send this link to {name} yourself: it lets them choose a new password and signs them out elsewhere.', { name })}
       </p>
       <CopyField value={url} label={invite ? t('Invitation link') : t('Password-reset link')} />
       <p className="faint small">{t('The link works once and expires in 7 days. Creating a new one replaces it.')}</p>
@@ -419,7 +508,8 @@ function AddPerson({ onClose, onCreated }: { onClose: () => void; onCreated: () 
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const [result, setResult] = useState<{ name: string; url: string } | null>(null)
+  const [result, setResult] = useState<{ name: string; url: string; emailedTo: string | null } | null>(null)
+  const mail = !!useSetup().data?.mail
   const submit = async (e?: FormEvent) => {
     e?.preventDefault()
     if (!name.trim() || !email.trim()) return setErr(t('Name and e-mail address are required.'))
@@ -427,9 +517,9 @@ function AddPerson({ onClose, onCreated }: { onClose: () => void; onCreated: () 
     setBusy(true)
     setErr('')
     try {
-      const r = await api.post<{ id: string; inviteUrl?: string | null }>('/users', { name: name.trim(), email: email.trim(), role, password: mode === 'password' ? password : undefined })
+      const r = await api.post<{ id: string; inviteUrl?: string | null; emailed?: boolean }>('/users', { name: name.trim(), email: email.trim(), role, password: mode === 'password' ? password : undefined })
       onCreated()
-      if (r.inviteUrl) setResult({ name: name.trim(), url: r.inviteUrl })
+      if (r.inviteUrl) setResult({ name: name.trim(), url: r.inviteUrl, emailedTo: r.emailed ? email.trim() : null })
       else {
         toast(t('{name} can sign in now', { name: name.trim() }))
         onClose()
@@ -443,7 +533,7 @@ function AddPerson({ onClose, onCreated }: { onClose: () => void; onCreated: () 
   if (result) {
     return (
       <Modal title={t('{name} is invited', { name: result.name })} onClose={onClose} width={540} footer={<button className="btn btn-primary" onClick={onClose}>{t('Done [[close]]')}</button>}>
-        <LinkResult name={result.name} url={result.url} invite />
+        <LinkResult name={result.name} url={result.url} invite emailedTo={result.emailedTo} />
       </Modal>
     )
   }
@@ -489,7 +579,11 @@ function AddPerson({ onClose, onCreated }: { onClose: () => void; onCreated: () 
             <button type="button" role="radio" aria-checked={mode === 'password'} className={mode === 'password' ? 'active' : ''} onClick={() => setMode('password')}>{t('Set a password now')}</button>
           </div>
           <span className="field-hint">
-            {mode === 'invite' ? t('You get a link to send them; they choose their own password. No e-mail is sent.') : t('Tell them the password; they can change it in their profile.')}
+            {mode === 'invite'
+              ? mail
+                ? t('They get an e-mail with a link to choose their own password; you see the link too.')
+                : t('You get a link to send them; they choose their own password. No e-mail is sent.')
+              : t('Tell them the password; they can change it in their profile.')}
           </span>
         </div>
         {mode === 'password' && (

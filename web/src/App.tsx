@@ -8,7 +8,7 @@ import { Loading, ToastProvider, useMe, useProject } from './ui'
 import { useLiveUpdates } from './live'
 import { applyAccent } from './look'
 import Layout from './components/Layout'
-import { Login, Setup, Welcome } from './pages/Auth'
+import { ForgotPassword, Login, Setup, Welcome } from './pages/Auth'
 import Home from './pages/Home'
 import Projects from './pages/Projects'
 import Board from './pages/Board'
@@ -45,6 +45,7 @@ export default function App() {
   if (loc.pathname === '/welcome') return <Welcome />
   if (!user) {
     if (loc.pathname === '/login') return <Login />
+    if (loc.pathname === '/forgot-password') return <ForgotPassword />
     return <Navigate to={`/login?next=${encodeURIComponent(loc.pathname + loc.search)}`} replace />
   }
   return (

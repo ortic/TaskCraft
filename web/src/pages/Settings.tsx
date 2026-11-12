@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, BookOpen, Check, Contrast, Copy, ExternalLink, KeyRound, Lock, Monitor, Moon, Palette, Sun, Trash, User } from 'lucide-react'
 import { api, ago, shortDate, type Me } from '../api'
-import { Avatar, Confirm, ErrorBox, Loading, useMe, useToast } from '../ui'
+import { Avatar, Confirm, ErrorBox, Loading, useMe, useSetup, useToast } from '../ui'
 import './Settings.css'
 
 // ---- small shared pieces (Admin uses them too) ----
@@ -78,6 +78,12 @@ function scrollToSection(id: string) {
 export default function Settings() {
   const me = useMe()
   const [preset, setPreset] = useState<{ name: string; scope: 'read' | 'write'; n: number } | null>(null)
+  // links like /settings#notifications (e-mails link there) open at that section
+  const ready = !!me.data?.user
+  useEffect(() => {
+    const id = window.location.hash.slice(1)
+    if (ready && SECTIONS.some((s) => s.id === id)) document.getElementById(`st-${id}`)?.scrollIntoView({ block: 'start' })
+  }, [ready])
   if (me.isLoading) return <Loading />
   if (me.error) return <div className="page"><ErrorBox error={me.error} /></div>
   const data = me.data
@@ -369,12 +375,37 @@ const KINDS: { id: string; label: () => string; desc: () => string }[] = [
   { id: 'status', label: () => t('Status changes'), desc: () => t('Issues you watch move to another status.') },
 ]
 
+type EmailMode = 'digest' | 'instant' | 'off'
+
+const EMAIL_MODES: { id: EmailMode; label: () => string }[] = [
+  { id: 'digest', label: () => t('Daily digest') },
+  { id: 'instant', label: () => t('Immediately') },
+  { id: 'off', label: () => t('Off') },
+]
+
 function NotificationsSection({ me }: { me: Me }) {
   const qc = useQueryClient()
   const toast = useToast()
   const saved: string[] = Array.isArray(me.preferences?.muted) ? me.preferences!.muted : []
   const [muted, setMuted] = useState<string[]>(saved)
   useEffect(() => setMuted(saved), [saved.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
+  const mail = !!useSetup().data?.mail
+  const savedMode: EmailMode = EMAIL_MODES.find((m) => m.id === me.preferences?.email)?.id ?? 'digest'
+  const [mode, setMode] = useState<EmailMode>(savedMode)
+  useEffect(() => setMode(savedMode), [savedMode])
+  const tz = me.profile?.timezone
+  const chooseMode = async (next: EmailMode) => {
+    if (next === mode) return
+    const before = mode
+    setMode(next)
+    try {
+      await api.put('/me/preferences', { email: next })
+      qc.invalidateQueries({ queryKey: ['me'] })
+    } catch (e) {
+      setMode(before)
+      toast((e as Error).message)
+    }
+  }
   const toggle = async (kind: string, on: boolean) => {
     const next = on ? muted.filter((k) => k !== kind) : [...muted.filter((k) => k !== kind), kind]
     const before = muted
@@ -402,6 +433,29 @@ function NotificationsSection({ me }: { me: Me }) {
             </label>
           )
         })}
+      </div>
+      <div className="st-subsection">
+        <h3 id="st-email-title">{t('E-mail')}</h3>
+        {mail ? (
+          <>
+            <div className="seg st-email-modes" role="radiogroup" aria-labelledby="st-email-title">
+              {EMAIL_MODES.map((m) => (
+                <button key={m.id} type="button" role="radio" aria-checked={mode === m.id} className={mode === m.id ? 'active' : ''} onClick={() => chooseMode(m.id)}>{m.label()}</button>
+              ))}
+            </div>
+            <p className="small muted st-email-hint">
+              {mode === 'digest'
+                ? t('One e-mail a day at 08:00 ({zone}) with what happened on your issues that you haven’t read here.', { zone: tz || 'UTC' })
+                : mode === 'instant'
+                  ? t('An e-mail a couple of minutes after something happens, with whatever else came in meanwhile. Not sent for what you’ve already read, or while you’re using TaskCraft.')
+                  : t('No notification e-mails. Your notifications still show up here.')}
+              {mode === 'digest' && !tz && ` ${t('Set your time zone under Profile to get it at 08:00 your time.')}`}
+            </p>
+            {mode !== 'off' && <p className="faint small st-email-hint">{t('Kinds you switch off above aren’t e-mailed either.')}</p>}
+          </>
+        ) : (
+          <p className="small muted st-email-hint">{t('E-mail isn’t set up on this server, so notifications only show up here.')}</p>
+        )}
       </div>
     </Section>
   )
