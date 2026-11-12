@@ -27,6 +27,7 @@ const MAX_ROWS: usize = 5000;
 /// The fields a column can go to (plus `custom:<id>` and `ignore`).
 const FIELDS: &[&str] = &[
     "key",
+    "id",
     "title",
     "description",
     "type",
@@ -41,7 +42,9 @@ const FIELDS: &[&str] = &[
     "parent",
     "points",
     "estimate",
+    "estimateSeconds",
     "spent",
+    "spentSeconds",
     "start",
     "due",
     "created",
@@ -52,7 +55,8 @@ const FIELDS: &[&str] = &[
 pub fn suggest(header: &str) -> Option<&'static str> {
     let h: String = header.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect();
     Some(match h.as_str() {
-        "key" | "issuekey" | "id" | "issueid" | "number" => "key",
+        "key" | "issuekey" | "ticketkey" => "key",
+        "id" | "issueid" | "ticketid" | "itemid" | "number" | "no" => "id",
         "title" | "summary" | "subject" | "name" | "task" => "title",
         "description" | "body" | "details" | "notes" => "description",
         "type" | "issuetype" | "tracker" | "kind" => "type",
@@ -74,6 +78,121 @@ pub fn suggest(header: &str) -> Option<&'static str> {
         "resolved" | "resolvedat" | "closed" | "closedat" | "completed" | "donedate" => "resolved",
         _ => return None,
     })
+}
+
+/// Status names that mean done.
+const DONE_WORDS: &[&str] = &["resolved", "closed", "fixed", "won't fix", "wontfix", "rejected", "cancelled", "canceled", "verified"];
+
+/// The category of a status name nobody set up yet, from the words in it (a few languages).
+fn guess_category(name: &str) -> &'static str {
+    let l = name.trim().to_lowercase();
+    if let Some(c) = parse_category(&l) {
+        return c;
+    }
+    const DONE: &[&str] = &[
+        "done",
+        "closed",
+        "resolved",
+        "fixed",
+        "complete",
+        "rejected",
+        "cancel",
+        "erledigt",
+        "fertig",
+        "abgeschlossen",
+        "geschlossen",
+        "terminé",
+        "fermé",
+        "résolu",
+        "chiuso",
+        "completato",
+        "risolto",
+    ];
+    const DOING: &[&str] = &[
+        "progress",
+        "review",
+        "test",
+        "qa",
+        "doing",
+        "develop",
+        "build",
+        "implement",
+        "wip",
+        "ongoing",
+        "prüf",
+        "arbeit",
+        "bearbeitung",
+        "umsetzung",
+        "revue",
+        "cours",
+        "vérif",
+        "revision",
+        "corso",
+        "lavorazione",
+        "verifica",
+    ];
+    if DONE_WORDS.contains(&l.as_str()) || DONE.iter().any(|w| l.contains(w)) {
+        "done"
+    } else if DOING.iter().any(|w| l.contains(w)) {
+        "in_progress"
+    } else {
+        "todo"
+    }
+}
+
+/// A status the import needs: placed before the done statuses, reachable from all others, and on
+/// every board of the project as a column of its own (so its issues show up).
+async fn create_status(state: &AppState, project: Uuid, name: &str, category: &str) -> ApiResult<Uuid> {
+    let id = new_id();
+    let mut tx = state.db.begin().await?;
+    let at: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(min(position) FILTER (WHERE category = 'done' AND $2 <> 'done'), max(position) + 1, 0)::float8 FROM statuses WHERE project_id = $1",
+    )
+    .bind(project)
+    .bind(category)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE statuses SET position = position + 1 WHERE project_id = $1 AND position >= $2").bind(project).bind(at).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO statuses (id, project_id, name, category, position) VALUES ($1, $2, $3, $4, $5)")
+        .bind(id)
+        .bind(project)
+        .bind(name.trim())
+        .bind(category)
+        .bind(at)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "INSERT INTO transitions (project_id, from_status_id, to_status_id) SELECT $1, s.id, $2 FROM statuses s WHERE s.project_id = $1 AND s.id <> $2
+         UNION ALL SELECT $1, $2, s.id FROM statuses s WHERE s.project_id = $1 AND s.id <> $2 ON CONFLICT DO NOTHING",
+    )
+    .bind(project)
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+    let done: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM statuses WHERE project_id = $1 AND category = 'done'").bind(project).fetch_all(&mut *tx).await?;
+    let boards: Vec<(Uuid, Value)> = sqlx::query_as("SELECT id, config FROM boards WHERE project_id = $1").bind(project).fetch_all(&mut *tx).await?;
+    for (board, mut config) in boards {
+        let Some(cols) = config["columns"].as_array_mut() else { continue };
+        let holds_done = |c: &Value| {
+            c["statusIds"].as_array().is_some_and(|ids| ids.iter().any(|x| x.as_str().and_then(|x| x.parse().ok()).is_some_and(|x: Uuid| done.contains(&x))))
+        };
+        let at = if category == "done" { cols.len() } else { cols.iter().position(holds_done).unwrap_or(cols.len()) };
+        cols.insert(at, json!({"id": new_id(), "name": name.trim(), "statusIds": [id], "wipLimit": null}));
+        sqlx::query("UPDATE boards SET config = $2 WHERE id = $1").bind(board).bind(&config).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// Fields one row may fill from several columns (exports repeat a column per value).
+const MULTI: &[&str] = &["labels", "component", "version", "sprint"];
+
+/// Whether a time column holds seconds rather than hours: whole numbers, all minutes, and at
+/// least one of them an hour or more (no issue takes 3600 hours).
+fn looks_like_seconds(values: &[&str]) -> bool {
+    let nums: Vec<u64> = values.iter().map(|v| v.trim()).filter(|v| !v.is_empty()).filter_map(|v| v.parse::<u64>().ok()).collect();
+    let non_empty = values.iter().filter(|v| !v.trim().is_empty()).count();
+    !nums.is_empty() && nums.len() == non_empty && nums.iter().all(|n| n % 60 == 0) && nums.iter().any(|n| *n >= 3600)
 }
 
 /// Splits CSV text (comma, semicolon or tab, chosen by the header line; BOM removed).
@@ -123,6 +242,14 @@ pub fn parse_date(s: &str) -> Option<DateTime<Utc>> {
     None
 }
 
+/// Minutes from hours (2.5), a duration (1h 30m, 2d) or, for the seconds fields, seconds.
+fn minutes(v: &str, seconds: bool) -> Option<f64> {
+    if seconds {
+        return number(v).map(|s| s / 60.0);
+    }
+    number(v).map(|h| h * 60.0).or_else(|| super::comments::parse_duration(v).map(f64::from))
+}
+
 fn number(s: &str) -> Option<f64> {
     let s = s.trim().replace(',', ".");
     s.parse::<f64>().ok().filter(|n| n.is_finite() && *n >= 0.0)
@@ -152,14 +279,23 @@ pub async fn preview(State(state): State<AppState>, CurrentUser(user): CurrentUs
     let (headers, rows) = read_csv(req["csv"].as_str().unwrap_or(""))?;
     let fields: Vec<(Uuid, String)> = sqlx::query_as("SELECT id, name FROM custom_fields WHERE project_id = $1").bind(p.id).fetch_all(&state.db).await?;
     let mut used = std::collections::HashSet::new();
-    let mapping: Map<String, Value> = headers
-        .iter()
-        .map(|h| {
-            let custom = fields.iter().find(|(_, n)| n.eq_ignore_ascii_case(h.trim())).map(|(id, _)| format!("custom:{id}"));
-            let f = custom.or_else(|| suggest(h).map(str::to_string)).filter(|f| used.insert(f.clone())).unwrap_or_else(|| "ignore".into());
-            (h.clone(), json!(f))
-        })
-        .collect();
+    let mut mapping = Map::new();
+    for (i, h) in headers.iter().enumerate() {
+        // a repeated header (one column per value) shares the first one's field
+        if mapping.contains_key(h) {
+            continue;
+        }
+        let custom = fields.iter().find(|(_, n)| n.eq_ignore_ascii_case(h.trim())).map(|(id, _)| format!("custom:{id}"));
+        let mut f = custom.or_else(|| suggest(h).map(str::to_string));
+        if let Some(t) = f.as_deref().filter(|t| matches!(*t, "estimate" | "spent")) {
+            let values: Vec<&str> = rows.iter().filter_map(|r| r.get(i).map(String::as_str)).collect();
+            if looks_like_seconds(&values) {
+                f = Some(format!("{t}Seconds"));
+            }
+        }
+        let f = f.filter(|f| MULTI.contains(&f.as_str()) || used.insert(f.clone())).unwrap_or_else(|| "ignore".into());
+        mapping.insert(h.clone(), json!(f));
+    }
     Ok(Json(json!({"headers": headers, "rows": rows.iter().take(5).collect::<Vec<_>>(), "total": rows.len(), "mapping": mapping, "fields": FIELDS})))
 }
 
@@ -174,22 +310,23 @@ struct Lookup {
 }
 
 impl Lookup {
+    /// A status for an imported name: the same name, a status whose name starts it ("Selected
+    /// for development" → "Selected"), or for done-like names the first done status.
     fn status(&self, v: &str) -> Option<Uuid> {
         let l = v.trim().to_lowercase();
         if let Some(s) = self.statuses.iter().find(|s| s.1.to_lowercase() == l) {
             return Some(s.0);
         }
-        // closed / resolved / in progress: the first status of that category
-        let cat = parse_category(&l).or_else(|| {
-            if ["resolved", "closed", "fixed", "won't fix", "wontfix", "rejected", "cancelled", "canceled", "verified"].contains(&l.as_str()) {
-                Some("done")
-            } else if l.contains("progress") || l.contains("review") || l.contains("testing") || l.contains("doing") {
-                Some("in_progress")
-            } else {
-                None
-            }
-        })?;
-        self.statuses.iter().find(|s| s.2 == cat).map(|s| s.0)
+        if let Some(s) = self.statuses.iter().find(|s| l.starts_with(&format!("{} ", s.1.to_lowercase()))) {
+            return Some(s.0);
+        }
+        let done = parse_category(&l) == Some("done") || DONE_WORDS.contains(&l.as_str());
+        done.then(|| self.statuses.iter().find(|s| s.2 == "done").map(|s| s.0)).flatten()
+    }
+
+    /// The first status of a category.
+    fn first_of(&self, category: &str) -> Option<Uuid> {
+        self.statuses.iter().find(|s| s.2 == category).map(|s| s.0)
     }
 
     fn type_id(&self, v: &str) -> Option<Uuid> {
@@ -274,7 +411,8 @@ pub async fn run(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
     let mut lookup = Lookup {
         statuses: sqlx::query_as("SELECT id, name, category FROM statuses WHERE project_id = $1 ORDER BY position").bind(p.id).fetch_all(&state.db).await?,
         types: sqlx::query_as("SELECT id, name, level FROM issue_types WHERE project_id = $1 ORDER BY position").bind(p.id).fetch_all(&state.db).await?,
-        people: sqlx::query_as("SELECT id, name, email FROM users WHERE workspace_id = $1 AND status <> 'deactivated'")
+        // everyone, also invited and former people (an import records history); active ones first
+        people: sqlx::query_as("SELECT id, name, email FROM users WHERE workspace_id = $1 ORDER BY status = 'deactivated', status = 'invited'")
             .bind(user.workspace_id)
             .fetch_all(&state.db)
             .await?,
@@ -291,6 +429,9 @@ pub async fn run(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
     };
     let actor = Actor::quiet(&user);
     let dry = req.dry_run;
+    // messages that would repeat on many rows are given once
+    let mut once: std::collections::HashSet<String> = Default::default();
+    let mut sees: HashMap<Uuid, bool> = HashMap::new();
     let mut errors: Vec<Value> = Vec::new();
     let mut warnings: Vec<Value> = Vec::new();
     let mut created: Vec<(Uuid, String)> = Vec::new();
@@ -306,6 +447,15 @@ pub async fn run(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
             .filter(|v| !v.is_empty())
             .collect()
     };
+    // keys of this very project (KEY-44 imported into KEY): issues keep their numbers, so links,
+    // commit messages and e-mails that name them still lead to the right issue. New numbers are
+    // handed out above the file's highest one, then each issue takes its own number back.
+    let pkey = p.key.to_uppercase();
+    let own_number = |k: &str| split_key(&k.to_uppercase()).filter(|(pk, _)| *pk == pkey).map(|(_, n)| n);
+    let top = rows.iter().filter_map(|r| col(r, "key").into_iter().next()).filter_map(|k| own_number(&k)).max();
+    if !dry && let Some(top) = top {
+        sqlx::query("UPDATE projects SET issue_seq = GREATEST(issue_seq, $2) WHERE id = $1").bind(p.id).bind(top).execute(&state.db).await?;
+    }
     for (n, row) in rows.iter().enumerate() {
         let line = n + 2;
         let one = |f: &str| col(row, f).into_iter().next();
@@ -323,10 +473,34 @@ pub async fn run(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
                 None => warn(format!("unknown type “{v}”: the default type is used")),
             }
         }
-        let status = one("status").map(|v| (lookup.status(&v), v));
-        if let Some((None, v)) = &status {
-            warn(format!("unknown status “{v}”: the first status is used"));
-        }
+        let status = match one("status") {
+            None => None,
+            Some(v) => Some(match lookup.status(&v) {
+                Some(id) => (Some(id), v),
+                None if req.create_missing => {
+                    let cat = guess_category(&v);
+                    let id = if dry { Uuid::nil() } else { create_status(&state, p.id, &v, cat).await? };
+                    lookup.statuses.push((id, v.trim().to_string(), cat.to_string()));
+                    let m = format!("new status “{}” ({})", v.trim(), cat.replace('_', " "));
+                    if once.insert(m.clone()) {
+                        warn(m);
+                    }
+                    (Some(id), v)
+                }
+                None => {
+                    let id = lookup.first_of(guess_category(&v));
+                    let name = id.and_then(|id| lookup.statuses.iter().find(|s| s.0 == id)).map(|s| s.1.clone());
+                    let m = match &name {
+                        Some(n) => format!("status “{v}” is imported as “{n}”"),
+                        None => format!("unknown status “{v}”: the first status is used"),
+                    };
+                    if once.insert(m.clone()) {
+                        warn(m);
+                    }
+                    (id, v)
+                }
+            }),
+        };
         if let Some(v) = one("priority") {
             match parse_priority(&v) {
                 Some(pr) => {
@@ -335,13 +509,33 @@ pub async fn run(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
                 None => warn(format!("unknown priority “{v}”")),
             }
         }
-        for (f, k) in [("assignee", "assigneeId"), ("reporter", "reporterId")] {
+        // assignee and reporter are set once the issue exists: an import keeps people who haven't
+        // joined yet or have left, which everyday edits don't allow
+        let mut people: Vec<(&str, Uuid)> = Vec::new();
+        for f in ["assignee", "reporter"] {
             if let Some(v) = one(f) {
                 match lookup.person(&v) {
                     Some(id) => {
-                        fields.insert(k.into(), json!(id));
+                        people.push((f, id));
+                        let ok = match sees.get(&id) {
+                            Some(b) => *b,
+                            None => {
+                                let b = crate::access::can_view(&state, id, p.id).await;
+                                sees.insert(id, b);
+                                b
+                            }
+                        };
+                        let m = format!("“{v}” can't see this project yet (invited, deactivated or not a member); their issues are imported anyway");
+                        if !ok && once.insert(m.clone()) {
+                            warn(m);
+                        }
                     }
-                    None => warn(format!("no one called “{v}” in this workspace ({f} left empty)")),
+                    None => {
+                        let m = format!("no one called “{v}” in this workspace ({f}s left empty)");
+                        if once.insert(m.clone()) {
+                            warn(m);
+                        }
+                    }
                 }
             }
         }
@@ -368,15 +562,27 @@ pub async fn run(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
         {
             fields.insert("componentId".into(), json!(id));
         }
-        for (f, k, scale) in [("points", "storyPoints", 1.0), ("estimate", "estimateMinutes", 60.0)] {
-            if let Some(v) = one(f) {
-                match number(&v) {
-                    Some(x) => {
-                        fields.insert(k.into(), json!(x * scale));
-                    }
-                    None => warn(format!("{f} “{v}” isn't a number")),
+        if let Some(v) = one("points") {
+            match number(&v) {
+                Some(x) => {
+                    fields.insert("storyPoints".into(), json!(x));
                 }
+                None => warn(format!("points “{v}” isn't a number")),
             }
+        }
+        if let Some((v, secs)) = one("estimate").map(|v| (v, false)).or_else(|| one("estimateSeconds").map(|v| (v, true))) {
+            match minutes(&v, secs) {
+                Some(m) => {
+                    fields.insert("estimateMinutes".into(), json!(m.round()));
+                }
+                None => warn(format!("estimate “{v}” isn't a time")),
+            }
+        }
+        let spent = one("spent").map(|v| (v, false)).or_else(|| one("spentSeconds").map(|v| (v, true)));
+        if let Some((v, secs)) = &spent
+            && minutes(v, *secs).is_none()
+        {
+            warn(format!("time spent “{v}” isn't a time"));
         }
         for (f, k) in [("start", "startDate"), ("due", "dueDate")] {
             if let Some(v) = one(f) {
@@ -422,14 +628,29 @@ pub async fn run(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
         if !custom.is_empty() {
             fields.insert("custom".into(), Value::Object(custom));
         }
-        let description = one("description").map(|d| crate::doc::from_markdown(&d));
+        // wiki markup (h1., [text|url], {code}) as several tools export it, else Markdown
+        let description = one("description").map(|d| {
+            if crate::markup::looks_like_wiki(&d) { crate::doc::from_markdown(&crate::markup::to_markdown(&d)) } else { crate::doc::from_markdown(&d) }
+        });
         let source_key = one("key");
+        // the other tool's own id: parents may point at it instead of the key
+        let source_id = one("id");
         if dry {
-            if let Some(k) = &source_key {
+            for k in source_key.iter().chain(source_id.iter()) {
                 by_source.insert(k.to_uppercase(), Uuid::nil());
             }
             if let Some(parent) = one("parent") {
                 parents.push((Uuid::nil(), parent.to_uppercase(), line));
+            }
+            if let Some(num) = source_key.as_deref().and_then(own_number) {
+                let taken: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM issues WHERE project_id = $1 AND number = $2)")
+                    .bind(p.id)
+                    .bind(num)
+                    .fetch_one(&state.db)
+                    .await?;
+                if taken {
+                    warnings.push(json!({"row": line, "message": format!("{pkey}-{num} is taken in this project: it gets a new number")}));
+                }
             }
             continue;
         }
@@ -440,6 +661,22 @@ pub async fn run(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
                 continue;
             }
         };
+        let mut new_key = s.key.clone();
+        if let Some(num) = source_key.as_deref().and_then(own_number) {
+            let taken = sqlx::query("UPDATE issues SET number = $2 WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM issues WHERE project_id = $3 AND number = $2)")
+                .bind(s.id)
+                .bind(num)
+                .bind(p.id)
+                .execute(&state.db)
+                .await?
+                .rows_affected()
+                == 0;
+            if taken {
+                warnings.push(json!({"row": line, "message": format!("{pkey}-{num} is taken in this project: imported as {}", s.key)}));
+            } else {
+                new_key = format!("{}-{num}", p.key);
+            }
+        }
         // status, dates and time spent as the source had them
         if let Some((Some(sid), _)) = status {
             let mut patch = Map::new();
@@ -455,12 +692,25 @@ pub async fn run(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
         if let Some(r) = one("resolved").and_then(|v| parse_date(&v)) {
             sqlx::query("UPDATE issues SET resolved_at = $2 WHERE id = $1 AND resolved_at IS NOT NULL").bind(s.id).bind(r).execute(&state.db).await?;
         }
-        if let Some(h) = one("spent").and_then(|v| number(&v)).filter(|h| *h > 0.0) {
-            sqlx::query("INSERT INTO worklogs (id, issue_id, user_id, minutes, work_date, note) VALUES ($1, $2, $3, $4, current_date, 'Imported')")
+        for (f, u) in &people {
+            let sql = if *f == "assignee" { "UPDATE issues SET assignee_id = $2 WHERE id = $1" } else { "UPDATE issues SET reporter_id = $2 WHERE id = $1" };
+            sqlx::query(sql).bind(s.id).bind(u).execute(&state.db).await?;
+        }
+        if let Some(m) = spent.and_then(|(v, secs)| minutes(&v, secs)).filter(|m| *m >= 1.0) {
+            // booked to whoever did the work (assignee, else reporter) on the day it was resolved
+            // (else created), so timesheets and reports keep their shape
+            let who = people.iter().find(|x| x.0 == "assignee").or_else(|| people.iter().find(|x| x.0 == "reporter")).map(|x| x.1).unwrap_or(user.id);
+            let day = one("resolved")
+                .and_then(|v| parse_date(&v))
+                .or_else(|| one("created").and_then(|v| parse_date(&v)))
+                .map(|d| d.date_naive())
+                .unwrap_or_else(|| Utc::now().date_naive());
+            sqlx::query("INSERT INTO worklogs (id, issue_id, user_id, minutes, work_date, note) VALUES ($1, $2, $3, $4, $5, 'Imported')")
                 .bind(new_id())
                 .bind(s.id)
-                .bind(user.id)
-                .bind((h * 60.0).round() as i32)
+                .bind(who)
+                .bind(m.round() as i32)
+                .bind(day)
                 .execute(&state.db)
                 .await?;
             sqlx::query("UPDATE issues SET spent_minutes = (SELECT COALESCE(sum(minutes), 0) FROM worklogs WHERE issue_id = $1) WHERE id = $1")
@@ -483,10 +733,13 @@ pub async fn run(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
             }
             by_source.insert(k, s.id);
         }
+        if let Some(id) = &source_id {
+            by_source.insert(id.to_uppercase(), s.id);
+        }
         if let Some(parent) = one("parent") {
             parents.push((s.id, parent.to_uppercase(), line));
         }
-        created.push((s.id, s.key));
+        created.push((s.id, new_key));
     }
     // parents once everything exists: a key from the file, else an issue already in TaskCraft
     for (child, parent, line) in parents.iter().filter(|_| !dry) {
@@ -512,6 +765,13 @@ pub async fn run(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
             }
         }
     } else if !created.is_empty() {
+        // the next new issue follows the highest number in use
+        if top.is_some() {
+            sqlx::query("UPDATE projects SET issue_seq = (SELECT COALESCE(max(number), 0) FROM issues WHERE project_id = $1) WHERE id = $1")
+                .bind(p.id)
+                .execute(&state.db)
+                .await?;
+        }
         audit(&state, user.workspace_id, Some(user.id), "project.import", Some(p.key.clone()), json!({"created": created.len(), "errors": errors.len()})).await;
         events::publish(&state, Event::new(user.workspace_id, "project").project(p.id).actor(user.id)).await;
         events::publish(&state, Event::new(user.workspace_id, "issue").project(p.id).actor(user.id)).await;

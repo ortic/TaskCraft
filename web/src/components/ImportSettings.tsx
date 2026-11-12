@@ -26,6 +26,7 @@ interface Result {
 
 const FIELD_LABELS: Record<string, () => string> = {
   key: () => t('Key (from the other tool)'),
+  id: () => t('ID (from the other tool)'),
   title: () => t('Title'),
   description: () => t('Description'),
   type: () => t('Type'),
@@ -40,7 +41,9 @@ const FIELD_LABELS: Record<string, () => string> = {
   parent: () => t('Parent (key)'),
   points: () => t('Story points'),
   estimate: () => t('Estimate (hours)'),
+  estimateSeconds: () => t('Estimate (seconds)'),
   spent: () => t('Time spent (hours)'),
+  spentSeconds: () => t('Time spent (seconds)'),
   start: () => t('Start date'),
   due: () => t('Due date'),
   created: () => t('Created'),
@@ -99,7 +102,7 @@ export function ImportSection({ project }: { project: Project }) {
         <div className="ps-section-text">
           <h2>{t('Import')}</h2>
           <p className="ps-desc">
-            {t('Bring issues in from a CSV file (most tools export one). Columns are matched to fields by their names; check the matching, test the import, then run it. Statuses, types and people are matched by name; keys from the other tool keep working as links. Nobody gets notified.')}
+            {t('Bring issues in from a CSV file (most tools export one). Columns are matched to fields by their names; check the matching, test the import, then run it. Statuses, types and people are matched by name — invite people first, also those who have left, so their issues and time stay theirs. Keys from the other tool keep working as links. Nobody gets notified.')}
           </p>
         </div>
       </div>
@@ -114,8 +117,8 @@ export function ImportSection({ project }: { project: Project }) {
             <table className="list" style={{ minWidth: 600 }}>
               <thead>
                 <tr>
-                  {preview.headers.map((h) => (
-                    <th key={h} style={{ verticalAlign: 'top' }}>
+                  {preview.headers.map((h, j) => (
+                    <th key={j} style={{ verticalAlign: 'top' }}>
                       <div style={{ textTransform: 'none', color: 'var(--text)', marginBottom: 4 }}>{h}</div>
                       <select className="select input-sm" style={{ minWidth: 140 }} aria-label={t('Field for column {name}', { name: h })} value={mapping[h] ?? 'ignore'} onChange={(e) => setMapping({ ...mapping, [h]: e.target.value })}>
                         <option value="ignore">{t('— ignore —')}</option>
@@ -129,7 +132,7 @@ export function ImportSection({ project }: { project: Project }) {
                 {preview.rows.map((r, i) => (
                   <tr key={i}>
                     {preview.headers.map((h, j) => (
-                      <td key={h} className={mapping[h] === 'ignore' ? 'faint' : ''} style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r[j]}</td>
+                      <td key={j} className={mapping[h] === 'ignore' ? 'faint' : ''} style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r[j]}</td>
                     ))}
                   </tr>
                 ))}
@@ -137,7 +140,7 @@ export function ImportSection({ project }: { project: Project }) {
             </table>
           </div>
           <label className="row small" style={{ margin: '10px 0' }}>
-            <input type="checkbox" checked={createMissing} onChange={(e) => setCreateMissing(e.target.checked)} /> {t('Create sprints, releases and components that don’t exist yet')}
+            <input type="checkbox" checked={createMissing} onChange={(e) => setCreateMissing(e.target.checked)} /> {t('Create statuses, sprints, releases and components that don’t exist yet')}
           </label>
           {!hasTitle && <p className="error-text">{t('Match one column to the title.')}</p>}
           <div className="row">

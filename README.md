@@ -24,7 +24,7 @@ One binary, PostgreSQL, optional S3. Built with the same stack as WikiCraft.
 - **Workflows**: statuses in three categories (to do, in progress, done); free or restricted
   transitions with a transition matrix
 - **Move issues to another project** (the old key keeps working; type, status and custom fields are mapped, sub-tasks move along)
-- **CSV import** with column mapping and a dry run (statuses, types, people, sprints and releases matched by name; keys from the other tool keep working)
+- **CSV import** with column mapping and a dry run: statuses, types, people, sprints and releases matched by name (missing statuses created and put on the board); issue numbers kept when the project key stays, other keys keep working as links; parents by key or id; times in hours, durations or seconds, booked to whoever did the work; people who haven't joined yet or have left keep their issues; wiki-markup descriptions converted
 - **Trash** with restore, clone, bulk changes, CSV export
 
 **Views**
