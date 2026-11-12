@@ -2,7 +2,7 @@ import { t, locale } from '../i18n'
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronLeft, ChevronRight, Plus, Timer, Trash } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, Timer, Trash } from 'lucide-react'
 import { api, duration, isoDate, qs, type Issue } from '../api'
 import { Avatar, Choices, ErrorBox, Loading, PopButton, Popover, Spinner, useMe, usePeople, useToast } from '../ui'
 import { TypeIcon } from '../icons'
@@ -290,6 +290,8 @@ function LogForm({ row, date, label, onDone }: { row: SheetRow; date: string; la
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  // an entry of that day being changed (else the form adds time)
+  const [editing, setEditing] = useState<Worklog | null>(null)
   const logs = useQuery({ queryKey: ['worklogs', row.key], queryFn: () => api.get<Worklog[]>(`/issues/${encodeURIComponent(row.key)}/worklogs`) })
   const mine = (logs.data ?? []).filter((w) => w.date === date && w.user?.id === me?.user?.id)
   const refresh = () => {
@@ -301,6 +303,15 @@ function LogForm({ row, date, label, onDone }: { row: SheetRow; date: string; la
     setBusy(true)
     setErr('')
     try {
+      if (editing) {
+        await api.patch(`/worklogs/${editing.id}`, { time: time.trim(), note: note.trim() })
+        refresh()
+        toast(t('Entry changed'))
+        setEditing(null)
+        setTime('')
+        setNote('')
+        return
+      }
       const r = await api.post<{ id: string; minutes: number }>(`/issues/${encodeURIComponent(row.key)}/worklogs`, { time: time.trim(), date, note: note.trim() || undefined })
       refresh()
       toast(t('Logged {time} on {key}', { time: duration(r.minutes), key: row.key }))
@@ -311,7 +322,19 @@ function LogForm({ row, date, label, onDone }: { row: SheetRow; date: string; la
       setBusy(false)
     }
   }
+  const edit = (w: Worklog) => {
+    setEditing(w)
+    setTime(duration(w.minutes))
+    setNote(w.note ?? '')
+    setErr('')
+  }
+  const stopEditing = () => {
+    setEditing(null)
+    setTime('')
+    setNote('')
+  }
   const remove = async (w: Worklog) => {
+    if (editing?.id === w.id) stopEditing()
     try {
       await api.del(`/worklogs/${w.id}`)
       refresh()
@@ -330,16 +353,17 @@ function LogForm({ row, date, label, onDone }: { row: SheetRow; date: string; la
       {mine.length > 0 && (
         <ul className="ts-logs" aria-label={t('Logged that day')}>
           {mine.map((w) => (
-            <li key={w.id}>
+            <li key={w.id} className={editing?.id === w.id ? 'ts-log-editing' : undefined}>
               <strong>{duration(w.minutes)}</strong>
               <span className="ts-log-note">{w.note || <span className="faint">{t('No note')}</span>}</span>
+              <button type="button" className="icon-btn icon-btn-sm" onClick={() => edit(w)} aria-label={t('Change this entry')} title={t('Change this entry')} aria-pressed={editing?.id === w.id}><Pencil size={13} /></button>
               <button type="button" className="icon-btn icon-btn-sm" onClick={() => remove(w)} aria-label={t('Delete this entry')} title={t('Delete this entry')}><Trash size={13} /></button>
             </li>
           ))}
         </ul>
       )}
       <div className="field">
-        <label htmlFor="ts-time">{mine.length ? t('Add time') : t('Time spent')}</label>
+        <label htmlFor="ts-time">{editing ? t('Time spent') : mine.length ? t('Add time') : t('Time spent')}</label>
         <input id="ts-time" className="input" autoFocus value={time} onChange={(e) => setTime(e.target.value)} placeholder="1h 30m" autoComplete="off" />
         <div className="ts-quick">
           {QUICK.map((q) => (
@@ -353,8 +377,8 @@ function LogForm({ row, date, label, onDone }: { row: SheetRow; date: string; la
       </div>
       {err && <p className="error-text ts-err" role="alert">{err}</p>}
       <div className="ts-form-foot">
-        <button type="button" className="btn" onClick={onDone}>{t('Cancel')}</button>
-        <button type="submit" className="btn btn-primary" disabled={busy || !time.trim()}>{t('Log time')}</button>
+        <button type="button" className="btn" onClick={editing ? stopEditing : onDone}>{t('Cancel')}</button>
+        <button type="submit" className="btn btn-primary" disabled={busy || !time.trim()}>{editing ? t('Save') : t('Log time')}</button>
       </div>
     </form>
   )

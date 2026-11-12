@@ -13,6 +13,13 @@ import { refreshIssues } from '../components/IssueView'
 
 type Lane = { id: string; title: React.ReactNode; issues: Issue[] }
 
+// the quick filters every board starts with are stored in English; names people give their own
+// filters stay as typed
+const BUILT_IN_FILTERS: Record<string, () => string> = {
+  'Recently updated': () => t('Recently updated'),
+  Blocked: () => t('Blocked'),
+}
+
 export default function Board() {
   const { key } = useParams()
   const project = useProject(key)
@@ -189,7 +196,7 @@ function BoardView({ project, data, quick, setQuick, onBoard, onSprint }: { proj
               <button className={`chip ${people.length === 1 && people[0] === me.id ? 'on' : ''}`} onClick={() => setPeople((p) => (p.length === 1 && p[0] === me.id ? [] : [me.id]))}>{t('Only my issues')}</button>
             )}
             {cfg.quickFilters.filter((f) => f.query !== 'assignee = me()').map((f) => (
-              <button key={f.name} className={`chip ${quick.includes(f.query) ? 'on' : ''}`} aria-pressed={quick.includes(f.query)} onClick={() => setQuick(quick.includes(f.query) ? quick.filter((q) => q !== f.query) : [...quick, f.query])}>{t(f.name)}</button>
+              <button key={f.name} className={`chip ${quick.includes(f.query) ? 'on' : ''}`} aria-pressed={quick.includes(f.query)} onClick={() => setQuick(quick.includes(f.query) ? quick.filter((q) => q !== f.query) : [...quick, f.query])}>{BUILT_IN_FILTERS[f.name]?.() ?? f.name}</button>
             ))}
           </div>
           <span className="spacer" />

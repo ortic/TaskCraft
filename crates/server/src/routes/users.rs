@@ -50,8 +50,9 @@ pub async fn person(State(state): State<AppState>, CurrentUser(user): CurrentUse
 /// All accounts (admins).
 pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser) -> ApiResult<Json<Value>> {
     require_admin(&user)?;
-    let rows: Vec<(Uuid, String, Option<String>, String, String, Option<String>, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>)> =
-        sqlx::query_as("SELECT id, name, email, role, status, title, created_at, last_login_at FROM users WHERE workspace_id = $1 ORDER BY lower(name)")
+    type Row = (Uuid, String, Option<String>, String, String, Option<String>, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>, bool);
+    let rows: Vec<Row> =
+        sqlx::query_as("SELECT id, name, email, role, status, title, created_at, last_login_at, preferences ? 'removed' FROM users WHERE workspace_id = $1 ORDER BY lower(name)")
             .bind(user.workspace_id)
             .fetch_all(&state.db)
             .await?;
@@ -59,8 +60,9 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser)
     let mut sign_in = crate::sso::sign_in_methods(&state, user.workspace_id).await?;
     Ok(Json(json!(
         rows.into_iter()
-            .map(|(id, name, email, role, status, title, created, last)| json!({
+            .map(|(id, name, email, role, status, title, created, last, removed)| json!({
                 "id": id, "name": name, "email": email, "role": role, "status": status, "title": title, "createdAt": created, "lastLoginAt": last,
+                "removed": removed,
                 "signIn": sign_in.remove(&id),
             }))
             .collect::<Vec<_>>()
@@ -136,12 +138,15 @@ pub struct UserUpdate {
 
 pub async fn update(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>, Json(req): Json<UserUpdate>) -> ApiResult<StatusCode> {
     require_admin(&user)?;
-    let target_role: String = sqlx::query_scalar("SELECT role FROM users WHERE id = $1 AND workspace_id = $2")
+    let (target_role, removed): (String, bool) = sqlx::query_as("SELECT role, preferences ? 'removed' FROM users WHERE id = $1 AND workspace_id = $2")
         .bind(id)
         .bind(user.workspace_id)
         .fetch_optional(&state.db)
         .await?
         .ok_or(ApiError::NotFound("user"))?;
+    if removed {
+        return Err(ApiError::bad("this person was removed"));
+    }
     if target_role == "owner" && (req.role.is_some() || req.status.as_deref() == Some("deactivated")) {
         return Err(ApiError::bad("the owner's role can't be changed"));
     }
@@ -166,6 +171,73 @@ pub async fn update(State(state): State<AppState>, CurrentUser(user): CurrentUse
         sqlx::query("UPDATE users SET name = $2 WHERE id = $1").bind(id).bind(n).execute(&state.db).await?;
     }
     audit(&state, user.workspace_id, Some(user.id), "user.updated", Some(id.to_string()), json!({"role": req.role, "status": req.status})).await;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `DELETE /users/{id}`: removes a person for good. Their comments, time logs and history stay —
+/// attributed to "Former user …" — while everything personal goes: name, e-mail address, password,
+/// second factors, sign-in links, sessions and tokens, notifications, private filters and
+/// dashboards; their open issues become unassigned.
+pub async fn remove(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>) -> ApiResult<StatusCode> {
+    require_admin(&user)?;
+    let (role, email, removed): (String, Option<String>, bool) =
+        sqlx::query_as("SELECT role, email, preferences ? 'removed' FROM users WHERE id = $1 AND workspace_id = $2")
+            .bind(id)
+            .bind(user.workspace_id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or(ApiError::NotFound("user"))?;
+    if id == user.id {
+        return Err(ApiError::bad("you can't remove yourself"));
+    }
+    if removed {
+        return Ok(StatusCode::NO_CONTENT);
+    }
+    if role == "owner" {
+        return Err(ApiError::bad("the workspace owner can't be removed"));
+    }
+    if role == "admin" && user.role != "owner" {
+        return Err(ApiError::Denied("only the owner can remove administrators".into()));
+    }
+    let name = format!("Former user {}", &id.simple().to_string()[24..]);
+    let mut tx = state.db.begin().await?;
+    sqlx::query(
+        "UPDATE users SET name = $2, email = NULL, password_hash = NULL, title = NULL, locale = NULL, timezone = NULL, preferences = jsonb_build_object('removed', true),
+                role = 'member', status = 'deactivated', totp_secret = NULL, totp_pending = NULL, totp_enabled_at = NULL, totp_last_step = NULL,
+                recovery_codes = '{}'
+          WHERE id = $1",
+    )
+    .bind(id)
+    .bind(&name)
+    .execute(&mut *tx)
+    .await?;
+    for sql in [
+        "DELETE FROM sessions WHERE user_id = $1",
+        "DELETE FROM api_tokens WHERE user_id = $1",
+        "DELETE FROM user_links WHERE user_id = $1",
+        "DELETE FROM identities WHERE user_id = $1",
+        "DELETE FROM passkeys WHERE user_id = $1",
+        "DELETE FROM auth_challenges WHERE user_id = $1",
+        "DELETE FROM notifications WHERE user_id = $1",
+        "DELETE FROM recent_issues WHERE user_id = $1",
+        "DELETE FROM project_stars WHERE user_id = $1",
+        "DELETE FROM view_stars WHERE user_id = $1",
+        "DELETE FROM issue_watchers WHERE user_id = $1",
+        "DELETE FROM team_members WHERE user_id = $1",
+        "DELETE FROM project_members WHERE subject_type = 'user' AND subject_id = $1",
+        "DELETE FROM views WHERE owner_id = $1 AND NOT shared",
+        "DELETE FROM dashboards WHERE owner_id = $1 AND NOT shared",
+        "UPDATE projects SET lead_id = NULL WHERE lead_id = $1",
+        "UPDATE components SET lead_id = NULL WHERE lead_id = $1",
+        "UPDATE issues i SET assignee_id = NULL FROM statuses s WHERE s.id = i.status_id AND s.category <> 'done' AND i.assignee_id = $1",
+    ] {
+        sqlx::query(sql).bind(id).execute(&mut *tx).await?;
+    }
+    if let Some(email) = email {
+        sqlx::query("DELETE FROM mail_outbox WHERE sent_at IS NULL AND lower(to_address) = lower($1)").bind(email).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    audit(&state, user.workspace_id, Some(user.id), "user.removed", Some(id.to_string()), json!({"name": name})).await;
     Ok(StatusCode::NO_CONTENT)
 }
 

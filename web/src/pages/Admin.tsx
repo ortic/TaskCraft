@@ -80,7 +80,8 @@ function formatBytes(n: number): string {
     v /= 1024
     i++
   }
-  return new Intl.NumberFormat(locale(), { style: 'unit', unit: units[i], unitDisplay: 'short', maximumFractionDigits: i > 0 && v < 10 ? 1 : 0 }).format(v)
+  // the short form of a plain byte count reads "0 byte" in English; spell it out instead
+  return new Intl.NumberFormat(locale(), { style: 'unit', unit: units[i], unitDisplay: i === 0 ? 'long' : 'short', maximumFractionDigits: i > 0 && v < 10 ? 1 : 0 }).format(v)
 }
 
 function Overview({ me }: { me: Me }) {
@@ -296,6 +297,8 @@ interface AdminUser {
   lastLoginAt: string | null
   /** password and / or single sign-on providers */
   signIn?: SignInMethods | null
+  /** removed for good (anonymized; the history stays) */
+  removed?: boolean
 }
 
 const ROLES: { id: 'admin' | 'member' | 'guest'; label: () => string; desc: () => string }[] = [
@@ -306,7 +309,8 @@ const ROLES: { id: 'admin' | 'member' | 'guest'; label: () => string; desc: () =
 
 const roleName = (r: string) => (r === 'owner' ? t('Owner') : ROLES.find((x) => x.id === r)?.label() ?? r)
 
-function StatusBadge({ status }: { status: AdminUser['status'] }) {
+function StatusBadge({ status, removed }: { status: AdminUser['status']; removed?: boolean }) {
+  if (removed) return <span className="badge">{t('Removed')}</span>
   if (status === 'active') return <span className="badge badge-success">{t('Active')}</span>
   if (status === 'invited') return <span className="badge badge-accent">{t('Invited')}</span>
   return <span className="badge">{t('Deactivated')}</span>
@@ -323,6 +327,7 @@ function UsersTab({ me }: { me: Me }) {
   const [adding, setAdding] = useState(false)
   const [link, setLink] = useState<{ user: AdminUser; url: string; emailed: boolean } | null>(null)
   const [deactivating, setDeactivating] = useState<AdminUser | null>(null)
+  const [removing, setRemoving] = useState<AdminUser | null>(null)
   // two-factor authentication: who has it, resetting it
   const enrolled = useTwoFactorPolicy().data?.enrolled
   const [resetting, setResetting] = useState<AdminUser | null>(null)
@@ -397,7 +402,7 @@ function UsersTab({ me }: { me: Me }) {
             <tbody>
               {list.map((u) => {
                 const self = u.id === myId
-                const locked = u.role === 'owner'
+                const locked = u.role === 'owner' || !!u.removed
                 return (
                   <tr key={u.id} className={u.status === 'deactivated' ? 'adm-off' : ''}>
                     <td>
@@ -411,7 +416,7 @@ function UsersTab({ me }: { me: Me }) {
                     </td>
                     <td>
                       {locked || self ? (
-                        <span className="adm-role-fixed" title={locked ? t('The owner can’t be changed') : t('You can’t change your own role')}>{roleName(u.role)}</span>
+                        <span className="adm-role-fixed" title={u.removed ? t('This person was removed') : locked ? t('The owner can’t be changed') : t('You can’t change your own role')}>{roleName(u.role)}</span>
                       ) : (
                         <PopButton className="btn btn-sm adm-role-btn" label={<>{roleName(u.role)} <ChevronDown size={13} /></>} width={320} title={t('Change role of {name}', { name: u.name })}>
                           {(close) => (
@@ -439,13 +444,13 @@ function UsersTab({ me }: { me: Me }) {
                         </PopButton>
                       )}
                     </td>
-                    <td><StatusBadge status={u.status} /></td>
+                    <td><StatusBadge status={u.status} removed={u.removed} /></td>
                     <td className="small adm-hide-sm"><SignInBadges methods={u.signIn} /></td>
                     <td className="small adm-hide-sm" title={u.lastLoginAt ? dateTime(u.lastLoginAt) : undefined}>
                       {u.lastLoginAt ? ago(u.lastLoginAt) : <span className="faint">{u.status === 'invited' ? t('Not yet') : t('Never')}</span>}
                     </td>
                     <td className="adm-actions">
-                      <PopButton className="icon-btn" label={<Ellipsis size={16} />} title={t('Actions for {name}', { name: u.name })} align="end" width={240}>
+                      {!u.removed && <PopButton className="icon-btn" label={<Ellipsis size={16} />} title={t('Actions for {name}', { name: u.name })} align="end" width={240}>
                         {(close) => (
                           <div className="choices-list">
                             {(passwords || u.status === 'invited') && (
@@ -468,10 +473,15 @@ function UsersTab({ me }: { me: Me }) {
                                 <UserCheck size={15} /> {t('Reactivate')}
                               </button>
                             )}
+                            {!self && u.role !== 'owner' && (u.role !== 'admin' || me.user?.role === 'owner') && (
+                              <button type="button" className="menu-item danger" onClick={() => { close(); setRemoving(u) }}>
+                                <Trash size={15} /> {t('Remove…')}
+                              </button>
+                            )}
                             <div className="menu-empty adm-menu-note">{t('Joined {date}', { date: shortDate(u.createdAt) })}</div>
                           </div>
                         )}
-                      </PopButton>
+                      </PopButton>}
                     </td>
                   </tr>
                 )
@@ -494,6 +504,29 @@ function UsersTab({ me }: { me: Me }) {
           danger
           onClose={() => setDeactivating(null)}
           onConfirm={() => patch(deactivating, { status: 'deactivated' }, t('{name} was deactivated', { name: deactivating.name }))}
+        />
+      )}
+      {removing && (
+        <Confirm
+          title={t('Remove {name}?', { name: removing.name })}
+          body={
+            <>
+              <p>{t('Their comments, time logs and history stay, shown as “Former user”. Everything personal is deleted: name, e-mail address, password, sign-in methods, notifications, private filters and dashboards. Their open issues become unassigned.')}</p>
+              <p><strong>{t('This can’t be undone.')}</strong> {t('To keep the account for later, deactivate it instead.')}</p>
+            </>
+          }
+          confirmLabel={t('Remove')}
+          danger
+          onClose={() => setRemoving(null)}
+          onConfirm={async () => {
+            try {
+              await api.del(`/users/${removing.id}`)
+              refresh()
+              toast(t('{name} was removed', { name: removing.name }))
+            } catch (e) {
+              toast((e as Error).message)
+            }
+          }}
         />
       )}
       {resetting && <ResetTwoFactor user={resetting} onClose={() => setResetting(null)} />}

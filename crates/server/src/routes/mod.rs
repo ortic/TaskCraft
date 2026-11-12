@@ -66,7 +66,7 @@ pub fn api() -> Router<AppState> {
         .route("/people", get(users::people))
         .route("/people/{id}", get(users::person))
         .route("/users", get(users::list).post(users::create))
-        .route("/users/{id}", patch(users::update))
+        .route("/users/{id}", patch(users::update).delete(users::remove))
         .route("/users/{id}/link", post(users::reset_link))
         .route("/teams", get(users::teams).post(users::create_team))
         .route("/teams/{id}", patch(users::update_team).delete(users::delete_team))

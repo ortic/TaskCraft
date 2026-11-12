@@ -70,7 +70,18 @@ pub async fn spawn_with(tweak: impl FnOnce(&mut Config)) -> TestApp {
         mail_from: "TaskCraft <taskcraft@localhost>".into(),
     };
     tweak(&mut config);
-    let state = AppState::new(config).await.expect("app state");
+    // a busy shared Postgres (many test databases migrating at once) can time out a pool: retry
+    let mut attempt = 0;
+    let state = loop {
+        attempt += 1;
+        match AppState::new(config.clone()).await {
+            Ok(s) => break s,
+            Err(e) if attempt < 4 && e.to_string().contains("timed out") => {
+                tokio::time::sleep(std::time::Duration::from_secs(2 * attempt)).await;
+            }
+            Err(e) => panic!("app state: {e}"),
+        }
+    };
     taskcraft::events::spawn_listener(&state);
     taskcraft::webhooks::spawn_worker(&state);
     let app = taskcraft::routes::router(state.clone());
