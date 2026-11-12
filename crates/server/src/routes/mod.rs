@@ -18,6 +18,7 @@ pub mod projects;
 pub mod reports;
 pub mod security;
 pub mod templates;
+pub mod time;
 pub mod users;
 pub mod views;
 
@@ -69,6 +70,10 @@ pub fn api() -> Router<AppState> {
         .route("/me/tokens/{id}", delete(auth::delete_token))
         .route("/my-work", get(issues::my_work))
         .route("/timesheet", get(comments::timesheet))
+        .route("/time-report", get(time::report))
+        .route("/time-categories", get(time::categories).post(time::create_category))
+        .route("/time-categories/order", put(time::order_categories))
+        .route("/time-categories/{id}", patch(time::update_category).delete(time::delete_category))
         // people
         .route("/people", get(users::people))
         .route("/people/{id}", get(users::person))

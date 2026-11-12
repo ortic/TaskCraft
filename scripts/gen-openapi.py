@@ -182,7 +182,7 @@ TAGS = [
     ("Project configuration", "Statuses, transitions, issue types, versions (releases), components, custom fields, automation rules and labels."),
     ("Boards & sprints", "Boards, the backlog and sprints (start, complete, burndown)."),
     ("Issues", "Issues: create, read, change, move on boards and backlogs, move to another project, delete and restore, clone, bulk changes, links, web links, watchers, history and your own work."),
-    ("Comments & time", "Comments (with reactions and comments for the requester), time logs and the weekly timesheet."),
+    ("Comments & time", "Comments (with reactions and comments for the requester), time logs, time categories, the weekly timesheet and the time report."),
     ("Attachments", "Files on issues: upload, download, delete."),
     ("Search & TQL", "Issue search with TQL (the query language), CSV export, quick search, query checking and completion, and the activity stream."),
     ("Dashboards & reports", "Dashboards, grouped counts, the portfolio and the project reports replayed from the issues' history."),
@@ -259,7 +259,9 @@ schemas = {
             "version": null(S("Named"), "fix version (release)"),
             "component": null(S("Named")),
             "storyPoints": null(number),
-            "estimateMinutes": null(num),
+            "estimateMinutes": null(num, "the original estimate"),
+            "remainingMinutes": null(num, "what's left: set by someone, else the original estimate minus the time logged (null without either)"),
+            "remainingSet": d(boolean, "someone set the remaining estimate (else it follows the time logged)"),
             "spentMinutes": d(num, "time logged, in minutes"),
             "startDate": ndate(),
             "dueDate": ndate(),
@@ -359,7 +361,8 @@ schemas = {
             "componentId": nuuid(),
             "securityLevelId": nuuid("make the issue private with one of the project's security levels, or null to make it public. Creating an issue, any level of the project (the default level applies when left out); changing it later, as the project's `setSecurity` permission allows and only to a level you belong to (project admins: any)"),
             "storyPoints": null(number),
-            "estimateMinutes": null(number, "rounded to whole minutes"),
+            "estimateMinutes": null(number, "the original estimate, rounded to whole minutes"),
+            "remainingMinutes": null(number, "the remaining estimate; null: follow the original estimate minus the time logged"),
             "startDate": ndate(),
             "dueDate": ndate(),
             "labels": arr(txt, "replaces the labels: lower-cased, spaces become dashes, 60 characters each, at most 30"),
@@ -1682,9 +1685,52 @@ schemas["CommentInput"] = obj(
     desc="`body` or `markdown` is required; mentions in rich text notify the people mentioned.",
 )
 schemas["Worklog"] = obj(
-    {"id": uuid, "user": null(S("Named"), "who did the work"), "minutes": num, "date": d(date, "the day worked"), "note": ntxt()},
-    ["id", "user", "minutes", "date", "note"],
+    {
+        "id": uuid,
+        "user": null(S("Named"), "who did the work"),
+        "minutes": num,
+        "date": d(date, "the day worked"),
+        "note": ntxt(),
+        "category": null(S("Named"), "what the time went to (see TimeCategory)"),
+        "billable": boolean,
+    },
+    ["id", "user", "minutes", "date", "note", "category", "billable"],
     "A time log.",
+)
+schemas["TimeCategory"] = obj(
+    {
+        "id": uuid,
+        "name": txt,
+        "billable": d(boolean, "time logged with it is billable unless the person logging says otherwise"),
+        "archived": d(boolean, "kept for time already logged, not offered any more"),
+        "logCount": d(num, "time logs with it"),
+    },
+    ["id", "name", "billable", "archived"],
+    "What time is spent on (workspace-wide).",
+)
+schemas["TimeReportRow"] = obj(
+    {
+        "id": d(txt, "the person's, project's, issue's or category's id (`none`: no category; empty: someone removed), or the period: YYYY-MM-DD for days and weeks (their first day), YYYY-MM for months"),
+        "label": d(txt, "name; issues as `KEY title`"),
+        "minutes": num,
+        "billableMinutes": num,
+        "children": arr({"$ref": "#/components/schemas/TimeReportRow"}, "the second grouping (`then`)"),
+    },
+    ["id", "label", "minutes", "billableMinutes"],
+)
+schemas["TimeReport"] = obj(
+    {
+        "from": date,
+        "to": date,
+        "group": txt,
+        "then": ntxt(),
+        "totalMinutes": num,
+        "billableMinutes": num,
+        "logCount": num,
+        "truncated": d(boolean, "more than 100,000 logs: only those were counted"),
+        "rows": arr(S("TimeReportRow"), "periods in order, everything else most time first"),
+    },
+    ["from", "to", "group", "totalMinutes", "billableMinutes", "logCount", "truncated", "rows"],
 )
 schemas["Timesheet"] = obj(
     {
@@ -2037,7 +2083,7 @@ op(
     "logWork",
     "Comments & time",
     "Log time on an issue",
-    desc="Project members, as themselves or — with `userId` — for someone else where the project's `logTimeForOthers` permission allows it (project admins by default). `minutes`, or `time` like `1h 30m`, `45m`, `1.5h`, `2d` (8-hour days), `1w` (5 days); at most a week. The issue's time spent is updated; with `reduceEstimate` its estimate goes down by the time logged (not below zero).",
+    desc="Project members, as themselves or — with `userId` — for someone else where the project's `logTimeForOthers` permission allows it (project admins by default). `minutes`, or `time` like `1h 30m`, `45m`, `1.5h`, `2d` (8-hour days), `1w` (5 days); at most a week. The issue's time spent is updated, and its remaining estimate as `remaining` says.",
     req=body(
         obj(
             {
@@ -2046,7 +2092,14 @@ op(
                 "time": d(txt, "time spent as a duration: 1h 30m, 45m, 1.5h, 2d"),
                 "date": d(date, "the day worked (default: today)"),
                 "note": txt,
-                "reduceEstimate": d(boolean, "lower the estimate by the time logged"),
+                "categoryId": nuuid("a time category (not an archived one)"),
+                "billable": d(boolean, "default: the category's setting, else false"),
+                "remaining": one(
+                    enum("auto", "keep"),
+                    d(txt, "a new remaining estimate such as 3h"),
+                    d(number, "a new remaining estimate in minutes"),
+                    desc="the remaining estimate afterwards: auto (default: down by the time logged — by itself unless someone set it), keep (as it was before this log), or a new value",
+                ),
             }
         )
     ),
@@ -2059,8 +2112,8 @@ op(
     "Comments & time",
     "Change a time log",
     desc="The person who logged it or a project admin. Only the fields sent change; an empty or null note clears it.",
-    req=body(obj({"minutes": number, "time": d(txt, "duration such as 1h 30m (instead of minutes)"), "date": date, "note": ntxt()})),
-    res=ok(obj({"id": uuid, "minutes": num, "date": date, "note": ntxt()}, ["id", "minutes", "date", "note"])),
+    req=body(obj({"minutes": number, "time": d(txt, "duration such as 1h 30m (instead of minutes)"), "date": date, "note": ntxt(), "categoryId": nuuid(), "billable": boolean})),
+    res=ok(obj({"id": uuid, "minutes": num, "date": date, "note": ntxt(), "categoryId": nuuid(), "billable": boolean}, ["id", "minutes", "date", "note", "categoryId", "billable"])),
 )
 op("delete", "/worklogs/{id}", "deleteWorklog", "Comments & time", "Delete a time log", desc="The person who logged it or a project admin.", res=NO)
 op(
@@ -2078,6 +2131,36 @@ op(
     res=ok(S("Timesheet")),
     err="400",
 )
+op(
+    "get",
+    "/time-report",
+    "getTimeReport",
+    "Comments & time",
+    "Time logged in a period, grouped",
+    desc="Over the issues the caller sees (private ones only for those who see them). Grouped by `group` and, inside, by `then`; or, with `format=csv`, every log as a row (Date, Person, Project, Issue, Title, Category, Billable, Hours, Minutes, Note).",
+    query=[
+        q("from", "first day (default: the first of this month)", date),
+        q("to", "last day (default: today; at most two years after from)", date),
+        q("group", "person (default), project, issue, category, day, week or month"),
+        q("then", "a second grouping inside the first (same choices), or none"),
+        q("projects", "project keys, comma separated (default: all the caller sees)"),
+        q("user", "only this person's time", uuid),
+        q("category", "a time category's id, or none"),
+        q("billable", "only billable (true) or not billable (false) time", boolean),
+        q("format", "csv for a download of every log"),
+    ],
+    res={"200": {"description": "The report (CSV with format=csv)", "content": {"application/json": {"schema": S("TimeReport")}, "text/csv": {"schema": {"type": "string"}}}}},
+    err="400",
+)
+op("get", "/time-categories", "listTimeCategories", "Comments & time", "The workspace's time categories", desc="Archived ones too (marked).", res=ok(arr(S("TimeCategory"))))
+op("post", "/time-categories", "createTimeCategory", "Comments & time", "Add a time category (workspace admins)",
+   req=body(obj({"name": d(txt, "unique, at most 60 characters"), "billable": d(boolean, "default false")}, ["name"])), res=created(B_ID))
+op("patch", "/time-categories/{id}", "updateTimeCategory", "Comments & time", "Rename, or change whether it's billable or archived (workspace admins)",
+   req=body(obj({"name": txt, "billable": boolean, "archived": boolean})), res=NO)
+op("delete", "/time-categories/{id}", "deleteTimeCategory", "Comments & time", "Delete a time category (workspace admins)",
+   desc="Its time logs lose the category and keep their billable flag. Archiving keeps it for them instead.", res=NO)
+op("put", "/time-categories/order", "orderTimeCategories", "Comments & time", "Put the time categories in order (workspace admins)",
+   req=body(obj({"ids": arr(uuid)}, ["ids"])), res=NO)
 
 # ---- Attachments
 
@@ -3051,7 +3134,7 @@ Search (`GET /search?q=`), CSV export, saved filters, dashboards and automation 
 `project = WEB and sprint in openSprints() and assignee = me() order by rank` or
 `type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status
 category priority assignee reporter creator labels sprint version component parent/epic points estimate spent created
-updated resolved resolution security due start watcher blocked` and custom fields by name (quoted when they contain spaces). Operators
+updated resolved resolution security due start remaining watcher blocked` and custom fields by name (quoted when they contain spaces). Operators
 `= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,
 `futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates like `-7d`, `+2w`,

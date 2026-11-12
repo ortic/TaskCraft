@@ -25,11 +25,11 @@ info:
     \ and automation conditions take TQL, e.g.\n`project = WEB and sprint in openSprints() and assignee = me() order by rank`\
     \ or\n`type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status\n\
     category priority assignee reporter creator labels sprint version component parent/epic points estimate spent created\n\
-    updated resolved resolution security due start watcher blocked` and custom fields by name (quoted when they contain spaces).\
-    \ Operators\n`= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`.\
-    \ Functions\n`me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,\n\
-    `futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates like `-7d`, `+2w`,\n\
-    `-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n\
+    updated resolved resolution security due start remaining watcher blocked` and custom fields by name (quoted when they\
+    \ contain spaces). Operators\n`= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses;\
+    \ `order by`. Functions\n`me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`,\
+    \ `openSprints()`,\n`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates\
+    \ like `-7d`, `+2w`,\n`-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n\
     `POST /query/validate` checks a query and `GET /query/suggest` completes field names and values.\n\n## Pagination\n\n\
     `GET /search` pages with `limit` (default 100, at most 1,000) and `offset` and answers `{total, issues}`; other\noperations\
     \ that take `limit` / `offset` say so. Everything else answers a bounded list (e.g. the latest 60 activity\nentries, the\
@@ -84,7 +84,8 @@ tags:
   description: 'Issues: create, read, change, move on boards and backlogs, move to another project, delete and restore, clone,
     bulk changes, links, web links, watchers, history and your own work.'
 - name: Comments & time
-  description: Comments (with reactions and comments for the requester), time logs and the weekly timesheet.
+  description: Comments (with reactions and comments for the requester), time logs, time categories, the weekly timesheet
+    and the time report.
 - name: Attachments
   description: 'Files on issues: upload, download, delete.'
 - name: Search & TQL
@@ -4858,8 +4859,8 @@ paths:
       operationId: logWork
       description: Project members, as themselves or — with `userId` — for someone else where the project's `logTimeForOthers`
         permission allows it (project admins by default). `minutes`, or `time` like `1h 30m`, `45m`, `1.5h`, `2d` (8-hour
-        days), `1w` (5 days); at most a week. The issue's time spent is updated; with `reduceEstimate` its estimate goes down
-        by the time logged (not below zero).
+        days), `1w` (5 days); at most a week. The issue's time spent is updated, and its remaining estimate as `remaining`
+        says.
       parameters:
       - name: key
         in: path
@@ -4890,9 +4891,27 @@ paths:
                   description: 'the day worked (default: today)'
                 note:
                   type: string
-                reduceEstimate:
+                categoryId:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+                  description: a time category (not an archived one)
+                billable:
                   type: boolean
-                  description: lower the estimate by the time logged
+                  description: 'default: the category''s setting, else false'
+                remaining:
+                  oneOf:
+                  - type: string
+                    enum:
+                    - auto
+                    - keep
+                  - type: string
+                    description: a new remaining estimate such as 3h
+                  - type: number
+                    description: a new remaining estimate in minutes
+                  description: 'the remaining estimate afterwards: auto (default: down by the time logged — by itself unless
+                    someone set it), keep (as it was before this log), or a new value'
       responses:
         '201':
           description: Created
@@ -4953,6 +4972,13 @@ paths:
                   type:
                   - string
                   - 'null'
+                categoryId:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+                billable:
+                  type: boolean
       responses:
         '200':
           description: OK
@@ -4974,11 +5000,20 @@ paths:
                     type:
                     - string
                     - 'null'
+                  categoryId:
+                    type:
+                    - string
+                    - 'null'
+                    format: uuid
+                  billable:
+                    type: boolean
                 required:
                 - id
                 - minutes
                 - date
                 - note
+                - categoryId
+                - billable
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -5051,6 +5086,242 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Timesheet'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /time-report:
+    get:
+      tags:
+      - Comments & time
+      summary: Time logged in a period, grouped
+      operationId: getTimeReport
+      description: Over the issues the caller sees (private ones only for those who see them). Grouped by `group` and, inside,
+        by `then`; or, with `format=csv`, every log as a row (Date, Person, Project, Issue, Title, Category, Billable, Hours,
+        Minutes, Note).
+      parameters:
+      - name: from
+        in: query
+        required: false
+        description: 'first day (default: the first of this month)'
+        schema:
+          type: string
+          format: date
+          description: YYYY-MM-DD
+      - name: to
+        in: query
+        required: false
+        description: 'last day (default: today; at most two years after from)'
+        schema:
+          type: string
+          format: date
+          description: YYYY-MM-DD
+      - name: group
+        in: query
+        required: false
+        description: person (default), project, issue, category, day, week or month
+        schema:
+          type: string
+      - name: then
+        in: query
+        required: false
+        description: a second grouping inside the first (same choices), or none
+        schema:
+          type: string
+      - name: projects
+        in: query
+        required: false
+        description: 'project keys, comma separated (default: all the caller sees)'
+        schema:
+          type: string
+      - name: user
+        in: query
+        required: false
+        description: only this person's time
+        schema:
+          type: string
+          format: uuid
+      - name: category
+        in: query
+        required: false
+        description: a time category's id, or none
+        schema:
+          type: string
+      - name: billable
+        in: query
+        required: false
+        description: only billable (true) or not billable (false) time
+        schema:
+          type: boolean
+      - name: format
+        in: query
+        required: false
+        description: csv for a download of every log
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The report (CSV with format=csv)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeReport'
+            text/csv:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /time-categories:
+    get:
+      tags:
+      - Comments & time
+      summary: The workspace's time categories
+      operationId: listTimeCategories
+      description: Archived ones too (marked).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TimeCategory'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Comments & time
+      summary: Add a time category (workspace admins)
+      operationId: createTimeCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: unique, at most 60 characters
+                billable:
+                  type: boolean
+                  description: default false
+              required:
+              - name
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                required:
+                - id
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /time-categories/{id}:
+    patch:
+      tags:
+      - Comments & time
+      summary: Rename, or change whether it's billable or archived (workspace admins)
+      operationId: updateTimeCategory
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                billable:
+                  type: boolean
+                archived:
+                  type: boolean
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+      - Comments & time
+      summary: Delete a time category (workspace admins)
+      operationId: deleteTimeCategory
+      description: Its time logs lose the category and keep their billable flag. Archiving keeps it for them instead.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /time-categories/order:
+    put:
+      tags:
+      - Comments & time
+      summary: Put the time categories in order (workspace admins)
+      operationId: orderTimeCategories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+              required:
+              - ids
+      responses:
+        '204':
+          description: Done (no content)
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -8669,6 +8940,15 @@ components:
           type:
           - integer
           - 'null'
+          description: the original estimate
+        remainingMinutes:
+          type:
+          - integer
+          - 'null'
+          description: 'what''s left: set by someone, else the original estimate minus the time logged (null without either)'
+        remainingSet:
+          type: boolean
+          description: someone set the remaining estimate (else it follows the time logged)
         spentMinutes:
           type: integer
           description: time logged, in minutes
@@ -9070,7 +9350,12 @@ components:
           type:
           - number
           - 'null'
-          description: rounded to whole minutes
+          description: the original estimate, rounded to whole minutes
+        remainingMinutes:
+          type:
+          - number
+          - 'null'
+          description: 'the remaining estimate; null: follow the original estimate minus the time logged'
         startDate:
           type:
           - string
@@ -11912,13 +12197,109 @@ components:
           type:
           - string
           - 'null'
+        category:
+          anyOf:
+          - $ref: '#/components/schemas/Named'
+          - type: 'null'
+          description: what the time went to (see TimeCategory)
+        billable:
+          type: boolean
       required:
       - id
       - user
       - minutes
       - date
       - note
+      - category
+      - billable
       description: A time log.
+    TimeCategory:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        billable:
+          type: boolean
+          description: time logged with it is billable unless the person logging says otherwise
+        archived:
+          type: boolean
+          description: kept for time already logged, not offered any more
+        logCount:
+          type: integer
+          description: time logs with it
+      required:
+      - id
+      - name
+      - billable
+      - archived
+      description: What time is spent on (workspace-wide).
+    TimeReportRow:
+      type: object
+      properties:
+        id:
+          type: string
+          description: 'the person''s, project''s, issue''s or category''s id (`none`: no category; empty: someone removed),
+            or the period: YYYY-MM-DD for days and weeks (their first day), YYYY-MM for months'
+        label:
+          type: string
+          description: name; issues as `KEY title`
+        minutes:
+          type: integer
+        billableMinutes:
+          type: integer
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeReportRow'
+          description: the second grouping (`then`)
+      required:
+      - id
+      - label
+      - minutes
+      - billableMinutes
+    TimeReport:
+      type: object
+      properties:
+        from:
+          type: string
+          format: date
+          description: YYYY-MM-DD
+        to:
+          type: string
+          format: date
+          description: YYYY-MM-DD
+        group:
+          type: string
+        then:
+          type:
+          - string
+          - 'null'
+        totalMinutes:
+          type: integer
+        billableMinutes:
+          type: integer
+        logCount:
+          type: integer
+        truncated:
+          type: boolean
+          description: 'more than 100,000 logs: only those were counted'
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeReportRow'
+          description: periods in order, everything else most time first
+      required:
+      - from
+      - to
+      - group
+      - totalMinutes
+      - billableMinutes
+      - logCount
+      - truncated
+      - rows
     Timesheet:
       type: object
       properties:

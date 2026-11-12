@@ -121,7 +121,12 @@ export interface Issue {
   version: Named | null
   component: Named | null
   storyPoints: number | null
+  /** the original estimate */
   estimateMinutes: number | null
+  /** what's left: set by someone, else the original estimate minus the time logged */
+  remainingMinutes?: number | null
+  /** someone set the remaining estimate (else it follows the time logged) */
+  remainingSet?: boolean
   spentMinutes: number
   startDate: string | null
   dueDate: string | null
@@ -143,6 +148,26 @@ export interface Issue {
   pullRequest?: 'open' | 'merged' | 'closed'
   blocked: boolean
   url: string
+}
+
+/** What time is spent on (workspace-wide), and whether such time is billable by default. */
+export interface TimeCategory {
+  id: string
+  name: string
+  billable: boolean
+  /** kept for time already logged, not offered any more */
+  archived: boolean
+  logCount: number
+}
+
+export interface Worklog {
+  id: string
+  user: Named | null
+  minutes: number
+  date: string
+  note: string | null
+  category: Named | null
+  billable: boolean
 }
 
 export interface IssueLink {

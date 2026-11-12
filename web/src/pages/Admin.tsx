@@ -4,10 +4,10 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { BackupImportTab } from './BackupImport'
 import {
-  ArchiveRestore, Check, ChevronDown, CircleDot, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, Mail, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, ShieldOff, Trash,
+  Archive, ArchiveRestore, Check, ChevronDown, CircleDot, Clock, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, Mail, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, ShieldOff, Trash,
   UserCheck, UserPlus, UserX, Users, Webhook,
 } from 'lucide-react'
-import { api, ago, dateTime, shortDate, type Me } from '../api'
+import { api, ago, dateTime, shortDate, type Me, type TimeCategory } from '../api'
 import { Avatar, Confirm, Empty, ErrorBox, Loading, Modal, PopButton, Tabs, useMe, usePeople, useProjects, useSetup, useToast } from '../ui'
 import { PROJECT_COLORS } from '../icons'
 import { CopyField, Switch } from './Settings'
@@ -16,8 +16,8 @@ import { SignInBadges, useSignInOptions, type SignInMethods } from '../component
 import { ResetTwoFactor, TwoFactorPolicy, canResetTwoFactor, useTwoFactorPolicy } from '../components/Security'
 import './Admin.css'
 
-type Tab = 'overview' | 'users' | 'teams' | 'webhooks' | 'import' | 'audit'
-const TABS: Tab[] = ['overview', 'users', 'teams', 'webhooks', 'import', 'audit']
+type Tab = 'overview' | 'users' | 'teams' | 'time' | 'webhooks' | 'import' | 'audit'
+const TABS: Tab[] = ['overview', 'users', 'teams', 'time', 'webhooks', 'import', 'audit']
 
 export default function Admin() {
   const me = useMe().data
@@ -49,6 +49,7 @@ export default function Admin() {
           { id: 'overview', label: <><LayoutDashboard size={14} /> {t('Overview')}</> },
           { id: 'users', label: <><Users size={14} /> {t('Users')}</> },
           { id: 'teams', label: <><CircleDot size={14} /> {t('Teams')}</> },
+          { id: 'time', label: <><Clock size={14} /> {t('Time tracking')}</> },
           { id: 'webhooks', label: <><Webhook size={14} /> {t('Webhooks')}</> },
           { id: 'import', label: <><ArchiveRestore size={14} /> {t('Import')}</> },
           { id: 'audit', label: <><ScrollText size={14} /> {t('Audit log')}</> },
@@ -57,6 +58,7 @@ export default function Admin() {
       {tab === 'overview' && <Overview me={me} />}
       {tab === 'users' && <UsersTab me={me} />}
       {tab === 'teams' && <TeamsTab />}
+      {tab === 'time' && <TimeTab />}
       {tab === 'webhooks' && <WebhooksTab />}
       {tab === 'import' && <BackupImportTab />}
       {tab === 'audit' && <AuditTab />}
@@ -715,6 +717,103 @@ function TeamsTab() {
       )}
       {editing && <TeamDialog team={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} />}
       {deleting && <DeleteTeam team={deleting} onClose={() => setDeleting(null)} />}
+    </>
+  )
+}
+
+// ---- time tracking ----
+
+function TimeTab() {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const list = useQuery({ queryKey: ['time-categories'], queryFn: () => api.get<TimeCategory[]>('/time-categories') })
+  const [name, setName] = useState('')
+  const [billable, setBillable] = useState(false)
+  const [deleting, setDeleting] = useState<TimeCategory | null>(null)
+  const run = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn()
+    } catch (e) {
+      toast((e as Error).message)
+    } finally {
+      qc.invalidateQueries({ queryKey: ['time-categories'] })
+    }
+  }
+  const add = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) return
+    await run(() => api.post('/time-categories', { name: name.trim(), billable }))
+    setName('')
+    setBillable(false)
+  }
+  return (
+    <>
+      <div className="adm-toolbar">
+        <p className="small muted adm-intro">{t('Time categories say what time is spent on — like Development, Meetings or Support — and whether such time is billable unless the person logging it says otherwise. They show up when logging time and in the time report.')}</p>
+      </div>
+      {list.isLoading && <Loading />}
+      {list.error && <ErrorBox error={list.error} />}
+      {list.data && list.data.length === 0 && <Empty icon={<Clock size={32} />} title={t('No time categories yet')} />}
+      {(list.data?.length ?? 0) > 0 && (
+        <div className="adm-table-wrap">
+          <table className="list adm-table">
+            <thead>
+              <tr>
+                <th>{t('Category')}</th>
+                <th>{t('Billable by default')}</th>
+                <th>{t('Time logs')}</th>
+                <th><span className="sr-only">{t('Actions')}</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.data!.map((c) => (
+                <tr key={c.id} className={c.archived ? 'adm-archived' : undefined}>
+                  <td>
+                    <input
+                      className="input input-sm adm-cat-name"
+                      defaultValue={c.name}
+                      aria-label={t('Name of {name}', { name: c.name })}
+                      onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== c.name && run(() => api.patch(`/time-categories/${c.id}`, { name: e.target.value.trim() }))}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                    />
+                    {c.archived && <span className="badge" style={{ marginInlineStart: 8 }}>{t('Archived')}</span>}
+                  </td>
+                  <td><Switch checked={c.billable} label={t('{name} is billable by default', { name: c.name })} onChange={(on) => run(() => api.patch(`/time-categories/${c.id}`, { billable: on }))} /></td>
+                  <td className="faint small">{c.logCount}</td>
+                  <td className="adm-actions">
+                    <button
+                      className="icon-btn"
+                      title={c.archived ? t('Offer it again') : t('Archive: keep it for time already logged, don’t offer it any more')}
+                      aria-label={c.archived ? t('Restore {name}', { name: c.name }) : t('Archive {name}', { name: c.name })}
+                      onClick={() => run(() => api.patch(`/time-categories/${c.id}`, { archived: !c.archived }))}
+                    >
+                      {c.archived ? <ArchiveRestore size={15} /> : <Archive size={15} />}
+                    </button>
+                    <button className="icon-btn" title={t('Delete')} aria-label={t('Delete {name}', { name: c.name })} onClick={() => setDeleting(c)}><Trash size={15} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <form className="row-wrap adm-cat-add" onSubmit={add}>
+        <input className="input input-sm" placeholder={t('New category, like Development')} aria-label={t('New category name')} value={name} onChange={(e) => setName(e.target.value)} />
+        <label className="row small" style={{ gap: 6 }}>
+          <input type="checkbox" checked={billable} onChange={(e) => setBillable(e.target.checked)} /> {t('Billable by default')}
+        </label>
+        <button className="btn btn-sm btn-primary" type="submit" disabled={!name.trim()}><Plus size={14} /> {t('Add category')}</button>
+      </form>
+      {deleting && (
+        <Confirm
+          title={t('Delete time category {name}?', { name: deleting.name })}
+          body={<p>{deleting.logCount ? t('{count} time logs lose the category (they stay billable or not as they are). Archiving keeps it for them instead.', { count: deleting.logCount }) : t('No time is logged with it.')}</p>}
+          confirmLabel={t('Delete category')}
+          danger
+          onConfirm={() => run(() => api.del(`/time-categories/${deleting.id}`))}
+          onClose={() => setDeleting(null)}
+        />
+      )}
     </>
   )
 }

@@ -4,7 +4,7 @@
   "title": "TaskCraft API",
   "version": "0.1.0",
   "summary": "Self-hosted issue and project management",
-  "description": "Everything the TaskCraft web app does, as a REST API with JSON bodies.\n\n## Base paths\n\n`/api/v1` is the versioned base path for integrations; the web app calls the same API under `/api`. The paths in this\ndocument are relative to either, e.g. `GET /api/v1/issues/WEB-12`. The MCP server for AI assistants lives at `/api/mcp`\n(streamable HTTP, not described here).\n\n## Authentication\n\n- **API token**: `Authorization: Bearer tct_…`, a personal token (*Profile & settings → API tokens*) that acts with its\n  owner's permissions. Read-only tokens may only read (GET, plus `POST /query/validate`); anything else answers 403.\n  API tokens, the password, sessions, two-factor and passkey changes, the two-factor policy and the backup import are\n  managed in the browser only and refuse tokens (403).\n- **Browser session**: the `tc_session` cookie that signing in sets. Requests that change something must also send the\n  header `x-taskcraft: 1` (CSRF protection), else 400.\n- **Public operations** have an empty security requirement (`{}`): health and readiness, first-run setup, the sign-in\n  flows, the service desk portal and request forms (the portal has a session cookie of its own, `tc_portal`), the Git\n  and e-mail-in receivers (they check secrets of their own), metrics (a bearer token of its own) and this document.\n- When the workspace requires two-factor authentication, browser sessions of people without a second factor get 403\n  on everything but setting one up.\n\nResults are always limited to what the caller may see; things they may not see answer 404.\n\n## Issues and rich text\n\nIssues are addressed by key (`WEB-12`; keys an issue had before a move or a project rename keep working) or by id;\nprojects by key or id. Descriptions are ProseMirror / Tiptap JSON (`PmNode`, a document is\n`{\"type\": \"doc\", \"content\": [...]}`); where noted, Markdown (`descriptionMarkdown`, comments' `markdown`) or plain text\nis accepted instead. Writing an issue takes the fields of `IssueFields`; only the fields sent change.\n\n## TQL, the query language\n\nSearch (`GET /search?q=`), CSV export, saved filters, dashboards and automation conditions take TQL, e.g.\n`project = WEB and sprint in openSprints() and assignee = me() order by rank` or\n`type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status\ncategory priority assignee reporter creator labels sprint version component parent/epic points estimate spent created\nupdated resolved resolution security due start watcher blocked` and custom fields by name (quoted when they contain spaces). Operators\n`= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions\n`me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,\n`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates like `-7d`, `+2w`,\n`-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n`POST /query/validate` checks a query and `GET /query/suggest` completes field names and values.\n\n## Pagination\n\n`GET /search` pages with `limit` (default 100, at most 1,000) and `offset` and answers `{total, issues}`; other\noperations that take `limit` / `offset` say so. Everything else answers a bounded list (e.g. the latest 60 activity\nentries, the latest 200 trashed issues), as each operation describes.\n\n## Errors\n\nErrors answer with a status code and `{\"error\": \"<code>\", \"message\": \"<text>\"}` (schema `Error`): 400 `bad_request`\n(invalid input; the message says what), 401 `unauthorized`, 403 `forbidden`, 404 `not_found`, 409 `conflict`, 413\n`too_large` (uploads above `TASKCRAFT_MAX_UPLOAD_MB`), 429 `too_many_requests`, 503 `unavailable`, 500 `internal`.\nRequests the framework refuses before they reach the API answer plain text instead: a body that isn't valid JSON (400),\na JSON body without `Content-Type: application/json` (415), a typed body with a missing or mistyped field (422), a\nmalformed id in the path (400) and a body above the server's overall size limit (413).\n\n## Rate limits\n\nFailed sign-ins are limited to 10 per e-mail address in 15 minutes and wrong two-factor codes to 5 per sign-in; both\nanswer 400 with a message. The service desk portal answers 429 for sign-in links (10 requests per IP address per\nquarter hour; at most 3 links go out per address, silently), messages from requesters (30 per hour) and request forms\n(20 per IP address and 5 per e-mail address per hour).\n\n## Webhooks\n\nAdmins register endpoints under `/admin/webhooks` for `issue.created`, `issue.updated`, `issue.deleted`,\n`comment.created`, `sprint.started`, `sprint.completed` and `version.released` (all projects or one). Each delivery is\na JSON `POST` with the `WebhookEvent` body and the headers `X-TaskCraft-Event: <event>` and\n`X-TaskCraft-Signature: sha256=<hex>`, the HMAC-SHA256 of the raw body with the webhook's secret (shown once, when the\nwebhook is created); compare it in constant time. A delivery counts when the endpoint answers 2xx within 10 seconds;\nothers are retried up to 7 times with growing pauses (30 seconds, 2 minutes, 8 minutes, … at most 4 hours; about 11 hours in all).\n\n## Live updates\n\n`GET /events` is a Server-Sent Events stream of changes in the caller's projects (`LiveEvent`); refetch what an event\ntouches.",
+  "description": "Everything the TaskCraft web app does, as a REST API with JSON bodies.\n\n## Base paths\n\n`/api/v1` is the versioned base path for integrations; the web app calls the same API under `/api`. The paths in this\ndocument are relative to either, e.g. `GET /api/v1/issues/WEB-12`. The MCP server for AI assistants lives at `/api/mcp`\n(streamable HTTP, not described here).\n\n## Authentication\n\n- **API token**: `Authorization: Bearer tct_…`, a personal token (*Profile & settings → API tokens*) that acts with its\n  owner's permissions. Read-only tokens may only read (GET, plus `POST /query/validate`); anything else answers 403.\n  API tokens, the password, sessions, two-factor and passkey changes, the two-factor policy and the backup import are\n  managed in the browser only and refuse tokens (403).\n- **Browser session**: the `tc_session` cookie that signing in sets. Requests that change something must also send the\n  header `x-taskcraft: 1` (CSRF protection), else 400.\n- **Public operations** have an empty security requirement (`{}`): health and readiness, first-run setup, the sign-in\n  flows, the service desk portal and request forms (the portal has a session cookie of its own, `tc_portal`), the Git\n  and e-mail-in receivers (they check secrets of their own), metrics (a bearer token of its own) and this document.\n- When the workspace requires two-factor authentication, browser sessions of people without a second factor get 403\n  on everything but setting one up.\n\nResults are always limited to what the caller may see; things they may not see answer 404.\n\n## Issues and rich text\n\nIssues are addressed by key (`WEB-12`; keys an issue had before a move or a project rename keep working) or by id;\nprojects by key or id. Descriptions are ProseMirror / Tiptap JSON (`PmNode`, a document is\n`{\"type\": \"doc\", \"content\": [...]}`); where noted, Markdown (`descriptionMarkdown`, comments' `markdown`) or plain text\nis accepted instead. Writing an issue takes the fields of `IssueFields`; only the fields sent change.\n\n## TQL, the query language\n\nSearch (`GET /search?q=`), CSV export, saved filters, dashboards and automation conditions take TQL, e.g.\n`project = WEB and sprint in openSprints() and assignee = me() order by rank` or\n`type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status\ncategory priority assignee reporter creator labels sprint version component parent/epic points estimate spent created\nupdated resolved resolution security due start remaining watcher blocked` and custom fields by name (quoted when they contain spaces). Operators\n`= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions\n`me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,\n`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates like `-7d`, `+2w`,\n`-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n`POST /query/validate` checks a query and `GET /query/suggest` completes field names and values.\n\n## Pagination\n\n`GET /search` pages with `limit` (default 100, at most 1,000) and `offset` and answers `{total, issues}`; other\noperations that take `limit` / `offset` say so. Everything else answers a bounded list (e.g. the latest 60 activity\nentries, the latest 200 trashed issues), as each operation describes.\n\n## Errors\n\nErrors answer with a status code and `{\"error\": \"<code>\", \"message\": \"<text>\"}` (schema `Error`): 400 `bad_request`\n(invalid input; the message says what), 401 `unauthorized`, 403 `forbidden`, 404 `not_found`, 409 `conflict`, 413\n`too_large` (uploads above `TASKCRAFT_MAX_UPLOAD_MB`), 429 `too_many_requests`, 503 `unavailable`, 500 `internal`.\nRequests the framework refuses before they reach the API answer plain text instead: a body that isn't valid JSON (400),\na JSON body without `Content-Type: application/json` (415), a typed body with a missing or mistyped field (422), a\nmalformed id in the path (400) and a body above the server's overall size limit (413).\n\n## Rate limits\n\nFailed sign-ins are limited to 10 per e-mail address in 15 minutes and wrong two-factor codes to 5 per sign-in; both\nanswer 400 with a message. The service desk portal answers 429 for sign-in links (10 requests per IP address per\nquarter hour; at most 3 links go out per address, silently), messages from requesters (30 per hour) and request forms\n(20 per IP address and 5 per e-mail address per hour).\n\n## Webhooks\n\nAdmins register endpoints under `/admin/webhooks` for `issue.created`, `issue.updated`, `issue.deleted`,\n`comment.created`, `sprint.started`, `sprint.completed` and `version.released` (all projects or one). Each delivery is\na JSON `POST` with the `WebhookEvent` body and the headers `X-TaskCraft-Event: <event>` and\n`X-TaskCraft-Signature: sha256=<hex>`, the HMAC-SHA256 of the raw body with the webhook's secret (shown once, when the\nwebhook is created); compare it in constant time. A delivery counts when the endpoint answers 2xx within 10 seconds;\nothers are retried up to 7 times with growing pauses (30 seconds, 2 minutes, 8 minutes, … at most 4 hours; about 11 hours in all).\n\n## Live updates\n\n`GET /events` is a Server-Sent Events stream of changes in the caller's projects (`LiveEvent`); refetch what an event\ntouches.",
   "license": {
    "name": "MIT OR Apache-2.0",
    "identifier": "MIT OR Apache-2.0"
@@ -63,7 +63,7 @@
   },
   {
    "name": "Comments & time",
-   "description": "Comments (with reactions and comments for the requester), time logs and the weekly timesheet."
+   "description": "Comments (with reactions and comments for the requester), time logs, time categories, the weekly timesheet and the time report."
   },
   {
    "name": "Attachments",
@@ -7251,7 +7251,7 @@
     ],
     "summary": "Log time on an issue",
     "operationId": "logWork",
-    "description": "Project members, as themselves or — with `userId` — for someone else where the project's `logTimeForOthers` permission allows it (project admins by default). `minutes`, or `time` like `1h 30m`, `45m`, `1.5h`, `2d` (8-hour days), `1w` (5 days); at most a week. The issue's time spent is updated; with `reduceEstimate` its estimate goes down by the time logged (not below zero).",
+    "description": "Project members, as themselves or — with `userId` — for someone else where the project's `logTimeForOthers` permission allows it (project admins by default). `minutes`, or `time` like `1h 30m`, `45m`, `1.5h`, `2d` (8-hour days), `1w` (5 days); at most a week. The issue's time spent is updated, and its remaining estimate as `remaining` says.",
     "parameters": [
      {
       "name": "key",
@@ -7291,9 +7291,37 @@
          "note": {
           "type": "string"
          },
-         "reduceEstimate": {
+         "categoryId": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "uuid",
+          "description": "a time category (not an archived one)"
+         },
+         "billable": {
           "type": "boolean",
-          "description": "lower the estimate by the time logged"
+          "description": "default: the category's setting, else false"
+         },
+         "remaining": {
+          "oneOf": [
+           {
+            "type": "string",
+            "enum": [
+             "auto",
+             "keep"
+            ]
+           },
+           {
+            "type": "string",
+            "description": "a new remaining estimate such as 3h"
+           },
+           {
+            "type": "number",
+            "description": "a new remaining estimate in minutes"
+           }
+          ],
+          "description": "the remaining estimate afterwards: auto (default: down by the time logged — by itself unless someone set it), keep (as it was before this log), or a new value"
          }
         }
        }
@@ -7383,6 +7411,16 @@
            "string",
            "null"
           ]
+         },
+         "categoryId": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "uuid"
+         },
+         "billable": {
+          "type": "boolean"
          }
         }
        }
@@ -7414,13 +7452,25 @@
             "string",
             "null"
            ]
+          },
+          "categoryId": {
+           "type": [
+            "string",
+            "null"
+           ],
+           "format": "uuid"
+          },
+          "billable": {
+           "type": "boolean"
           }
          },
          "required": [
           "id",
           "minutes",
           "date",
-          "note"
+          "note",
+          "categoryId",
+          "billable"
          ]
         }
        }
@@ -7531,6 +7581,362 @@
         }
        }
       }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/time-report": {
+   "get": {
+    "tags": [
+     "Comments & time"
+    ],
+    "summary": "Time logged in a period, grouped",
+    "operationId": "getTimeReport",
+    "description": "Over the issues the caller sees (private ones only for those who see them). Grouped by `group` and, inside, by `then`; or, with `format=csv`, every log as a row (Date, Person, Project, Issue, Title, Category, Billable, Hours, Minutes, Note).",
+    "parameters": [
+     {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "description": "first day (default: the first of this month)",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "description": "YYYY-MM-DD"
+      }
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "description": "last day (default: today; at most two years after from)",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "description": "YYYY-MM-DD"
+      }
+     },
+     {
+      "name": "group",
+      "in": "query",
+      "required": false,
+      "description": "person (default), project, issue, category, day, week or month",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "then",
+      "in": "query",
+      "required": false,
+      "description": "a second grouping inside the first (same choices), or none",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "projects",
+      "in": "query",
+      "required": false,
+      "description": "project keys, comma separated (default: all the caller sees)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "user",
+      "in": "query",
+      "required": false,
+      "description": "only this person's time",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "category",
+      "in": "query",
+      "required": false,
+      "description": "a time category's id, or none",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "billable",
+      "in": "query",
+      "required": false,
+      "description": "only billable (true) or not billable (false) time",
+      "schema": {
+       "type": "boolean"
+      }
+     },
+     {
+      "name": "format",
+      "in": "query",
+      "required": false,
+      "description": "csv for a download of every log",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The report (CSV with format=csv)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TimeReport"
+        }
+       },
+       "text/csv": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/time-categories": {
+   "get": {
+    "tags": [
+     "Comments & time"
+    ],
+    "summary": "The workspace's time categories",
+    "operationId": "listTimeCategories",
+    "description": "Archived ones too (marked).",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/TimeCategory"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "Comments & time"
+    ],
+    "summary": "Add a time category (workspace admins)",
+    "operationId": "createTimeCategory",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string",
+          "description": "unique, at most 60 characters"
+         },
+         "billable": {
+          "type": "boolean",
+          "description": "default false"
+         }
+        },
+        "required": [
+         "name"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          }
+         },
+         "required": [
+          "id"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/time-categories/{id}": {
+   "patch": {
+    "tags": [
+     "Comments & time"
+    ],
+    "summary": "Rename, or change whether it's billable or archived (workspace admins)",
+    "operationId": "updateTimeCategory",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "billable": {
+          "type": "boolean"
+         },
+         "archived": {
+          "type": "boolean"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "Comments & time"
+    ],
+    "summary": "Delete a time category (workspace admins)",
+    "operationId": "deleteTimeCategory",
+    "description": "Its time logs lose the category and keep their billable flag. Archiving keeps it for them instead.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/time-categories/order": {
+   "put": {
+    "tags": [
+     "Comments & time"
+    ],
+    "summary": "Put the time categories in order (workspace admins)",
+    "operationId": "orderTimeCategories",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "ids": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "format": "uuid"
+          }
+         }
+        },
+        "required": [
+         "ids"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
      },
      "400": {
       "$ref": "#/components/responses/BadRequest"
@@ -12938,7 +13344,19 @@
       "type": [
        "integer",
        "null"
-      ]
+      ],
+      "description": "the original estimate"
+     },
+     "remainingMinutes": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "what's left: set by someone, else the original estimate minus the time logged (null without either)"
+     },
+     "remainingSet": {
+      "type": "boolean",
+      "description": "someone set the remaining estimate (else it follows the time logged)"
      },
      "spentMinutes": {
       "type": "integer",
@@ -13496,7 +13914,14 @@
        "number",
        "null"
       ],
-      "description": "rounded to whole minutes"
+      "description": "the original estimate, rounded to whole minutes"
+     },
+     "remainingMinutes": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "the remaining estimate; null: follow the original estimate minus the time logged"
      },
      "startDate": {
       "type": [
@@ -17435,6 +17860,20 @@
        "string",
        "null"
       ]
+     },
+     "category": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Named"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "what the time went to (see TimeCategory)"
+     },
+     "billable": {
+      "type": "boolean"
      }
     },
     "required": [
@@ -17442,9 +17881,128 @@
      "user",
      "minutes",
      "date",
-     "note"
+     "note",
+     "category",
+     "billable"
     ],
     "description": "A time log."
+   },
+   "TimeCategory": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "name": {
+      "type": "string"
+     },
+     "billable": {
+      "type": "boolean",
+      "description": "time logged with it is billable unless the person logging says otherwise"
+     },
+     "archived": {
+      "type": "boolean",
+      "description": "kept for time already logged, not offered any more"
+     },
+     "logCount": {
+      "type": "integer",
+      "description": "time logs with it"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "billable",
+     "archived"
+    ],
+    "description": "What time is spent on (workspace-wide)."
+   },
+   "TimeReportRow": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "description": "the person's, project's, issue's or category's id (`none`: no category; empty: someone removed), or the period: YYYY-MM-DD for days and weeks (their first day), YYYY-MM for months"
+     },
+     "label": {
+      "type": "string",
+      "description": "name; issues as `KEY title`"
+     },
+     "minutes": {
+      "type": "integer"
+     },
+     "billableMinutes": {
+      "type": "integer"
+     },
+     "children": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/TimeReportRow"
+      },
+      "description": "the second grouping (`then`)"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "minutes",
+     "billableMinutes"
+    ]
+   },
+   "TimeReport": {
+    "type": "object",
+    "properties": {
+     "from": {
+      "type": "string",
+      "format": "date",
+      "description": "YYYY-MM-DD"
+     },
+     "to": {
+      "type": "string",
+      "format": "date",
+      "description": "YYYY-MM-DD"
+     },
+     "group": {
+      "type": "string"
+     },
+     "then": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "totalMinutes": {
+      "type": "integer"
+     },
+     "billableMinutes": {
+      "type": "integer"
+     },
+     "logCount": {
+      "type": "integer"
+     },
+     "truncated": {
+      "type": "boolean",
+      "description": "more than 100,000 logs: only those were counted"
+     },
+     "rows": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/TimeReportRow"
+      },
+      "description": "periods in order, everything else most time first"
+     }
+    },
+    "required": [
+     "from",
+     "to",
+     "group",
+     "totalMinutes",
+     "billableMinutes",
+     "logCount",
+     "truncated",
+     "rows"
+    ]
    },
    "Timesheet": {
     "type": "object",

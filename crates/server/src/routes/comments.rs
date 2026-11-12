@@ -350,15 +350,21 @@ pub async fn react(State(state): State<AppState>, CurrentUser(user): CurrentUser
 
 pub async fn worklogs(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>) -> ApiResult<Json<Value>> {
     let (id, _, _) = issue_for(&state, &user, &key, Role::Viewer).await?;
-    let rows: Vec<(Uuid, Option<Uuid>, Option<String>, i32, NaiveDate, Option<String>)> = sqlx::query_as(
-        "SELECT w.id, w.user_id, u.name, w.minutes, w.work_date, w.note FROM worklogs w LEFT JOIN users u ON u.id = w.user_id WHERE w.issue_id = $1 ORDER BY w.work_date DESC, w.created_at DESC",
+    type Row = (Uuid, Option<Uuid>, Option<String>, i32, NaiveDate, Option<String>, Option<Uuid>, Option<String>, bool);
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT w.id, w.user_id, u.name, w.minutes, w.work_date, w.note, w.category_id, c.name, w.billable
+           FROM worklogs w LEFT JOIN users u ON u.id = w.user_id LEFT JOIN time_categories c ON c.id = w.category_id
+          WHERE w.issue_id = $1 ORDER BY w.work_date DESC, w.created_at DESC",
     )
     .bind(id)
     .fetch_all(&state.db)
     .await?;
     Ok(Json(json!(
         rows.into_iter()
-            .map(|(wid, uid, un, m, d, n)| json!({"id": wid, "user": uid.map(|u| json!({"id": u, "name": un})), "minutes": m, "date": d, "note": n}))
+            .map(|(wid, uid, un, m, d, n, cid, cn, b)| json!({
+                "id": wid, "user": uid.map(|u| json!({"id": u, "name": un})), "minutes": m, "date": d, "note": n,
+                "category": cid.map(|c| json!({"id": c, "name": cn})), "billable": b,
+            }))
             .collect::<Vec<_>>()
     )))
 }
@@ -403,6 +409,32 @@ async fn refresh_spent(state: &AppState, issue: Uuid) -> ApiResult<()> {
     Ok(())
 }
 
+/// What logging time does to the issue's remaining estimate (`remaining`).
+enum Remaining {
+    /// down by the time logged (the default)
+    Auto,
+    /// stays as it was
+    Keep,
+    /// a new remaining estimate
+    Set(i32),
+}
+
+impl Remaining {
+    fn parse(req: &Value) -> ApiResult<Remaining> {
+        Ok(match &req["remaining"] {
+            Value::Null => Remaining::Auto,
+            Value::String(s) if s == "auto" => Remaining::Auto,
+            Value::String(s) if s == "keep" => Remaining::Keep,
+            Value::String(s) if s.trim() == "0" => Remaining::Set(0),
+            Value::String(s) => Remaining::Set(parse_duration(s).ok_or_else(|| ApiError::bad("remaining is auto, keep or a time like 3h"))?),
+            Value::Number(n) => {
+                Remaining::Set(n.as_f64().filter(|m| *m >= 0.0 && *m < 1e7).ok_or_else(|| ApiError::bad("remaining is out of range"))?.round() as i32)
+            }
+            _ => return Err(ApiError::bad("remaining is auto, keep or a time like 3h")),
+        })
+    }
+}
+
 pub async fn log_work(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
@@ -436,15 +468,44 @@ pub async fn log_work(
     .filter(|m| *m > 0 && *m <= 24 * 60 * 7)
     .ok_or_else(|| ApiError::bad("time spent looks like 1h 30m, 45m or 2d"))?;
     let date = req["date"].as_str().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()).unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let category = super::time::category_of(&state, user.workspace_id, &req["categoryId"]).await?;
+    let billable = match &req["billable"] {
+        Value::Bool(b) => *b,
+        Value::Null => category.is_some_and(|c| c.1),
+        _ => return Err(ApiError::bad("billable must be true or false")),
+    };
+    let remaining = Remaining::parse(&req)?;
     let wid = new_id();
     let mut tx = state.db.begin().await?;
-    sqlx::query("INSERT INTO worklogs (id, issue_id, user_id, minutes, work_date, note) VALUES ($1, $2, $3, $4, $5, $6)")
+    // the remaining estimate: down by the time logged (when someone set it; else it follows by
+    // itself), kept as it was, or set anew
+    match remaining {
+        Remaining::Auto => {
+            sqlx::query("UPDATE issues SET remaining_minutes = GREATEST(remaining_minutes - $2, 0) WHERE id = $1 AND remaining_minutes IS NOT NULL")
+                .bind(id)
+                .bind(minutes)
+                .execute(&mut *tx)
+                .await?;
+        }
+        Remaining::Keep => {
+            sqlx::query("UPDATE issues SET remaining_minutes = COALESCE(remaining_minutes, GREATEST(estimate_minutes - spent_minutes, 0)) WHERE id = $1")
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+        }
+        Remaining::Set(m) => {
+            sqlx::query("UPDATE issues SET remaining_minutes = $2 WHERE id = $1").bind(id).bind(m).execute(&mut *tx).await?;
+        }
+    }
+    sqlx::query("INSERT INTO worklogs (id, issue_id, user_id, minutes, work_date, note, category_id, billable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)")
         .bind(wid)
         .bind(id)
         .bind(who)
         .bind(minutes)
         .bind(date)
         .bind(req["note"].as_str().map(str::trim).filter(|n| !n.is_empty()))
+        .bind(category.map(|c| c.0))
+        .bind(billable)
         .execute(&mut *tx)
         .await?;
     issues::record(
@@ -456,14 +517,6 @@ pub async fn log_work(
         Some(&Change { field: "worklog", old: Value::Null, new: json!({"minutes": minutes, "date": date}) }),
     )
     .await?;
-    // remaining estimate goes down with the time spent (never below zero)
-    if req["reduceEstimate"].as_bool().unwrap_or(false) {
-        sqlx::query("UPDATE issues SET estimate_minutes = GREATEST(estimate_minutes - $2, 0) WHERE id = $1 AND estimate_minutes IS NOT NULL")
-            .bind(id)
-            .bind(minutes)
-            .execute(&mut *tx)
-            .await?;
-    }
     tx.commit().await?;
     refresh_spent(&state, id).await?;
     events::publish(&state, Event::new(user.workspace_id, "issue").project(project).actor(user.id)).await;

@@ -26,6 +26,7 @@ const ProjectSettings = lazy(() => import('./pages/ProjectSettings'))
 const Admin = lazy(() => import('./pages/Admin'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Timesheet = lazy(() => import('./pages/Timesheet'))
+const TimeReport = lazy(() => import('./pages/TimeReport'))
 const People = lazy(() => import('./pages/People'))
 const Queue = lazy(() => import('./pages/Queue'))
 const Dashboards = lazy(() => import('./pages/Dashboards'))
@@ -78,6 +79,7 @@ export default function App() {
             <Route path="/issues/:key" element={<IssuePage />} />
             <Route path="/search" element={<IssueList />} />
             <Route path="/timesheet" element={<Timesheet />} />
+            <Route path="/time-report" element={<TimeReport />} />
             <Route path="/dashboards" element={<Dashboards />} />
             <Route path="/dashboards/:id" element={<Dashboards />} />
             <Route path="/portfolio" element={<Portfolio />} />

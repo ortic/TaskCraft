@@ -401,6 +401,35 @@ test('private issues with security levels', async ({ page }) => {
   }, key)
 })
 
+test('time categories, remaining estimate and the time report', async ({ page }) => {
+  await login(page)
+  await page.goto('/admin/time')
+  await page.getByLabel('New category name').fill('Development')
+  await page.getByLabel('Billable by default').check()
+  await page.getByRole('button', { name: 'Add category' }).click()
+  await expect(page.getByLabel('Name of Development')).toBeVisible()
+  await a11y(page)
+  // an issue without time logged, estimated at 10h
+  const key = await page.evaluate(async () => {
+    const found = (await (await fetch('/api/search?limit=200&q=' + encodeURIComponent('project = WEB order by key'))).json()).issues as { key: string; spentMinutes: number }[]
+    const key = found.find((i) => i.spentMinutes === 0)!.key
+    await fetch(`/api/issues/${key}`, { method: 'PATCH', headers: { 'content-type': 'application/json', 'x-taskcraft': '1' }, body: JSON.stringify({ estimateMinutes: 600 }) })
+    return key
+  })
+  await page.goto(`/issues/${key}`)
+  await page.getByRole('tab', { name: /Time/ }).click()
+  await page.getByLabel('Time spent').first().fill('2h')
+  await page.getByLabel('Time category').selectOption({ label: 'Development' })
+  await expect(page.getByLabel('Billable')).toBeChecked()
+  await page.getByRole('button', { name: 'Log time' }).click()
+  await expect(page.locator('.badge', { hasText: 'Development' })).toBeVisible()
+  await expect(page.getByText(/2h logged · 8h left/)).toBeVisible()
+  await page.goto('/time-report?period=this-year&group=category')
+  await expect(page.locator('.tr-table')).toContainText('Development')
+  await expect(page.getByRole('link', { name: 'Download CSV' })).toHaveAttribute('href', /format=csv/)
+  await a11y(page)
+})
+
 test('command palette finds issues', async ({ page }) => {
   await login(page)
   await page.keyboard.press('Control+k')

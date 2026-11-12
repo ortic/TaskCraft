@@ -134,6 +134,7 @@ const BUILTIN: &[&str] = &[
     "points",
     "storypoints",
     "estimate",
+    "remaining",
     "spent",
     "created",
     "updated",
@@ -577,9 +578,10 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
                 qb.push("::int[]) AS want(k, n) ON upper(pp.key) = want.k AND pi.number = want.n");
             });
         }
-        "points" | "storypoints" | "estimate" | "spent" => {
+        "points" | "storypoints" | "estimate" | "spent" | "remaining" => {
             let (col, scale) = match field {
                 "estimate" => ("i.estimate_minutes", 60.0),
+                "remaining" => ("COALESCE(i.remaining_minutes, GREATEST(i.estimate_minutes - i.spent_minutes, 0))", 60.0),
                 "spent" => ("i.spent_minutes", 60.0),
                 _ => ("i.story_points", 1.0),
             };
@@ -920,6 +922,7 @@ fn empty(qb: &mut Qb, ctx: &Ctx, field: &str, negated: bool) -> ApiResult<()> {
         "parent" | "epic" => "i.parent_id",
         "points" | "storypoints" => "i.story_points",
         "estimate" => "i.estimate_minutes",
+        "remaining" => "COALESCE(i.remaining_minutes, GREATEST(i.estimate_minutes - i.spent_minutes, 0))",
         "due" | "duedate" => "i.due_date",
         "start" | "startdate" => "i.start_date",
         "resolved" => "i.resolved_at",
@@ -982,6 +985,7 @@ pub fn push_order(qb: &mut Qb, ctx: &Ctx, order: &[Order], default: &str) -> Api
             "title" | "summary" => "lower(i.title)",
             "points" | "storypoints" => "i.story_points",
             "estimate" => "i.estimate_minutes",
+            "remaining" => "COALESCE(i.remaining_minutes, GREATEST(i.estimate_minutes - i.spent_minutes, 0))",
             "spent" => "i.spent_minutes",
             "project" => "p.key",
             other => {

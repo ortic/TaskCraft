@@ -13,6 +13,8 @@ The first release.
   components, releases; templates and recurring issues; moving issues between projects.
 - **Workflows**: free or restricted transitions; rules per status (who may move there, required
   fields, a comment) with a form that asks for what's missing; resolutions.
+- **Time tracking**: original and remaining estimates, time logs with categories and a billable
+  flag, a weekly timesheet and a time report with CSV export.
 - **Views**: board with WIP limits and swimlanes, backlog with sprints and a velocity hint, list
   with TQL, timeline, calendar, timesheet, dashboards, portfolio, your work, command palette.
 - **Reports** replayed from history: burndown, velocity, cumulative flow, cycle and lead time,

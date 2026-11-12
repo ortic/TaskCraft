@@ -1,12 +1,13 @@
 import { t, locale } from '../i18n'
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, Timer, Trash } from 'lucide-react'
-import { api, duration, isoDate, qs, type Issue } from '../api'
+import { ChartColumn, ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, Timer, Trash } from 'lucide-react'
+import { api, duration, isoDate, qs, type Issue, type Worklog } from '../api'
 import { Avatar, Choices, ErrorBox, Loading, PopButton, Popover, Spinner, useMe, usePeople, useToast } from '../ui'
 import { TypeIcon } from '../icons'
 import { useOpenIssue } from '../components/Layout'
+import { CategorySelect, useTimeCategories } from '../components/IssueView'
 import './Timesheet.css'
 
 interface SheetRow {
@@ -21,14 +22,6 @@ interface Sheet {
   to: string
   days: number
   issues: SheetRow[]
-}
-
-interface Worklog {
-  id: string
-  user: { id: string; name: string } | null
-  minutes: number
-  date: string
-  note: string | null
 }
 
 function parseDay(s: string | null): Date | null {
@@ -119,6 +112,7 @@ export default function Timesheet() {
       <div className="page-head">
         <h1><Timer size={20} /> {viewing ? t('Timesheet of {name}', { name: viewed?.name ?? '…' }) : t('My timesheet')}</h1>
         <span className="spacer" />
+        <Link className="btn" to="/time-report"><ChartColumn size={15} /> {t('Time report')}</Link>
         {isAdmin && (
           <PopButton
             className="btn ts-person"
@@ -288,6 +282,9 @@ function LogForm({ row, date, label, onDone }: { row: SheetRow; date: string; la
   const toast = useToast()
   const [time, setTime] = useState('')
   const [note, setNote] = useState('')
+  const categories = useTimeCategories().data ?? []
+  const [category, setCategory] = useState('')
+  const [billable, setBillable] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   // an entry of that day being changed (else the form adds time)
@@ -304,7 +301,7 @@ function LogForm({ row, date, label, onDone }: { row: SheetRow; date: string; la
     setErr('')
     try {
       if (editing) {
-        await api.patch(`/worklogs/${editing.id}`, { time: time.trim(), note: note.trim() })
+        await api.patch(`/worklogs/${editing.id}`, { time: time.trim(), note: note.trim(), categoryId: category || null, billable })
         refresh()
         toast(t('Entry changed'))
         setEditing(null)
@@ -312,7 +309,7 @@ function LogForm({ row, date, label, onDone }: { row: SheetRow; date: string; la
         setNote('')
         return
       }
-      const r = await api.post<{ id: string; minutes: number }>(`/issues/${encodeURIComponent(row.key)}/worklogs`, { time: time.trim(), date, note: note.trim() || undefined })
+      const r = await api.post<{ id: string; minutes: number }>(`/issues/${encodeURIComponent(row.key)}/worklogs`, { time: time.trim(), date, note: note.trim() || undefined, categoryId: category || null, billable })
       refresh()
       toast(t('Logged {time} on {key}', { time: duration(r.minutes), key: row.key }))
       onDone()
@@ -326,6 +323,8 @@ function LogForm({ row, date, label, onDone }: { row: SheetRow; date: string; la
     setEditing(w)
     setTime(duration(w.minutes))
     setNote(w.note ?? '')
+    setCategory(w.category?.id ?? '')
+    setBillable(w.billable)
     setErr('')
   }
   const stopEditing = () => {
@@ -374,6 +373,21 @@ function LogForm({ row, date, label, onDone }: { row: SheetRow; date: string; la
       <div className="field">
         <label htmlFor="ts-note">{t('Note (optional)')}</label>
         <input id="ts-note" className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('What did you work on?')} autoComplete="off" />
+      </div>
+      <div className="row-wrap" style={{ gap: 10, marginBottom: 8 }}>
+        {categories.some((c) => !c.archived || c.id === category) && (
+          <CategorySelect
+            categories={categories}
+            value={category}
+            onChange={(id) => {
+              setCategory(id)
+              setBillable(categories.find((c) => c.id === id)?.billable ?? false)
+            }}
+          />
+        )}
+        <label className="row small muted" style={{ gap: 4 }}>
+          <input type="checkbox" checked={billable} onChange={(e) => setBillable(e.target.checked)} /> {t('Billable')}
+        </label>
       </div>
       {err && <p className="error-text ts-err" role="alert">{err}</p>}
       <div className="ts-form-foot">

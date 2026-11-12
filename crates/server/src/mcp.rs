@@ -122,7 +122,7 @@ fn strip(v: &mut Value) {
 const TQL_HELP: &str = "Search issues with TQL, TaskCraft's query language. Returns the total and the matching issues (key, title, type, status, category, priority, assignee, sprint, points, labels, due date, URL).
 
 TQL: clauses `field operator value` joined with `and`, `or`, `not` and parentheses, optionally followed by `order by field [asc|desc], …`. Bare words search titles and descriptions (`login timeout`).
-Fields: project, key, title, text (title, description and more), description, comment, type, status, category (todo | in_progress | done), priority (none < low < medium < high < urgent), assignee, reporter, creator, watcher, labels, sprint, version, component, parent / epic (an issue key), points, estimate and spent (hours), created, updated, resolved, due, start, blocked (true | false), and custom fields by name (quote names with spaces: \"Customer tier\" = Gold).
+Fields: project, key, title, text (title, description and more), description, comment, type, status, category (todo | in_progress | done), priority (none < low < medium < high < urgent), assignee, reporter, creator, watcher, labels, sprint, version, component, parent / epic (an issue key), points, estimate, remaining and spent (hours), created, updated, resolved, due, start, blocked (true | false), and custom fields by name (quote names with spaces: \"Customer tier\" = Gold).
 Operators: = != ~ (contains) !~ > >= < <=, in (a, b), not in (a, b), is empty, is not empty.
 Values: quote values with spaces (status = \"In progress\"); people by name, e-mail or me(); dates as 2026-11-12, relative (-7d, +2w, -1m) or now(), today(), startOfWeek(), endOfWeek(), startOfMonth(), endOfMonth(); sprints by name or openSprints() (the running ones), futureSprints(), closedSprints(); versions by name or releasedVersions(), unreleasedVersions().
 Examples:
@@ -206,8 +206,10 @@ pub struct UpdateIssueArgs {
     /// Sprint by name, "active" for the running sprint, or "backlog"
     pub sprint: Option<String>,
     pub story_points: Option<f64>,
-    /// Remaining estimate like "2h 30m", or "none"
+    /// Original estimate like "2h 30m", or "none"
     pub estimate: Option<String>,
+    /// Remaining estimate like "2h 30m", or "auto" to follow the original estimate minus the time logged
+    pub remaining: Option<String>,
     /// YYYY-MM-DD, or "none"
     pub due_date: Option<String>,
     /// YYYY-MM-DD, or "none"
@@ -232,8 +234,13 @@ pub struct WorkArgs {
     pub date: Option<String>,
     /// What was done
     pub note: Option<String>,
-    /// Also lower the remaining estimate by this time
-    pub reduce_estimate: Option<bool>,
+    /// The remaining estimate afterwards: "auto" (down by the time logged, the default), "keep",
+    /// or a new value like "3h"
+    pub remaining: Option<String>,
+    /// A time category by name (see the workspace's categories)
+    pub category: Option<String>,
+    /// Whether the time is billable (default: the category's setting)
+    pub billable: Option<bool>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -454,10 +461,11 @@ impl TaskMcp {
             line("Story points", p.to_string());
         }
         let spent = v["spentMinutes"].as_i64().unwrap_or(0);
-        match v["estimateMinutes"].as_i64() {
-            Some(e) => line("Time", format!("{} logged, {} remaining estimate", duration(spent), duration(e))),
-            None if spent > 0 => line("Time", format!("{} logged", duration(spent))),
-            None => {}
+        match (v["estimateMinutes"].as_i64(), v["remainingMinutes"].as_i64()) {
+            (Some(e), r) => line("Time", format!("{} logged, original estimate {}, {} remaining", duration(spent), duration(e), duration(r.unwrap_or(0)))),
+            (None, Some(r)) => line("Time", format!("{} logged, {} remaining", duration(spent), duration(r))),
+            (None, None) if spent > 0 => line("Time", format!("{} logged", duration(spent))),
+            (None, None) => {}
         }
         for (label, field) in [("Start", "startDate"), ("Due", "dueDate")] {
             if let Some(d) = v[field].as_str() {
@@ -670,6 +678,16 @@ impl TaskMcp {
         if let Some(e) = &a.estimate {
             patch.insert("estimateMinutes".into(), minutes(e)?);
         }
+        if let Some(r) = &a.remaining {
+            patch.insert(
+                "remainingMinutes".into(),
+                match r.trim() {
+                    t if t.eq_ignore_ascii_case("auto") => Value::Null,
+                    "0" => json!(0),
+                    t => minutes(t)?,
+                },
+            );
+        }
         if let Some(d) = &a.due_date {
             patch.insert("dueDate".into(), date_value(d));
         }
@@ -705,14 +723,35 @@ impl TaskMcp {
 
     async fn work(&self, user: User, a: WorkArgs) -> ApiResult<String> {
         let key = clean_key(&a.key);
-        let body = json!({"time": a.time, "date": a.date, "note": a.note, "reduceEstimate": a.reduce_estimate.unwrap_or(false)});
+        let category: Option<Uuid> = match a.category.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+            Some(name) => {
+                let found: Option<Uuid> =
+                    sqlx::query_scalar("SELECT id FROM time_categories WHERE workspace_id = $1 AND lower(name) = lower($2) AND NOT archived")
+                        .bind(user.workspace_id)
+                        .bind(name)
+                        .fetch_optional(&self.state.db)
+                        .await?;
+                if found.is_none() {
+                    let names: Vec<String> =
+                        sqlx::query_scalar("SELECT name FROM time_categories WHERE workspace_id = $1 AND NOT archived ORDER BY position, lower(name)")
+                            .bind(user.workspace_id)
+                            .fetch_all(&self.state.db)
+                            .await?;
+                    return bad(format!("no time category {name:?}; there are: {}", if names.is_empty() { "none".into() } else { names.join(", ") }));
+                }
+                found
+            }
+            None => None,
+        };
+        let body = json!({"time": a.time, "date": a.date, "note": a.note, "remaining": a.remaining, "categoryId": category, "billable": a.billable});
         let (_, AxJson(v)) = routes::comments::log_work(State(self.state.clone()), CurrentUser(user.clone()), Path(key.clone()), AxJson(body)).await?;
         let (id, _, _) = routes::issues::issue_for(&self.state, &user, &key, Role::Viewer).await?;
         let s = issues::summary(&self.state, issues::load(&self.state, id).await?);
         let logged = v["minutes"].as_i64().unwrap_or(0);
         Ok(compact(&json!({
             "logged": duration(logged), "issue": s.key, "totalSpent": duration(s.spent_minutes as i64),
-            "remainingEstimate": s.estimate_minutes.map(|m| duration(m as i64)),
+            "originalEstimate": s.estimate_minutes.map(|m| duration(m as i64)),
+            "remainingEstimate": s.remaining_minutes.map(|m| duration(m as i64)),
         })))
     }
 

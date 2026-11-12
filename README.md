@@ -21,6 +21,10 @@ One binary, PostgreSQL, optional S3. Built with the same stack as WikiCraft.
 - **Comments** with mentions and reactions, **watchers**, in-app **notifications** (also by
   e-mail: bundled a couple of minutes after, or as a daily digest at 08:00 local time), a
   full **history** of every change, **time logs** and a weekly **timesheet**
+- **Time tracking**: an original and a remaining estimate (following the time logged, or set by
+  hand — logging time can reduce it, keep it or set it anew); **time categories** (Development,
+  Meetings, …) with a billable default; a **time report** grouped by person, project, issue,
+  category, day, week or month (and once more inside), filtered, with a CSV of every log
 - **Workflows**: statuses in three categories (to do, in progress, done); free or restricted
   transitions with a transition matrix; **rules per status** — who may move issues there (everyone,
   project admins or chosen teams), the fields an issue needs to get there, a comment asked for —
@@ -60,7 +64,7 @@ login timeout                               (bare words search titles and descri
 
 Fields: `project key title text description comment type status category priority assignee
 reporter creator labels sprint version component parent/epic points estimate spent created
-updated resolved resolution security due start watcher blocked` and custom fields. Operators `= != ~ !~ > >= < <=`,
+updated resolved resolution security due start remaining watcher blocked` and custom fields. Operators `= != ~ !~ > >= < <=`,
 `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions:
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`,
 `openSprints()`, `futureSprints()`, `closedSprints()`, `releasedVersions()`,
@@ -646,7 +650,7 @@ page: operations by section with a filter, their fields and answers, and a `curl
 | Service desk | Staff: `GET/PUT /projects/{KEY}/portal` (`resolve`, `resolveStatus`, `form`: `enabled`, `slug`, `listed`, `title`, `intro`, `success`, `description` / `name`: `off` / `optional` / `required`, `types`, `typeId`, `priority`, `custom`: `[{id, required}]`). Public (the portal; writes need `x-taskcraft: 1`): `GET /portal`, `POST /portal/sign-in` (`email`, `request`), `POST/DELETE /portal/session` (`token` from the link), `GET /portal/requests`, `GET /portal/requests/{KEY}`, `POST /portal/requests/{KEY}/comments` (multipart `text`, `files`), `POST /portal/requests/{KEY}/resolve`, `GET /portal/attachments/{id}`, `GET/POST /portal/forms/{key or slug}` (the form with its `stamp`; a submission: `stamp`, `email`, `name`, `summary`, `description`, `typeId`, `priority`, `custom`) |
 | MCP | `POST /mcp` (streamable HTTP, see above) |
 | Live | `GET /events` (Server-Sent Events) |
-| Account & admin | `/me`, `/me/tokens`, `/notifications`, `/views`, `/timesheet`, `/people`, `/teams`, `/users`, `/auth/forgot`, `/admin/{workspace,stats,audit,webhooks,mail}`, `POST /admin/mail/test` |
+| Account & admin | `/me`, `/me/tokens`, `/notifications`, `/views`, `/timesheet`, `/time-report`, `/time-categories`, `/people`, `/teams`, `/users`, `/auth/forgot`, `/admin/{workspace,stats,audit,webhooks,mail}`, `POST /admin/mail/test` |
 | Migration | `GET /admin/backup-imports`, `POST /admin/backup-imports?name=…` (the `.zip` as the body; checked in the background), `GET/DELETE /admin/backup-imports/{id}`, `POST /admin/backup-imports/{id}/run` (`projects`: per key `{"action": "new"\|"into", "key"}` or `{"action": "skip"}`, `people`: `invite`\|`deactivated`, `dryRun`) — administrators in the browser only |
 | Sign-in | `GET /auth/providers`, `GET /auth/sso/{id}/login?next=`, `GET /auth/sso/{id}/callback`, SAML `POST /auth/sso/{id}/acs` and `GET /auth/sso/{id}/metadata`, `GET /me/sign-in` |
 | Security | `POST /auth/mfa` (`mfaToken`, `code` or `passkey`), `POST /auth/mfa/passkey`, `POST /auth/passkey/options`, `POST /auth/passkey`, `GET /me/mfa`, `POST /me/mfa/{setup,enable,disable,recovery-codes}`, `GET/POST /me/passkeys`, `POST /me/passkeys/options`, `PATCH/DELETE /me/passkeys/{id}`, `GET /me/sessions`, `DELETE /me/sessions/{id}`, `POST /me/sessions/revoke-others`, `GET/PUT /admin/security`, `POST /users/{id}/reset-mfa` (browser sessions only for changes) |

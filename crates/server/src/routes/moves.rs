@@ -365,6 +365,14 @@ pub async fn update_worklog(
         let d = chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").map_err(|_| ApiError::bad("date must be YYYY-MM-DD"))?;
         sqlx::query("UPDATE worklogs SET work_date = $2 WHERE id = $1").bind(id).bind(d).execute(&state.db).await?;
     }
+    if req.get("categoryId").is_some() {
+        let c = super::time::category_of(&state, user.workspace_id, &req["categoryId"]).await?;
+        sqlx::query("UPDATE worklogs SET category_id = $2 WHERE id = $1").bind(id).bind(c.map(|c| c.0)).execute(&state.db).await?;
+    }
+    if let Some(b) = req.get("billable") {
+        let b = b.as_bool().ok_or_else(|| ApiError::bad("billable must be true or false"))?;
+        sqlx::query("UPDATE worklogs SET billable = $2 WHERE id = $1").bind(id).bind(b).execute(&state.db).await?;
+    }
     if req.get("note").is_some() {
         sqlx::query("UPDATE worklogs SET note = $2 WHERE id = $1")
             .bind(id)
@@ -377,9 +385,9 @@ pub async fn update_worklog(
         .execute(&state.db)
         .await?;
     events::publish(&state, Event::new(user.workspace_id, "issue").project(project).actor(user.id)).await;
-    let (minutes, date, note): (i32, chrono::NaiveDate, Option<String>) =
-        sqlx::query_as("SELECT minutes, work_date, note FROM worklogs WHERE id = $1").bind(id).fetch_one(&state.db).await?;
-    Ok(Json(json!({"id": id, "minutes": minutes, "date": date, "note": note})))
+    let (minutes, date, note, category, billable): (i32, chrono::NaiveDate, Option<String>, Option<Uuid>, bool) =
+        sqlx::query_as("SELECT minutes, work_date, note, category_id, billable FROM worklogs WHERE id = $1").bind(id).fetch_one(&state.db).await?;
+    Ok(Json(json!({"id": id, "minutes": minutes, "date": date, "note": note, "categoryId": category, "billable": billable})))
 }
 
 #[cfg(test)]

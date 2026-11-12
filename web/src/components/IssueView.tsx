@@ -9,7 +9,7 @@ import {
   Mail, MailCheck, LifeBuoy, ClipboardList, Lock,
 } from 'lucide-react'
 import {
-  api, ago, dateTime, duration, may, shortDate, type Comment, type HistoryEvent, type Issue, type IssueDetail, type Named, type Project, type WikiPage,
+  api, ago, dateTime, duration, may, shortDate, type Comment, type HistoryEvent, type Issue, type IssueDetail, type Named, type Project, type TimeCategory, type WikiPage, type Worklog,
 } from '../api'
 import { Avatar, BotAvatar, Confirm, Empty, Lozenge, Loading, ErrorBox, Modal, PopButton, Tabs, useMe, usePeople, useProject, useProjects, useToast } from '../ui'
 import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
@@ -350,8 +350,25 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
         <SideField label={t('Estimate')}>
           <NumberValue value={issue.estimateMinutes != null ? Math.round((issue.estimateMinutes / 60) * 10) / 10 : null} suffix={t('hours')} disabled={!can} onChange={(n) => set({ estimateMinutes: n == null ? null : Math.round(n * 60) })} />
         </SideField>
+        {(issue.estimateMinutes != null || issue.remainingSet) && (
+          <SideField label={t('Remaining')}>
+            <span className="row" style={{ gap: 6 }}>
+              <NumberValue
+                value={issue.remainingMinutes != null ? Math.round((issue.remainingMinutes / 60) * 10) / 10 : null}
+                suffix={t('hours')}
+                disabled={!can}
+                onChange={(n) => set({ remainingMinutes: n == null ? null : Math.round(n * 60) })}
+              />
+              {issue.remainingSet ? (
+                can && <button className="btn btn-ghost btn-sm" title={t('Follow the estimate minus the time logged again')} onClick={() => set({ remainingMinutes: null })}>{t('Auto')}</button>
+              ) : (
+                <span className="faint small" title={t('The estimate minus the time logged, until someone sets it')}>{t('auto')}</span>
+              )}
+            </span>
+          </SideField>
+        )}
         <SideField label={t('Time spent')}>
-          <TimeBar spent={issue.spentMinutes} estimate={issue.estimateMinutes} />
+          <TimeBar spent={issue.spentMinutes} estimate={issue.estimateMinutes} remaining={issue.remainingMinutes ?? null} />
         </SideField>
         <SideField label={t('Start')}>
           <DateValue value={issue.startDate} disabled={!can} onChange={(d) => set({ startDate: d })} />
@@ -444,9 +461,12 @@ function RemoveButton({ onClick }: { onClick: () => void }) {
   )
 }
 
-function TimeBar({ spent, estimate }: { spent: number; estimate: number | null }) {
-  const pct = estimate ? Math.min(100, (spent / estimate) * 100) : spent ? 100 : 0
-  const over = estimate != null && spent > estimate
+/** Time logged against what's left; over when logged and remaining together exceed the estimate. */
+function TimeBar({ spent, estimate, remaining }: { spent: number; estimate: number | null; remaining: number | null }) {
+  const left = remaining ?? (estimate != null ? Math.max(estimate - spent, 0) : null)
+  const total = spent + (left ?? 0)
+  const pct = total ? Math.min(100, (spent / total) * 100) : 0
+  const over = estimate != null && total > estimate ? total - estimate : 0
   return (
     <div style={{ padding: '4px 0' }}>
       <div className="progress" style={{ width: 160 }}>
@@ -454,9 +474,26 @@ function TimeBar({ spent, estimate }: { spent: number; estimate: number | null }
       </div>
       <div className="faint small" style={{ marginTop: 3 }}>
         {duration(spent)} {t('logged')}
-        {estimate != null && ` · ${over ? t('{time} over', { time: duration(spent - estimate) }) : t('{time} left', { time: duration(estimate - spent) })}`}
+        {left != null && ` · ${t('{time} left', { time: duration(left) })}`}
+        {over > 0 && ` · ${t('{time} over the estimate', { time: duration(over) })}`}
       </div>
     </div>
+  )
+}
+
+/** The workspace's time categories (for the log forms). */
+export function useTimeCategories() {
+  return useQuery({ queryKey: ['time-categories'], queryFn: () => api.get<TimeCategory[]>('/time-categories'), staleTime: 60_000 })
+}
+
+/** A time log's category: the active ones (and the one it has, archived or not). */
+export function CategorySelect({ value, onChange, categories, id }: { value: string; onChange: (id: string) => void; categories: TimeCategory[]; id?: string }) {
+  const shown = categories.filter((c) => !c.archived || c.id === value)
+  return (
+    <select id={id} className="select input-sm" style={{ width: 'auto' }} value={value} onChange={(e) => onChange(e.target.value)} aria-label={t('Time category')}>
+      <option value="">{t('No category')}</option>
+      {shown.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+    </select>
   )
 }
 
@@ -1080,11 +1117,17 @@ function WorkLog({ issue, project }: { issue: IssueDetail; project: Project }) {
   const toast = useToast()
   const me = useMe().data?.user
   const people = usePeople().data ?? []
-  const list = useQuery({ queryKey: ['worklogs', issue.key], queryFn: () => api.get<{ id: string; user: { id: string; name: string } | null; minutes: number; date: string; note: string | null }[]>(`/issues/${issue.key}/worklogs`) })
+  const list = useQuery({ queryKey: ['worklogs', issue.key], queryFn: () => api.get<Worklog[]>(`/issues/${issue.key}/worklogs`) })
+  const categories = useTimeCategories().data ?? []
   const [time, setTime] = useState('')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [note, setNote] = useState('')
-  const [reduce, setReduce] = useState(true)
+  const [category, setCategory] = useState('')
+  const [billable, setBillable] = useState(false)
+  // what happens to the remaining estimate: down by the time logged, kept, or set anew
+  const [remaining, setRemaining] = useState<'auto' | 'keep' | 'set'>('auto')
+  const [newRemaining, setNewRemaining] = useState('')
+  const hasEstimate = issue.estimateMinutes != null || !!issue.remainingSet
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['worklogs', issue.key] })
     qc.invalidateQueries({ queryKey: ['issue', issue.key] })
@@ -1098,9 +1141,19 @@ function WorkLog({ issue, project }: { issue: IssueDetail; project: Project }) {
           onSubmit={async (e) => {
             e.preventDefault()
             try {
-              await api.post(`/issues/${issue.key}/worklogs`, { time, date, note, reduceEstimate: reduce && issue.estimateMinutes != null, userId: who?.id })
+              await api.post(`/issues/${issue.key}/worklogs`, {
+                time,
+                date,
+                note,
+                userId: who?.id,
+                categoryId: category || null,
+                billable,
+                remaining: !hasEstimate ? undefined : remaining === 'set' ? newRemaining.trim() || '0' : remaining,
+              })
               setTime('')
               setNote('')
+              setRemaining('auto')
+              setNewRemaining('')
               refresh()
             } catch (err) {
               toast((err as Error).message)
@@ -1108,16 +1161,38 @@ function WorkLog({ issue, project }: { issue: IssueDetail; project: Project }) {
           }}
         >
           <Clock size={15} className="faint" />
-          {forOthers && <PersonPicker className="btn btn-sm" value={who} label={who ? undefined : t('For me')} onChange={(id) => setWho(id ? people.find((p) => p.id === id) ?? null : null)} />}
+          {forOthers && <PersonPicker className="btn btn-sm" value={who} label={t('Whose time')} none={t('For me')} onChange={(id) => setWho(id ? people.find((p) => p.id === id) ?? null : null)} />}
           <input className="input input-sm" style={{ width: 110 }} placeholder={t('1h 30m')} value={time} onChange={(e) => setTime(e.target.value)} aria-label={t('Time spent')} />
           <input type="date" className="input input-sm" style={{ width: 150 }} value={date} onChange={(e) => setDate(e.target.value)} aria-label={t('Date')} />
-          <input className="input input-sm" style={{ flex: 1, minWidth: 140 }} placeholder={t('What did you do? (optional)')} value={note} onChange={(e) => setNote(e.target.value)} />
-          {issue.estimateMinutes != null && (
-            <label className="row small muted" style={{ gap: 4 }}>
-              <input type="checkbox" checked={reduce} onChange={(e) => setReduce(e.target.checked)} /> {t('reduce the estimate')}
-            </label>
-          )}
+          <input className="input input-sm" style={{ flex: 1, minWidth: 140 }} placeholder={t('What did you do? (optional)')} value={note} onChange={(e) => setNote(e.target.value)} aria-label={t('Note')} />
           <button className="btn btn-primary btn-sm" disabled={!time.trim()}>{t('Log time')}</button>
+          {(categories.length > 0 || hasEstimate) && (
+            <div className="row-wrap wl-options">
+              {categories.some((c) => !c.archived) && (
+                <CategorySelect
+                  categories={categories}
+                  value={category}
+                  onChange={(id) => {
+                    setCategory(id)
+                    setBillable(categories.find((c) => c.id === id)?.billable ?? false)
+                  }}
+                />
+              )}
+              <label className="row small muted" style={{ gap: 4 }}>
+                <input type="checkbox" checked={billable} onChange={(e) => setBillable(e.target.checked)} /> {t('Billable')}
+              </label>
+              {hasEstimate && (
+                <>
+                  <select className="select input-sm" style={{ width: 'auto' }} value={remaining} onChange={(e) => setRemaining(e.target.value as typeof remaining)} aria-label={t('Remaining estimate')}>
+                    <option value="auto">{t('Reduce the remaining estimate')}</option>
+                    <option value="keep">{t('Keep the remaining estimate')}</option>
+                    <option value="set">{t('Set the remaining estimate to…')}</option>
+                  </select>
+                  {remaining === 'set' && <input className="input input-sm" style={{ width: 90 }} placeholder={t('2h')} value={newRemaining} onChange={(e) => setNewRemaining(e.target.value)} aria-label={t('New remaining estimate')} />}
+                </>
+              )}
+            </div>
+          )}
         </form>
       )}
       <table className="list">
@@ -1140,7 +1215,11 @@ function WorkLog({ issue, project }: { issue: IssueDetail; project: Project }) {
                 <td style={{ width: 110 }}>{shortDate(w.date)}</td>
                 <td style={{ width: 90 }}><strong>{duration(w.minutes)}</strong></td>
                 <td>{w.user?.name}</td>
-                <td className="muted">{w.note}</td>
+                <td className="muted">
+                  {w.category && <span className="badge" style={{ marginInlineEnd: 6 }}>{w.category.name}</span>}
+                  {w.billable && <span className="badge badge-accent" style={{ marginInlineEnd: 6 }}>{t('billable')}</span>}
+                  {w.note}
+                </td>
                 <td style={{ width: 70, whiteSpace: 'nowrap' }}>
                   {(w.user?.id === me?.id || issue.permissions.admin) && (
                     <>
@@ -1164,18 +1243,21 @@ function WorkLog({ issue, project }: { issue: IssueDetail; project: Project }) {
   )
 }
 
-function WorkLogEdit({ entry, onDone }: { entry: { id: string; minutes: number; date: string; note: string | null }; onDone: (changed: boolean) => void }) {
+function WorkLogEdit({ entry, onDone }: { entry: Worklog; onDone: (changed: boolean) => void }) {
   const toast = useToast()
+  const categories = useTimeCategories().data ?? []
   const [time, setTime] = useState(duration(entry.minutes))
   const [date, setDate] = useState(entry.date)
   const [note, setNote] = useState(entry.note ?? '')
+  const [category, setCategory] = useState(entry.category?.id ?? '')
+  const [billable, setBillable] = useState(entry.billable)
   return (
     <form
       className="row-wrap"
       onSubmit={async (e) => {
         e.preventDefault()
         try {
-          await api.patch(`/worklogs/${entry.id}`, { time, date, note })
+          await api.patch(`/worklogs/${entry.id}`, { time, date, note, categoryId: category || null, billable })
           onDone(true)
         } catch (err) {
           toast((err as Error).message)
@@ -1185,6 +1267,10 @@ function WorkLogEdit({ entry, onDone }: { entry: { id: string; minutes: number; 
       <input className="input input-sm" style={{ width: 100 }} value={time} onChange={(e) => setTime(e.target.value)} aria-label={t('Time spent')} autoFocus />
       <input type="date" className="input input-sm" style={{ width: 150 }} value={date} onChange={(e) => setDate(e.target.value)} aria-label={t('Date')} />
       <input className="input input-sm" style={{ flex: 1, minWidth: 140 }} value={note} onChange={(e) => setNote(e.target.value)} aria-label={t('Note')} placeholder={t('What did you do? (optional)')} />
+      {categories.length > 0 && <CategorySelect categories={categories} value={category} onChange={setCategory} />}
+      <label className="row small muted" style={{ gap: 4 }}>
+        <input type="checkbox" checked={billable} onChange={(e) => setBillable(e.target.checked)} /> {t('Billable')}
+      </label>
       <button className="btn btn-primary btn-sm">{t('Save')}</button>
       <button type="button" className="btn btn-ghost btn-sm" onClick={() => onDone(false)}>{t('Cancel')}</button>
     </form>

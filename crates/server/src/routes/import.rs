@@ -43,6 +43,8 @@ const FIELDS: &[&str] = &[
     "points",
     "estimate",
     "estimateSeconds",
+    "remaining",
+    "remainingSeconds",
     "spent",
     "spentSeconds",
     "start",
@@ -72,6 +74,7 @@ pub fn suggest(header: &str) -> Option<&'static str> {
         "parent" | "parentkey" | "parentid" | "epic" | "epiclink" | "parenttask" => "parent",
         "points" | "storypoints" | "storypointestimate" | "estimatepoints" => "points",
         "estimate" | "estimateh" | "estimatedhours" | "originalestimate" | "estimatedtime" => "estimate",
+        "remaining" | "remainingh" | "remainingestimate" | "remainingtime" | "remaininghours" | "timeremaining" => "remaining",
         "spent" | "spenth" | "timespent" | "spenthours" | "loggedhours" => "spent",
         "start" | "startdate" | "begin" => "start",
         "due" | "duedate" | "deadline" | "enddate" => "due",
@@ -295,7 +298,7 @@ pub async fn preview(State(state): State<AppState>, CurrentUser(user): CurrentUs
         }
         let custom = fields.iter().find(|(_, n)| n.eq_ignore_ascii_case(h.trim())).map(|(id, _)| format!("custom:{id}"));
         let mut f = custom.or_else(|| suggest(h).map(str::to_string));
-        if let Some(t) = f.as_deref().filter(|t| matches!(*t, "estimate" | "spent")) {
+        if let Some(t) = f.as_deref().filter(|t| matches!(*t, "estimate" | "remaining" | "spent")) {
             let values: Vec<&str> = rows.iter().filter_map(|r| r.get(i).map(String::as_str)).collect();
             if looks_like_seconds(&values) {
                 f = Some(format!("{t}Seconds"));
@@ -588,6 +591,14 @@ pub async fn run(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
                 None => warn(format!("estimate “{v}” isn't a time")),
             }
         }
+        if let Some((v, secs)) = one("remaining").map(|v| (v, false)).or_else(|| one("remainingSeconds").map(|v| (v, true))) {
+            match minutes(&v, secs) {
+                Some(m) => {
+                    fields.insert("remainingMinutes".into(), json!(m.round()));
+                }
+                None => warn(format!("remaining estimate “{v}” isn't a time")),
+            }
+        }
         let spent = one("spent").map(|v| (v, false)).or_else(|| one("spentSeconds").map(|v| (v, true)));
         if let Some((v, secs)) = &spent
             && minutes(v, *secs).is_none()
@@ -835,6 +846,7 @@ mod tests {
         assert_eq!(suggest("Fix Version/s"), Some("version"));
         assert_eq!(suggest("Due date"), Some("due"));
         assert_eq!(suggest("Estimate (h)"), Some("estimate"));
+        assert_eq!(suggest("Remaining Estimate"), Some("remaining"));
         assert_eq!(suggest("Something else"), None);
         let d = |s: &str| parse_date(s).map(|d| d.format("%Y-%m-%d %H:%M").to_string());
         assert_eq!(d("2026-11-12").as_deref(), Some("2026-11-12 00:00"));

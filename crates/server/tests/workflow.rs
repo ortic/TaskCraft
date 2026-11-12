@@ -78,7 +78,7 @@ async fn statuses_require_fields_comments_and_people_and_resolutions_follow_done
     let history = get(&c, app.url(&format!("/issues/{key}/history"))).await;
     assert!(history.to_string().contains("resolution"), "{history}");
     let csv = c.get(app.url("/search.csv")).query(&[("q", "project = FLOW")]).send().await.unwrap().text().await.unwrap();
-    assert!(csv.lines().next().unwrap().ends_with("Resolution") && csv.contains("Won't do"), "{csv}");
+    assert!(csv.lines().next().unwrap().split(',').any(|h| h == "Resolution") && csv.contains("Won't do"), "{csv}");
     patch(&c, app.url(&format!("/issues/{key}")), json!({"statusId": progress})).await;
     assert_eq!(get(&c, app.url(&format!("/issues/{key}"))).await["resolution"], Value::Null, "reopened: no resolution");
     let (s, _) = send(&c, Method::PATCH, app.url(&format!("/issues/{key}")), json!({"resolution": "Done"})).await;

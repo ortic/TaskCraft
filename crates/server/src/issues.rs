@@ -25,6 +25,7 @@ pub const SELECT: &str = "SELECT i.id, i.number, i.project_id, p.key AS project_
        i.sprint_id, sp.name AS sprint_name, sp.state AS sprint_state, i.version_id, v.name AS version_name,
        i.component_id, c.name AS component_name,
        i.story_points, i.estimate_minutes, i.spent_minutes, i.start_date, i.due_date, i.rank, i.custom,
+       COALESCE(i.remaining_minutes, GREATEST(i.estimate_minutes - i.spent_minutes, 0)) AS remaining_minutes, i.remaining_minutes IS NOT NULL AS remaining_set,
        i.resolved_at, i.resolution, i.status_changed_at, i.created_at, i.updated_at,
        i.security_level_id, sl.name AS security_level_name, (par.security_level_id IS NOT NULL) AS parent_private,
        COALESCE((SELECT array_agg(l.label ORDER BY l.label) FROM issue_labels l WHERE l.issue_id = i.id), '{}') AS labels,
@@ -88,6 +89,8 @@ pub struct Row {
     pub due_date: Option<NaiveDate>,
     pub rank: f64,
     pub custom: Value,
+    pub remaining_minutes: Option<i32>,
+    pub remaining_set: Option<bool>,
     pub resolved_at: Option<DateTime<Utc>>,
     /// why a done issue is done (Done, Won't do, …); empty while open
     pub resolution: Option<String>,
@@ -175,7 +178,12 @@ pub struct Summary {
     pub version: Option<Named>,
     pub component: Option<Named>,
     pub story_points: Option<f64>,
+    /// the original estimate
     pub estimate_minutes: Option<i32>,
+    /// what's left: set by someone, else the original estimate minus the time logged
+    pub remaining_minutes: Option<i32>,
+    /// whether someone set the remaining estimate (else it follows the time logged)
+    pub remaining_set: bool,
     pub spent_minutes: i32,
     pub start_date: Option<NaiveDate>,
     pub due_date: Option<NaiveDate>,
@@ -224,6 +232,8 @@ pub fn summary(state: &AppState, r: Row) -> Summary {
         component: r.component_id.map(|id| Named { id, name: r.component_name.unwrap_or_default() }),
         story_points: r.story_points,
         estimate_minutes: r.estimate_minutes,
+        remaining_minutes: r.remaining_minutes,
+        remaining_set: r.remaining_set.unwrap_or(false),
         spent_minutes: r.spent_minutes,
         start_date: r.start_date,
         due_date: r.due_date,
@@ -670,10 +680,11 @@ pub async fn apply(
         workspace_id: Uuid,
         resolution: Option<String>,
         security_level_id: Option<Uuid>,
+        remaining_minutes: Option<i32>,
     }
     let cur: Cur = sqlx::query_as(
         "SELECT title, type_id, status_id, priority, assignee_id, reporter_id, parent_id, sprint_id, version_id, component_id, story_points,
-                estimate_minutes, start_date, due_date, custom, workspace_id, resolution, security_level_id FROM issues WHERE id = $1 FOR UPDATE",
+                estimate_minutes, start_date, due_date, custom, workspace_id, resolution, security_level_id, remaining_minutes FROM issues WHERE id = $1 FOR UPDATE",
     )
     .bind(id)
     .fetch_one(&mut **tx)
@@ -910,6 +921,14 @@ pub async fn apply(
                 if m != cur.estimate_minutes {
                     changes.push(Change { field: "estimate", old: json!(cur.estimate_minutes), new: json!(m) });
                     sets.push(("estimate_minutes", SqlVal::Int(m)));
+                }
+            }
+            // null: follow the original estimate minus the time logged again
+            "remainingMinutes" => {
+                let m = opt_f64(v, k)?.map(|m| m.round() as i32);
+                if m != cur.remaining_minutes {
+                    changes.push(Change { field: "remaining", old: json!(cur.remaining_minutes), new: json!(m) });
+                    sets.push(("remaining_minutes", SqlVal::Int(m)));
                 }
             }
             "startDate" | "dueDate" => {

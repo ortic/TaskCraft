@@ -504,3 +504,4 @@ table.list tr:hover td { background: var(--bg-soft); }
 /* private issues (security levels) */
 .ic-private { display: inline-flex; align-items: center; color: var(--warning-text); margin-inline-start: 4px; vertical-align: -1px; }
 .badge-private { display: inline-flex; align-items: center; gap: 4px; color: var(--warning-text); background: color-mix(in srgb, var(--warning-text) 12%, transparent); border-color: transparent; }
+.wl-options { flex-basis: 100%; gap: 10px; padding-inline-start: 23px; }

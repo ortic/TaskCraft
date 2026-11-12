@@ -60,7 +60,7 @@ export function PersonLabel({ person, size = 22, empty }: { person: Named | null
   )
 }
 
-export function PersonPicker({ value, onChange, disabled, allowNone = true, label, className, compact }: { value: Named | null; onChange: (id: string | null) => void; disabled?: boolean; allowNone?: boolean; label?: string; className?: string; compact?: boolean }) {
+export function PersonPicker({ value, onChange, disabled, allowNone = true, label, className, compact, none }: { value: Named | null; onChange: (id: string | null) => void; disabled?: boolean; allowNone?: boolean; label?: string; className?: string; compact?: boolean; none?: string }) {
   const people = usePeople()
   const me = useMe().data?.user
   const items: (Named | null)[] = [...(allowNone ? [null] : []), ...(people.data ?? [])]
@@ -74,15 +74,15 @@ export function PersonPicker({ value, onChange, disabled, allowNone = true, labe
       className={className ?? 'value-btn'}
       title={label ?? t('Assignee')}
       width={260}
-      label={compact ? (value ? <Avatar name={value.name} id={value.id} size={22} /> : <Unassigned size={22} />) : <PersonLabel person={value} />}
+      label={compact ? (value ? <Avatar name={value.name} id={value.id} size={22} /> : <Unassigned size={22} />) : <PersonLabel person={value} empty={none} />}
     >
       {(close) => (
         <Choices
           items={items}
           placeholder={t('Search people…')}
           selected={(p) => (p?.id ?? null) === (value?.id ?? null)}
-          filterText={(p) => p?.name ?? t('Unassigned')}
-          render={(p) => <PersonLabel person={p} />}
+          filterText={(p) => p?.name ?? none ?? t('Unassigned')}
+          render={(p) => <PersonLabel person={p} empty={none} />}
           onPick={(p) => {
             close()
             onChange(p?.id ?? null)

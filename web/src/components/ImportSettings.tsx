@@ -42,6 +42,8 @@ const FIELD_LABELS: Record<string, () => string> = {
   points: () => t('Story points'),
   estimate: () => t('Estimate (hours)'),
   estimateSeconds: () => t('Estimate (seconds)'),
+  remaining: () => t('Remaining estimate (hours)'),
+  remainingSeconds: () => t('Remaining estimate (seconds)'),
   spent: () => t('Time spent (hours)'),
   spentSeconds: () => t('Time spent (seconds)'),
   start: () => t('Start date'),
