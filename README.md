@@ -321,6 +321,7 @@ taskcraft backup FILE  # database + attachments into one .tar.gz (`-` writes to 
 taskcraft restore FILE # into an empty database (`--force` replaces an existing workspace)
 taskcraft import-backup FILE   # another tracker's XML site backup (.zip or unpacked folder)
 taskcraft import-github REPO…  # issues from another tracker's API (see "Migrating from another tracker")
+taskcraft import-gitlab PROJECT…
 ```
 
 ### Backup and restore
@@ -341,7 +342,7 @@ from the data directory into S3 or back.
 
 *Administration → Import* (owners and administrators; also linked from *Projects* and from an
 empty workspace) brings projects over from **Jira** (its XML site backup) and from the APIs of
-**GitHub**. Every source goes the same way: TaskCraft reads it and shows what it holds (nothing
+**GitHub** and **GitLab**. Every source goes the same way: TaskCraft reads it and shows what it holds (nothing
 changes yet), you choose per project — *a new project* (with a key), *an existing project* or
 *leave it out* — and what happens to people without an account here, *Test the import* runs it
 without changing anything, and *Import* runs it in the background (the page can be left and
@@ -398,7 +399,7 @@ another key here) keeps working as a link; types, statuses and priorities are ma
 done, resolved at its resolution date; one component and one fix version per issue (the first);
 values of other custom fields are reported, not imported.
 
-#### From an API: GitHub
+#### From an API: GitHub, GitLab
 
 TaskCraft reads the projects through the tracker's REST API with a token you enter. The token is
 used for reading and, while importing, for downloading attachments — it is kept in memory for
@@ -432,11 +433,38 @@ their GitHub name (or login). Not imported: pull requests, reactions, projects (
 fields, locked conversations' state, and attachments of private repositories (GitHub serves those
 to signed-in browsers only — the import reports them and keeps the links).
 
+**GitLab** (gitlab.com, or a self-managed GitLab by its address): a personal, group or project
+access token with the `read_api` scope. Public projects can be read without one (without
+confidential issues and internal notes). Choose projects as `group/project` (subgroups too) or
+list a group's, a user's or the token's own projects.
+
+| GitLab | TaskCraft |
+|---|---|
+| issue `#12` (its `iid`) | `KEY-12` (the number is kept when it's free) |
+| title, description (Markdown) | as above: mentions, `#12` and `group/project#12` references, uploads (`/uploads/…`) downloaded and linked |
+| opened / closed | the first to-do status / the first done status (*Done*) |
+| type: issue (a `bug` label: *Bug*), incident, test case, task | *Task* / *Bug*, *Incident*, *Test case* (created when missing) |
+| labels (scoped labels like `priority::high` too) | labels |
+| assignees, author | the first assignee; the others watch; reporter |
+| milestone (project or group), weight, due date | release, story points, due date |
+| time estimate, time spent | estimate; a time log per *added … of time spent* note (its author and day), and the rest the notes don't explain for the assignee on the closing day |
+| comments; internal notes | comments; internal ones are visible to everyone who can see the project (the report says so) |
+| confidential issues | issues (counted in the check and the report: they're visible to everyone who can see the project) |
+| issue links (relates to, blocks, is blocked by) | links |
+| epic (where the server has them) | a parent issue of the type *Epic* |
+| state, label and milestone events; notes about assignees and titles | history, as the reports replay it |
+
+People are matched by their public e-mail address (all addresses with an administrator's token),
+then by name; blocked or deactivated GitLab accounts become deactivated accounts. Not imported:
+merge requests, tasks' place under their issue (they're imported as issues of the type *Task*),
+reactions, iterations, health status, and changes of other fields.
+
 ```bash
 export TASKCRAFT_IMPORT_TOKEN=github_pat_…        # not on the command line
 taskcraft import-github octo/web octo/api --dry-run
 taskcraft import-github octo/web --project octo/web=WEB --people deactivated
 taskcraft import-github --url https://github.example.com corp/portal
+TASKCRAFT_IMPORT_TOKEN=glpat-… taskcraft import-gitlab acme/web acme/platform/api
 ```
 
 The command-line imports take the same options as `import-backup` (`--dry-run`, `--project

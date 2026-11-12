@@ -7,13 +7,14 @@ use serde::{Deserialize, Serialize};
 
 use super::http::Http;
 use super::model::{Attachment, BoxFuture, File, Files, Format, Model};
-use super::{Available, ProgressHandle, github};
+use super::{Available, ProgressHandle, github, gitlab};
 
 /// The trackers whose APIs are read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Github,
+    Gitlab,
 }
 
 impl Kind {
@@ -21,6 +22,7 @@ impl Kind {
     pub fn name(self) -> &'static str {
         match self {
             Kind::Github => "github",
+            Kind::Gitlab => "gitlab",
         }
     }
 
@@ -28,6 +30,7 @@ impl Kind {
     pub fn label(self) -> &'static str {
         match self {
             Kind::Github => "GitHub",
+            Kind::Gitlab => "GitLab",
         }
     }
 }
@@ -37,7 +40,8 @@ impl std::str::FromStr for Kind {
     fn from_str(s: &str) -> Result<Self, String> {
         match s.trim().to_ascii_lowercase().as_str() {
             "github" => Ok(Kind::Github),
-            _ => Err("source must be github".into()),
+            "gitlab" => Ok(Kind::Gitlab),
+            _ => Err("source must be github or gitlab".into()),
         }
     }
 }
@@ -76,6 +80,7 @@ impl Connection {
     pub fn client(&self, allow_private: bool, progress: ProgressHandle) -> anyhow::Result<Http> {
         match self.source {
             Kind::Github => github::client(&github::site(&self.base_url)?, self.token(), allow_private, progress),
+            Kind::Gitlab => gitlab::client(&gitlab::site(&self.base_url)?, self.token(), allow_private, progress),
         }
     }
 
@@ -83,6 +88,7 @@ impl Connection {
     pub fn shown_url(&self) -> String {
         match self.source {
             Kind::Github => github::site(&self.base_url).map(|s| s.web.to_string()).unwrap_or_else(|_| self.base_url.clone()),
+            Kind::Gitlab => gitlab::site(&self.base_url).map(|s| s.web.to_string()).unwrap_or_else(|_| self.base_url.clone()),
         }
     }
 
@@ -91,6 +97,7 @@ impl Connection {
         http.check_host().await?;
         match self.source {
             Kind::Github => github::fetch(http, &github::site(&self.base_url)?, &self.projects, progress).await,
+            Kind::Gitlab => gitlab::fetch(http, &gitlab::site(&self.base_url)?, &self.projects, progress).await,
         }
     }
 
@@ -99,6 +106,7 @@ impl Connection {
         http.check_host().await?;
         match self.source {
             Kind::Github => github::browse(http, owner).await,
+            Kind::Gitlab => gitlab::browse(http, owner).await,
         }
     }
 }
@@ -130,9 +138,16 @@ impl Files for ApiFiles {
 
     fn read<'a>(&'a mut self, a: &'a Attachment, max: u64) -> BoxFuture<'a, anyhow::Result<Option<File>>> {
         Box::pin(async move {
-            match (&self.http, &a.url) {
-                (Some(http), Some(url)) => http.download(url, max).await,
-                _ => Ok(None),
+            let Some(http) = &self.http else { return Ok(None) };
+            let first = match &a.url {
+                Some(url) => http.download(url, max).await,
+                None => Ok(None),
+            };
+            // not there (or not allowed): where else it may be
+            match (first, &a.fallback_url) {
+                (Ok(None), Some(other)) => http.download(other, max).await,
+                (Err(e), Some(other)) if matches!(super::http::status_of(&e), Some(401 | 403 | 404)) => http.download(other, max).await,
+                (r, _) => r,
             }
         })
     }

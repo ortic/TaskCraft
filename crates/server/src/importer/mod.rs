@@ -1,7 +1,8 @@
 //! Migration from other trackers: their data read into one source-neutral [`model::Model`]
 //! (people, projects, issues with their fields, history, comments, time logs, attachments, links,
 //! …) and written here by one engine. Producers: an XML site backup ([`crate::site_backup`]) and
-//! the REST API of GitHub ([`github`]), connected to with [`api`] over [`http`].
+//! the REST APIs of GitHub ([`github`]) and GitLab ([`gitlab`]), connected to with [`api`] over
+//! [`http`].
 //!
 //! Everything lands in one transaction: an import either happens completely or not at all, a dry
 //! run is the same import rolled back (without storing files), and rows that came from a source
@@ -11,6 +12,7 @@
 pub mod api;
 mod engine;
 pub mod github;
+pub mod gitlab;
 pub mod http;
 pub mod jobs;
 pub mod model;

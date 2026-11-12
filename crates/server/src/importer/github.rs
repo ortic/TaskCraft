@@ -288,6 +288,7 @@ async fn read_issue(
                     author: who.clone(),
                     created: at,
                     url: Some(url.clone()),
+                    fallback_url: None,
                     refs: vec![url],
                 });
             }

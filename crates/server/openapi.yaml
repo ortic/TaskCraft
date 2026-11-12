@@ -8038,6 +8038,7 @@ paths:
                   type: string
                   enum:
                   - github
+                  - gitlab
                   description: the tracker whose API is read
                 baseUrl:
                   type: string
@@ -13203,6 +13204,7 @@ components:
           enum:
           - xml-site-backup
           - github
+          - gitlab
           description: where the import comes from
         origin:
           type: string
@@ -13516,10 +13518,11 @@ components:
           type: string
           enum:
           - github
+          - gitlab
           description: the tracker whose API is read
         baseUrl:
           type: string
-          description: 'the server''s address (GitHub: empty for github.com, else the Enterprise address)'
+          description: 'the server''s address (empty: github.com or gitlab.com; else the Enterprise or self-managed server)'
         token:
           type: string
           description: a personal access token or API key with read access; used for this request only, never stored
@@ -13549,6 +13552,7 @@ components:
           enum:
           - xml-site-backup
           - github
+          - gitlab
           description: where the import comes from
         connection:
           type:

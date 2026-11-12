@@ -85,7 +85,7 @@ type Choice = { action: 'new'; key: string } | { action: 'into'; key: string } |
 type People = 'invite' | 'deactivated'
 
 /** Where an import comes from: an uploaded backup or another tracker's API. */
-type Source = 'xml-site-backup' | 'github'
+type Source = 'xml-site-backup' | 'github' | 'gitlab'
 type ApiSource = Exclude<Source, 'xml-site-backup'>
 
 interface Job {
@@ -124,6 +124,7 @@ interface Available {
 const SOURCES: { id: Source; label: () => string }[] = [
   { id: 'xml-site-backup', label: () => t('{tool} (XML backup)', { tool: 'Jira' }) },
   { id: 'github', label: () => 'GitHub' },
+  { id: 'gitlab', label: () => 'GitLab' },
 ]
 
 const sourceName = (s: Source | undefined) => SOURCES.find((x) => x.id === s)?.label() ?? ''
@@ -144,6 +145,19 @@ function apiFields(s: ApiSource) {
         projectPlaceholder: 'owner/repo',
         owner: t('Owner (user or organization)'),
         list: t('Show repositories'),
+      }
+    case 'gitlab':
+      return {
+        url: t('Address'),
+        urlHint: t('Leave it empty for gitlab.com; for a self-managed GitLab, its address.'),
+        urlPlaceholder: 'https://gitlab.com',
+        urlRequired: false,
+        token: t('Personal, group or project access token'),
+        tokenHint: t('With the read_api scope. Public projects can be read without one (without confidential issues and internal notes).'),
+        projects: t('Projects'),
+        projectPlaceholder: 'group/project',
+        owner: t('Group or user'),
+        list: t('Show projects'),
       }
   }
 }
@@ -183,6 +197,9 @@ function warningText(w: Warning): string {
     case 'no-token': return t('Without a token GitHub allows 60 requests an hour: reading more than a small repository takes long (the import waits for the limit)')
     case 'issues-off': return t('{project} has its issues turned off', { project: p.project })
     case 'pull-requests': return t('Pull requests aren’t imported, only issues')
+    case 'no-token-gitlab': return t('Without a token only public projects can be read, and confidential issues and internal notes stay out')
+    case 'time-subtracted': return t('Time subtracted in the source is left out: some issues show more time spent there')
+    case 'notes-need-token': return t('The server shows comments, time logs and their history only with a token: they stay out')
     default: return w.message
   }
 }

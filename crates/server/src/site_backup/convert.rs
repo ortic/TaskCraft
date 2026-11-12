@@ -357,6 +357,7 @@ pub fn to_model(b: &Backup) -> Model {
                     author: canon(a.author.as_deref()),
                     created: a.created,
                     url: None,
+                    fallback_url: None,
                     refs: vec![a.name.trim().to_string()],
                 })
                 .collect(),

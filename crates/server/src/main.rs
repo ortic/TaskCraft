@@ -76,6 +76,9 @@ enum Command {
     /// Import issues from GitHub (github.com or GitHub Enterprise): repositories as projects,
     /// issues with their numbers, comments, labels, milestones, sub-issues, history and files.
     ImportGithub(ApiImport),
+    /// Import issues from GitLab (gitlab.com or self-managed): projects with their issues, notes,
+    /// labels, milestones, time logs, links, epics, history and uploads.
+    ImportGitlab(ApiImport),
 }
 
 /// What an import from another tracker's API takes on the command line.
@@ -84,7 +87,7 @@ struct ApiImport {
     /// the repositories or projects to import (`owner/repo`, `group/project`, an identifier)
     #[arg(required = true, value_name = "PROJECT")]
     projects: Vec<String>,
-    /// the server's address (GitHub: empty for github.com, else the Enterprise address)
+    /// the server's address (empty: github.com or gitlab.com; else the Enterprise or self-managed server)
     #[arg(long)]
     url: Option<String>,
     /// a personal access token or API key with read access (best given in the environment)
@@ -240,6 +243,7 @@ async fn main() -> anyhow::Result<()> {
             println!("{report}");
         }
         Command::ImportGithub(a) => import_api(cli.config, taskcraft::importer::api::Kind::Github, a).await?,
+        Command::ImportGitlab(a) => import_api(cli.config, taskcraft::importer::api::Kind::Gitlab, a).await?,
         Command::Demo => {
             let state = AppState::new(cli.config).await?;
             let owner: uuid::Uuid = sqlx::query_scalar("SELECT id FROM users WHERE role = 'owner' ORDER BY created_at LIMIT 1")

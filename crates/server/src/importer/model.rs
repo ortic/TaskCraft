@@ -187,6 +187,9 @@ pub struct Attachment {
     pub created: Option<DateTime<Utc>>,
     /// where its file is downloaded from (API sources)
     pub url: Option<String>,
+    /// where else, when it isn't there
+    #[serde(default)]
+    pub fallback_url: Option<String>,
     /// how texts point at it (its file name, the URL in Markdown): those places point to the
     /// imported file
     pub refs: Vec<String>,
