@@ -207,7 +207,7 @@ export default function Portfolio() {
         <section style={{ marginTop: 28 }}>
           <h2>{t('Team load')}</h2>
           <p className="muted small">{t('Open issues assigned to each team member in these projects.')}</p>
-          <div className="grid-cards" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))' }}>
+          <div className="grid-cards" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 520px), 1fr))' }}>
             {q.data.teams.map((team) => {
               const max = Math.max(1, ...team.members.map((m) => m.todo + m.inProgress))
               return (
@@ -225,13 +225,13 @@ export default function Portfolio() {
                     <tbody>
                       {team.members.map((m) => (
                         <tr key={m.id}>
-                          <td><span className="row" style={{ gap: 6 }}><Avatar name={m.name} id={m.id} size={20} decorative />{m.name}</span></td>
+                          <td><span className="row" style={{ gap: 6, whiteSpace: 'nowrap' }}><Avatar name={m.name} id={m.id} size={20} decorative />{m.name}</span></td>
                           <td style={{ width: '40%' }}>
                             <div className="progress" style={{ height: 8 }} title={t('{todo} to do, {doing} in progress', { todo: m.todo, doing: m.inProgress })}>
                               <span className="p-progress" style={{ width: `${(m.inProgress / max) * 100}%` }} />
                               <span style={{ width: `${(m.todo / max) * 100}%`, background: 'var(--border-strong)' }} />
                             </div>
-                            <span className="faint small">{t('{todo} to do · {doing} in progress', { todo: m.todo, doing: m.inProgress })}</span>
+                            <span className="faint small" style={{ whiteSpace: 'nowrap' }}>{t('{todo} to do · {doing} in progress', { todo: m.todo, doing: m.inProgress })}</span>
                           </td>
                           <td style={{ textAlign: 'end' }}>{m.points || ''}</td>
                           <td style={{ textAlign: 'end', color: m.overdue ? 'var(--danger)' : undefined }}>{m.overdue || ''}</td>

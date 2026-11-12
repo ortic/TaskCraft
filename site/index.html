@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TaskCraft — Self-Hosted Issue and Project Management with Boards, Sprints and Reports</title>
+<meta name="description" content="TaskCraft is free, open-source issue and project management you run yourself: boards, sprints, backlogs, timelines, reports replayed from history, dashboards, automation and service levels. One binary and PostgreSQL.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#4f5fe0">
+<meta property="og:type" content="website">
+<meta property="og:title" content="TaskCraft — issue and project management you run yourself">
+<meta property="og:description" content="Boards, sprints, reports, dashboards and automation. Free and open source; one binary and PostgreSQL.">
+<meta property="og:image" content="screenshots/board.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="icons/taskcraft.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script src="site.js" defer></script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "TaskCraft",
+  "description": "Self-hosted issue and project management: boards, sprints, reports, dashboards and automation.",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Linux, Docker, Kubernetes",
+  "license": "https://github.com/ortic/TaskCraft/blob/master/LICENSE-MIT",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap top-inner">
+    <a class="brand" href="#" aria-label="TaskCraft home">
+      <img src="icons/taskcraft.svg" alt="" width="28" height="28">
+      <span>TaskCraft</span>
+    </a>
+    <nav aria-label="Main">
+      <a href="#features">Features</a>
+      <a href="#run">Run it</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/ortic/TaskCraft">GitHub</a>
+      <a class="btn btn-primary btn-small" href="#run">Get started</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero">
+  <div class="wrap hero-text">
+    <p class="eyebrow">Free &amp; open source · Self-hosted issue and project management</p>
+    <h1>Plan, track and ship.<br><span class="accent">On your own server.</span></h1>
+    <p class="lead">TaskCraft brings boards, sprints, backlogs, timelines, reports and automation together in one fast, keyboard-friendly app. You run it next to your code and your docs: one binary and PostgreSQL, no per-seat pricing, no data leaving your network.</p>
+    <div class="actions">
+      <a class="btn btn-primary btn-large" href="#run">Run it in two minutes</a>
+      <a class="btn btn-secondary btn-large" href="https://github.com/ortic/TaskCraft">View on GitHub</a>
+    </div>
+    <p class="hero-note">Docker, Kubernetes or a single binary · comes with sample projects to explore · no sign-up</p>
+    <ul class="chips" aria-label="At a glance">
+      <li><a href="https://github.com/ortic/TaskCraft">Open source on GitHub</a></li>
+      <li>One binary + PostgreSQL</li>
+      <li>No telemetry</li>
+      <li>Works with WikiCraft</li>
+    </ul>
+  </div>
+  <div class="wrap">
+    <figure class="hero-shot">
+      <img src="screenshots/board.png" width="2160" height="1350"
+           alt="TaskCraft's sprint board: columns To do, In progress, Review and Done with issue cards showing priority, story points, assignees and due dates, quick filters above">
+    </figure>
+  </div>
+</section>
+
+<section class="databases" aria-labelledby="ways-title">
+  <div class="wrap">
+    <h2 id="ways-title" class="small-title">One tool for every way of working</h2>
+    <ul class="pills">
+      <li><strong>Scrum</strong> sprints</li>
+      <li><strong>Kanban</strong> flow</li>
+      <li>Issue tracking</li>
+      <li>Service desk</li>
+      <li>Work plans</li>
+    </ul>
+    <p class="pills-note">Every project starts from a template with its own statuses, issue types and board, and you change them as you go.</p>
+  </div>
+</section>
+
+<section id="features" class="section">
+  <div class="wrap">
+    <h2>Everything a team needs from idea to release</h2>
+    <p class="section-lead">From the first ticket to the release notes, with the shortcuts you'd expect: <code>c</code> creates an issue, <code>Ctrl K</code> finds anything.</p>
+    <div class="grid cards">
+      <article class="card">
+        <h3>Boards that keep the flow honest</h3>
+        <p>Drag cards between columns, set WIP limits, split the board into swimlanes by person, epic or priority, and see at a glance which cards have been sitting still too long. Quick filters and a person filter one click away.</p>
+      </article>
+      <article class="card">
+        <h3>Sprints from planning to review</h3>
+        <p>Rank the backlog, drag issues into a sprint and get a planning hint from your recent velocity. Completing a sprint moves unfinished work on and keeps the numbers for the velocity chart.</p>
+      </article>
+      <article class="card">
+        <h3>One query language everywhere</h3>
+        <p><code>project = WEB and sprint in openSprints() and assignee = me()</code> — the same language drives lists, boards, saved filters, dashboards and automation conditions, with completion as you type.</p>
+      </article>
+      <article class="card">
+        <h3>Reports replayed from history</h3>
+        <p>Burndown with scope changes, velocity, cumulative flow, cycle and lead time, created vs resolved, workload. Every change is recorded, so reports stay right even when estimates change mid-sprint.</p>
+      </article>
+      <article class="card">
+        <h3>Dashboards and a portfolio</h3>
+        <p>Compose dashboards from lists, counts, breakdowns and charts — every number opens the issues behind it. The portfolio puts the epics and releases of several projects on one timeline, next to each team's load.</p>
+      </article>
+      <article class="card">
+        <h3>Automation that does the chores</h3>
+        <p>When an issue is created, moves or gets a comment: assign, label, transition, comment or notify. Or on a schedule — “every weekday at 08:00, remind the assignees of what's due tomorrow” — in your time zone.</p>
+      </article>
+      <article class="card">
+        <h3>A service desk that keeps its promises</h3>
+        <p>Service-level goals per priority for the first response and the resolution, a queue with the most urgent first, and alerts before anyone has to ask. Templates and recurring issues for the routine work.</p>
+      </article>
+      <article class="card">
+        <h3>Docs next to the work</h3>
+        <p>With <a href="https://github.com/ortic/WikiCraft">WikiCraft</a>, issues link wiki pages with live titles, each project gets its own space, and sprint reviews, specs and release notes are written for you. The wiki shows live issue tables from any query.</p>
+      </article>
+      <article class="card">
+        <h3>Built for developers — and their assistants</h3>
+        <p>Commits, branches and pull requests link themselves by issue key, and a merged pull request can move the issue on. A complete API, signed webhooks, and an MCP server so AI assistants work with issues under each person's own permissions.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section section-tight" aria-label="Screenshots">
+  <div class="wrap grid shots">
+    <figure>
+      <a href="screenshots/backlog.png"><img src="screenshots/backlog.png" width="2160" height="1350" loading="lazy" alt="The backlog: a running sprint and the next one with their issues, story points and the planning hint from velocity"></a>
+      <figcaption><strong>Backlog.</strong> Rank, plan sprints, see your velocity.</figcaption>
+    </figure>
+    <figure>
+      <a href="screenshots/issue.png"><img src="screenshots/issue.png" width="2160" height="1350" loading="lazy" alt="An issue open in the side panel with its description, checklist, fields, sub-tasks and activity"></a>
+      <figcaption><strong>Issues.</strong> Rich text, sub-tasks, links, time and history.</figcaption>
+    </figure>
+    <figure>
+      <a href="screenshots/timeline.png"><img src="screenshots/timeline.png" width="2160" height="1350" loading="lazy" alt="The timeline: epics and issues as bars across weeks with dependency arrows between them"></a>
+      <figcaption><strong>Timeline.</strong> Drag to reschedule, with dependency warnings.</figcaption>
+    </figure>
+    <figure>
+      <a href="screenshots/reports.png"><img src="screenshots/reports.png" width="2160" height="1350" loading="lazy" alt="The sprint burndown chart with the ideal line and the remaining work per day"></a>
+      <figcaption><strong>Reports.</strong> Burndown, velocity, flow and more.</figcaption>
+    </figure>
+    <figure>
+      <a href="screenshots/dashboard.png"><img src="screenshots/dashboard.png" width="2160" height="1350" loading="lazy" alt="A team dashboard with counts, a list of assigned issues, open issues by status and recent activity"></a>
+      <figcaption><strong>Dashboards.</strong> Put together from widgets and filters.</figcaption>
+    </figure>
+    <figure>
+      <a href="screenshots/portfolio.png"><img src="screenshots/portfolio.png" width="2160" height="1350" loading="lazy" alt="The portfolio: epics of several projects as progress bars on one timeline, release markers, and the team's load below"></a>
+      <figcaption><strong>Portfolio.</strong> All projects and teams on one page.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="section section-soft" aria-labelledby="own-title">
+  <div class="wrap">
+    <h2 id="own-title">Yours to run, yours to keep</h2>
+    <p class="section-lead">TaskCraft is made to be cheap to operate, easy to back up and comfortable for everyone on the team.</p>
+    <ul class="checks">
+      <li><strong>One binary and PostgreSQL.</strong> Attachments on disk or in any S3-compatible storage. Runs on a small server, works without internet access.</li>
+      <li><strong>From one container to a cluster.</strong> Several replicas share nothing but the database; live updates, automation and e-mail coordinate through PostgreSQL.</li>
+      <li><strong>Backups in one file.</strong> <code>taskcraft backup</code> takes the database and the attachments while the server keeps running; a restore also moves between versions and storage backends.</li>
+      <li><strong>Your sign-in.</strong> OpenID Connect, GitHub, LDAP / Active Directory and SAML, with groups mirrored into teams. Two-factor authentication and passkeys.</li>
+      <li><strong>Permissions that fit.</strong> Owners, admins, members and guests; project roles for people and teams; read-only API tokens; an audit log.</li>
+      <li><strong>Comfortable for everyone.</strong> Keyboard shortcuts, light, dark and high-contrast themes, a phone layout, English and German — checked against WCAG 2.2 AA.</li>
+      <li><strong>Bring your history.</strong> CSV import with column mapping and a dry run; keys from the old tool keep working as links.</li>
+      <li><strong>No telemetry.</strong> TaskCraft talks to nobody but the services you configure.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="run" class="section">
+  <div class="wrap">
+    <h2>Run it</h2>
+    <p class="section-lead">The first visit sets up the workspace — with sample projects to explore if you like.</p>
+    <div class="grid runs">
+      <article class="run">
+        <div>
+          <h3>Docker Compose</h3>
+          <p class="run-req">TaskCraft and PostgreSQL on one machine.</p>
+        </div>
+        <pre><code>git clone https://github.com/ortic/TaskCraft.git
+cd TaskCraft
+export TASKCRAFT_DB_PASSWORD=$(openssl rand -hex 16)
+docker compose up -d
+# open http://localhost:8788</code></pre>
+      </article>
+      <article class="run">
+        <div>
+          <h3>Kubernetes</h3>
+          <p class="run-req">Several replicas, attachments in S3, nightly backups.</p>
+        </div>
+        <pre><code>cp deploy/kubernetes/secret.example.yaml \
+   deploy/kubernetes/secret.yaml
+# set database, bucket and host name, then
+kubectl apply -k deploy/kubernetes</code></pre>
+      </article>
+      <article class="run">
+        <div>
+          <h3>From source</h3>
+          <p class="run-req">Rust, Node and PostgreSQL 15 or newer.</p>
+        </div>
+        <pre><code>cd web &amp;&amp; npm install &amp;&amp; npm run build &amp;&amp; cd ..
+cargo build --release
+TASKCRAFT_DATABASE_URL=postgres://… \
+  ./target/release/taskcraft serve</code></pre>
+      </article>
+    </div>
+    <p class="run-foot">Configuration is a handful of environment variables — base URL, database, storage, e-mail, sign-in — described in the <a href="https://github.com/ortic/TaskCraft#configuration">README</a>.</p>
+  </div>
+</section>
+
+<section class="section section-tight">
+  <div class="wrap">
+    <div class="callout">
+      <div>
+        <h2>Better together with WikiCraft</h2>
+        <p>TaskCraft's companion wiki: specs, sprint reviews and release notes written from your issues, live issue tables on any page, and every page that mentions an issue listed on it.</p>
+      </div>
+      <div class="callout-actions">
+        <a class="btn btn-primary" href="https://github.com/ortic/WikiCraft">About WikiCraft</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq" class="section">
+  <div class="wrap narrow">
+    <h2>Questions</h2>
+    <details id="faq-free">
+      <summary>Is it really free?</summary>
+      <p>Yes. TaskCraft is open source under the MIT or Apache-2.0 license, with no paid edition, no user limits and no features held back.</p>
+    </details>
+    <details id="faq-move">
+      <summary>Can we bring our issues from the tool we use now?</summary>
+      <p>Most tools export CSV. TaskCraft's import suggests which column goes into which field, matches statuses, types, people, sprints and releases by name, tests the import before running it, and keeps the old keys working as links.</p>
+    </details>
+    <details id="faq-size">
+      <summary>How big a team can it handle?</summary>
+      <p>TaskCraft is light on resources and starts on a small server. When you need more, run several replicas behind a load balancer; they need no sticky sessions and share nothing but the database.</p>
+    </details>
+    <details id="faq-offline">
+      <summary>Does it need internet access?</summary>
+      <p>No. The web app is built into the binary and TaskCraft only connects to the services you configure — your mail server, your sign-in provider, WikiCraft, webhooks.</p>
+    </details>
+    <details id="faq-backup">
+      <summary>How do we back it up?</summary>
+      <p><code>taskcraft backup</code> writes the database and the attachments into one file while TaskCraft keeps running; <code>taskcraft restore</code> brings it back, also into a newer version or onto other storage. The Kubernetes setup runs it every night. A regular PostgreSQL backup works too.</p>
+    </details>
+    <details id="faq-ai">
+      <summary>Can AI assistants use it?</summary>
+      <p>Yes, through the built-in MCP server: an assistant can search, read, create and update issues, log work and run reports — always with the permissions of the person whose token it uses, and read-only tokens stay read-only.</p>
+    </details>
+    <details id="faq-language">
+      <summary>Which languages does it speak?</summary>
+      <p>English and German. Every text is in a JSON catalog, so adding a language needs no code.</p>
+    </details>
+  </div>
+</section>
+
+<section class="section section-tight">
+  <div class="wrap">
+    <div class="final">
+      <h2>Try it with your next sprint.</h2>
+      <p>Free, open source, and running in two minutes.</p>
+      <div class="actions">
+        <a class="btn btn-light btn-large" href="#run">Get started</a>
+        <a class="btn btn-ghost btn-large" href="https://github.com/ortic/TaskCraft">Star it on GitHub</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-top">
+      <a class="brand" href="#">
+        <img src="icons/taskcraft.svg" alt="" width="24" height="24">
+        <span>TaskCraft</span>
+      </a>
+      <nav aria-label="Footer">
+        <a href="https://github.com/ortic/TaskCraft">Source code</a>
+        <a href="https://github.com/ortic/TaskCraft#readme">Documentation</a>
+        <a href="https://github.com/ortic/TaskCraft/issues">Issues</a>
+        <a href="https://github.com/ortic/WikiCraft">WikiCraft</a>
+      </nav>
+    </div>
+    <p>Free and open source (MIT or Apache-2.0). Made by <a href="https://github.com/ortic">Ortic</a> and the TaskCraft contributors.</p>
+    <p class="legal">GitHub, GitLab and other names are trademarks of their respective owners. TaskCraft is an independent open-source project.</p>
+  </div>
+</footer>
+</body>
+</html>
