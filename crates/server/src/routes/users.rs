@@ -69,7 +69,8 @@ pub struct NewUser {
     name: String,
     email: String,
     role: Option<String>,
-    /// set a password right away; without one an invitation link is returned
+    /// set a password right away; without one an invitation link is returned (and e-mailed
+    /// when mail is configured)
     password: Option<String>,
 }
 
@@ -108,9 +109,15 @@ pub async fn create(State(state): State<AppState>, CurrentUser(user): CurrentUse
             ApiError::Conflict(_) => ApiError::Conflict("someone with this e-mail address already has an account".into()),
             other => other,
         })?;
-    let invite = if hash.is_none() { Some(super::auth::user_link(&state, id, "invite").await?) } else { None };
+    let (invite, emailed) = if hash.is_none() {
+        let url = super::auth::user_link(&state, id, "invite").await?;
+        let emailed = super::email::send_invitation(&state, &user, &email, name, &url).await;
+        (Some(url), emailed)
+    } else {
+        (None, false)
+    };
     audit(&state, user.workspace_id, Some(user.id), "user.created", Some(email), json!({"role": role})).await;
-    Ok((StatusCode::CREATED, Json(json!({"id": id, "inviteUrl": invite}))))
+    Ok((StatusCode::CREATED, Json(json!({"id": id, "inviteUrl": invite, "emailed": emailed}))))
 }
 
 #[derive(Deserialize)]
@@ -157,17 +164,23 @@ pub async fn update(State(state): State<AppState>, CurrentUser(user): CurrentUse
 }
 
 /// A new invitation (invited people) or password-reset link (everyone else), for the admin to
-/// pass on.
+/// pass on; also e-mailed to the person when mail is configured.
 pub async fn reset_link(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>) -> ApiResult<Json<Value>> {
     require_admin(&user)?;
-    let status: String = sqlx::query_scalar("SELECT status FROM users WHERE id = $1 AND workspace_id = $2")
+    let (status, name, email): (String, String, Option<String>) = sqlx::query_as("SELECT status, name, email FROM users WHERE id = $1 AND workspace_id = $2")
         .bind(id)
         .bind(user.workspace_id)
         .fetch_optional(&state.db)
         .await?
         .ok_or(ApiError::NotFound("user"))?;
-    let url = super::auth::user_link(&state, id, if status == "invited" { "invite" } else { "reset" }).await?;
-    Ok(Json(json!({"url": url})))
+    let invite = status == "invited";
+    let url = super::auth::user_link(&state, id, if invite { "invite" } else { "reset" }).await?;
+    let emailed = match email.as_deref().filter(|_| status != "deactivated") {
+        Some(to) if invite => super::email::send_invitation(&state, &user, to, &name, &url).await,
+        Some(to) => super::email::send_reset_link(&state, &user, to, &name, &url).await,
+        None => false,
+    };
+    Ok(Json(json!({"url": url, "emailed": emailed})))
 }
 
 pub async fn teams(State(state): State<AppState>, CurrentUser(user): CurrentUser) -> ApiResult<Json<Value>> {

@@ -18,8 +18,9 @@ One binary, PostgreSQL, optional S3. Built with the same stack as WikiCraft.
   dates, custom fields (text, number, single and multiple choice, date, person, checkbox, URL)
 - **Links** (blocks / is blocked by, relates, duplicates, clones) — blocked issues are flagged
   everywhere — plus web links, wiki pages and attachments (drag & drop)
-- **Comments** with mentions and reactions, **watchers**, in-app **notifications**, a full
-  **history** of every change, **time logs** and a weekly **timesheet**
+- **Comments** with mentions and reactions, **watchers**, in-app **notifications** (also by
+  e-mail: bundled a couple of minutes after, or as a daily digest at 08:00 local time), a
+  full **history** of every change, **time logs** and a weekly **timesheet**
 - **Workflows**: statuses in three categories (to do, in progress, done); free or restricted
   transitions with a transition matrix
 - **Trash** with restore, clone, bulk changes, CSV export
@@ -82,7 +83,9 @@ and high-contrast themes, phone layout, checked with axe against WCAG 2.2 AA in 
 
 **Administration**: workspace owner / admins / members / guests; project roles (viewer, member,
 admin) for people and teams, a default role per project; invitations and password-reset links;
-teams; personal API tokens (read-only or read/write); signed webhooks; audit log.
+teams; personal API tokens (read-only or read/write); signed webhooks; audit log. With SMTP
+configured, invitations and password-reset links are e-mailed and people can reset a forgotten
+password themselves.
 
 ## WikiCraft integration
 
@@ -168,6 +171,8 @@ taskcraft healthcheck  # probe a running server (container HEALTHCHECK)
 | `TASKCRAFT_WEBHOOK_ALLOW_PRIVATE` | `false` | let webhooks call private / loopback addresses |
 | `TASKCRAFT_WIKICRAFT_URL` | — | WikiCraft for linked pages, project docs and generated pages |
 | `TASKCRAFT_WIKICRAFT_TOKEN` | — | WikiCraft API token used when a person hasn't connected their own |
+| `TASKCRAFT_SMTP_URL` | — | outgoing mail: `smtps://user:pass@mail.example.com` (TLS, port 465), `smtp://user:pass@mail.example.com:587?tls=required` (STARTTLS) or `smtp://relay:25` (unencrypted, local relays only); URL-encode special characters in the password. Enables e-mailed invitations, "forgot password" and notification e-mails |
+| `TASKCRAFT_MAIL_FROM` | `TaskCraft <taskcraft@localhost>` | sender of e-mails |
 
 ## API
 
@@ -184,7 +189,17 @@ on writes.
 | Sprints & boards | `GET /boards/{id}`, `POST /sprints/{id}/start`, `/complete`, `GET /sprints/{id}/burndown` |
 | WikiCraft | `GET /issues/{KEY}/wiki-pages`, `POST /issues/{KEY}/wiki-page`, `POST /sprints/{id}/wiki-page`, `POST /versions/{id}/wiki-page`, `GET /projects/{KEY}/wiki`, `GET /wiki-links?url=` (issues linking a page) |
 | Live | `GET /events` (Server-Sent Events) |
-| Account & admin | `/me`, `/me/tokens`, `/notifications`, `/views`, `/timesheet`, `/people`, `/teams`, `/users`, `/admin/{workspace,stats,audit,webhooks}` |
+| Account & admin | `/me`, `/me/tokens`, `/notifications`, `/views`, `/timesheet`, `/people`, `/teams`, `/users`, `/auth/forgot`, `/admin/{workspace,stats,audit,webhooks,mail}`, `POST /admin/mail/test` |
+
+### E-mail
+
+With `TASKCRAFT_SMTP_URL` set, e-mails go through an outbox in Postgres that every replica's worker
+sends from (retried with backoff for about two hours; *Administration → Overview* shows the state
+and sends a test e-mail). Each person picks under *Profile & settings → Notifications* how
+notifications reach them by e-mail: a **daily digest** (the default; 08:00 in their time zone,
+grouped by issue), **immediately** (a burst of changes within about two minutes becomes one e-mail;
+nothing is sent for what they've read or while they're using the app) or **off**. Notification
+kinds they switched off aren't e-mailed either, and every e-mail links to these settings.
 
 ### Webhooks
 

@@ -18,7 +18,7 @@ use crate::error::{ApiError, ApiResult};
 
 pub async fn setup_status(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let n: i64 = sqlx::query_scalar("SELECT count(*) FROM workspaces").fetch_one(&state.db).await?;
-    Ok(Json(json!({ "needsSetup": n == 0 })))
+    Ok(Json(json!({ "needsSetup": n == 0, "mail": state.mailer.enabled() })))
 }
 
 #[derive(Deserialize)]
@@ -228,11 +228,18 @@ pub async fn change_password(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Merges preferences (theme, muted notification kinds, board options, WikiCraft token).
+/// Merges preferences (theme, muted notification kinds, notification e-mails, board options,
+/// WikiCraft token).
 pub async fn put_preferences(State(state): State<AppState>, CurrentUser(user): CurrentUser, Json(req): Json<Value>) -> ApiResult<StatusCode> {
     let obj = req.as_object().ok_or_else(|| ApiError::bad("preferences must be an object"))?;
     if serde_json::to_string(&req).map(|s| s.len()).unwrap_or(0) > 20_000 {
         return Err(ApiError::bad("too many preferences"));
+    }
+    if let Some(v) = obj.get("email")
+        && !v.is_null()
+        && !matches!(v.as_str(), Some("off" | "instant" | "digest"))
+    {
+        return Err(ApiError::bad("email must be off, instant or digest"));
     }
     if let Some(t) = obj.get("wikicraftToken").and_then(|v| v.as_str())
         && !t.is_empty()
@@ -310,12 +317,18 @@ pub async fn delete_token(State(state): State<AppState>, SessionUser(user): Sess
 
 /// Creates a one-time link (invitation or password reset), valid for 7 days.
 pub async fn user_link(state: &AppState, user: Uuid, kind: &str) -> ApiResult<String> {
+    user_link_valid(state, user, kind, 7 * 24).await
+}
+
+/// Creates a one-time link valid for `hours`; it replaces the person's earlier link of that kind.
+pub async fn user_link_valid(state: &AppState, user: Uuid, kind: &str, hours: i32) -> ApiResult<String> {
     let token = random_token();
     sqlx::query("DELETE FROM user_links WHERE user_id = $1 AND kind = $2").bind(user).bind(kind).execute(&state.db).await?;
-    sqlx::query("INSERT INTO user_links (token_hash, user_id, kind, expires_at) VALUES ($1, $2, $3, now() + interval '7 days')")
+    sqlx::query("INSERT INTO user_links (token_hash, user_id, kind, expires_at) VALUES ($1, $2, $3, now() + make_interval(hours => $4))")
         .bind(token_hash(&token))
         .bind(user)
         .bind(kind)
+        .bind(hours)
         .execute(&state.db)
         .await?;
     Ok(format!("{}/welcome?token={token}", state.config.base()))

@@ -65,6 +65,8 @@ pub async fn spawn_with(tweak: impl FnOnce(&mut Config)) -> TestApp {
         webhook_allow_private: true,
         wikicraft_url: None,
         wikicraft_token: None,
+        smtp_url: None,
+        mail_from: "TaskCraft <taskcraft@localhost>".into(),
     };
     tweak(&mut config);
     let state = AppState::new(config).await.expect("app state");

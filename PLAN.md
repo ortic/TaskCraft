@@ -34,7 +34,7 @@
 
 ## Next
 
-- [ ] E-mail: invitations, password reset, notification digests (SMTP)
+- [x] E-mail (SMTP): e-mailed invitations, "forgot password", notification e-mails per person (instant bundles or a daily digest), admin status and test e-mail
 - [ ] Single sign-on: OpenID Connect, SAML, LDAP (reuse WikiCraft's providers)
 - [ ] Two-factor authentication and passkeys
 - [ ] Move issues between projects (key change with redirect, field mapping)

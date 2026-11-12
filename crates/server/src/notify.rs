@@ -1,5 +1,6 @@
 //! In-app notifications: assignments, mentions, comments and status changes on issues people
 //! watch. The actor never notifies themselves; people only hear about issues they can see.
+//! They can also go out by e-mail, right away or in a daily digest (see `mail`).
 
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -12,30 +13,36 @@ async fn send(state: &AppState, workspace: Uuid, user: Uuid, s: &Summary, actor:
     if Some(user) == actor || !crate::access::can_view(state, user, s.project_id).await {
         return;
     }
-    let muted: bool = sqlx::query_scalar("SELECT COALESCE((preferences->'muted') ? $2, false) FROM users WHERE id = $1")
-        .bind(user)
-        .bind(kind)
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or(false);
+    let (muted, email): (bool, Option<String>) =
+        sqlx::query_as("SELECT COALESCE((preferences->'muted') ? $2, false), preferences->>'email' FROM users WHERE id = $1")
+            .bind(user)
+            .bind(kind)
+            .fetch_optional(&state.db)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or((false, None));
     if muted {
         return;
     }
+    // no e-mail will be sent for it (see `mail`): mark it as handled right away
+    let no_mail = !state.mailer.enabled() || email.as_deref() == Some("off");
     let mut data = data;
     data["key"] = json!(s.key);
     data["title"] = json!(s.title);
-    let ok = sqlx::query("INSERT INTO notifications (id, user_id, issue_id, actor_id, kind, data) VALUES ($1, $2, $3, $4, $5, $6)")
-        .bind(new_id())
-        .bind(user)
-        .bind(s.id)
-        .bind(actor)
-        .bind(kind)
-        .bind(data)
-        .execute(&state.db)
-        .await
-        .is_ok();
+    let ok = sqlx::query(
+        "INSERT INTO notifications (id, user_id, issue_id, actor_id, kind, data, emailed_at) VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $7 THEN now() END)",
+    )
+    .bind(new_id())
+    .bind(user)
+    .bind(s.id)
+    .bind(actor)
+    .bind(kind)
+    .bind(data)
+    .bind(no_mail)
+    .execute(&state.db)
+    .await
+    .is_ok();
     if ok {
         let mut e = Event::new(workspace, "notification");
         e.user_id = Some(user);
