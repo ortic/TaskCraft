@@ -44,8 +44,8 @@
 - [x] Portfolio view across projects (epics and releases on one timeline), capacity per team
 - [x] Issue templates (fields, description, sub-tasks) and recurring issues (templates on a schedule)
 - [ ] E-mail in (create issues / comments by mail) for support trackers
-- [ ] Git integration: link commits, branches and merge requests by issue key
-- [ ] MCP server so assistants can search, create and update issues with the user's permissions
+- [x] Git integration: link commits, branches and merge requests by issue key
+- [x] MCP server so assistants can search, create and update issues with the user's permissions
 - [ ] Translations beyond English and German; accessibility audit (axe, WCAG 2.2 AA) in an e2e suite
 - [ ] Browser (Playwright) journey tests in CI
 - [ ] Backup / restore command; Kubernetes manifests

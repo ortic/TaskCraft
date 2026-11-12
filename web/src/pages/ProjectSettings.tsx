@@ -20,6 +20,7 @@ import { OptionChip, PersonPicker } from '../components/fields'
 import { useOpenIssue } from '../components/Layout'
 import { ServiceLevelsSection, TemplatesSection } from '../components/TemplateSettings'
 import { ImportSection } from '../components/ImportSettings'
+import GitSettings from './GitSettings'
 import './ProjectSettings.css'
 
 // ---- local types (server shapes) ----
@@ -251,6 +252,7 @@ export default function ProjectSettings() {
             {active.id === 'sla' && <ServiceLevelsSection key={JSON.stringify(p.settings.sla ?? null)} project={p} onSaved={refresh} />}
             {active.id === 'integrations' && <IntegrationsSection />}
             {active.id === 'import' && <ImportSection project={p} />}
+            {active.id === 'integrations' && <GitSettings project={p} />}
             {active.id === 'trash' && <TrashSection />}
           </div>
         </div>

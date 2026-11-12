@@ -30,6 +30,7 @@ pub const SELECT: &str = "SELECT i.id, i.number, i.project_id, p.key AS project_
        (SELECT count(*) FROM issues ch WHERE ch.parent_id = i.id AND ch.deleted_at IS NULL) AS child_count,
        (SELECT count(*) FROM issues ch JOIN statuses chs ON chs.id = ch.status_id WHERE ch.parent_id = i.id AND ch.deleted_at IS NULL AND chs.category = 'done') AS child_done,
        (SELECT count(*) FROM comments cm WHERE cm.issue_id = i.id) AS comment_count,
+       (SELECT d.state FROM dev_links d WHERE d.issue_id = i.id AND d.kind = 'pull_request' ORDER BY d.state = 'open' DESC, d.at DESC LIMIT 1) AS pull_request,
        EXISTS (SELECT 1 FROM issue_links bl JOIN issues bi ON bi.id = bl.source_id JOIN statuses bs ON bs.id = bi.status_id
                 WHERE bl.target_id = i.id AND bl.kind = 'blocks' AND bs.category <> 'done' AND bi.deleted_at IS NULL) AS blocked
   FROM issues i
@@ -93,6 +94,7 @@ pub struct Row {
     pub child_count: i64,
     pub child_done: i64,
     pub comment_count: i64,
+    pub pull_request: Option<String>,
     pub blocked: bool,
 }
 
@@ -180,6 +182,9 @@ pub struct Summary {
     pub child_count: i64,
     pub child_done: i64,
     pub comment_count: i64,
+    /// its pull request's state (an open one first) when the Git integration linked one
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pull_request: Option<String>,
     pub blocked: bool,
     pub url: String,
 }
@@ -219,6 +224,7 @@ pub fn summary(state: &AppState, r: Row) -> Summary {
         child_count: r.child_count,
         child_done: r.child_done,
         comment_count: r.comment_count,
+        pull_request: r.pull_request,
         blocked: r.blocked,
     }
 }

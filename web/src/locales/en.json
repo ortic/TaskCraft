@@ -162,5 +162,17 @@
   "Signed out of {count} other sessions": {
     "one": "Signed out of {count} other session",
     "other": "Signed out of {count} other sessions"
+  },
+  "{count} pull requests": {
+    "one": "{count} pull request",
+    "other": "{count} pull requests"
+  },
+  "linked {count} commits": {
+    "one": "linked {count} commit",
+    "other": "linked {count} commits"
+  },
+  "Show all {count} commits": {
+    "one": "Show {count} commit",
+    "other": "Show all {count} commits"
   }
 }

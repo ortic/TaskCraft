@@ -163,6 +163,11 @@ pub enum TokenScope {
     Write,
 }
 
+/// Marks a request whose caller enforces the token scope itself (the MCP server: one POST
+/// carries read and write tools alike).
+#[derive(Debug, Clone, Copy)]
+pub struct ScopeCheckedByCaller;
+
 /// POST endpoints that only read, open to read-only tokens.
 fn reads_only(path: &str) -> bool {
     let p = path.trim_end_matches('/');
@@ -224,7 +229,11 @@ impl FromRequestParts<AppState> for MaybeUser {
             let Some((user, scope)) = user_from_api_token(state, tok).await? else {
                 return Err(ApiError::Unauthorized);
             };
-            if scope == TokenScope::Read && is_mutating(&parts.method) && !reads_only(parts.uri.path()) {
+            if scope == TokenScope::Read
+                && is_mutating(&parts.method)
+                && parts.extensions.get::<ScopeCheckedByCaller>().is_none()
+                && !reads_only(parts.uri.path())
+            {
                 return Err(ApiError::Denied("this API token is read-only".into()));
             }
             parts.extensions.insert(scope);
