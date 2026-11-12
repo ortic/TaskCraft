@@ -1,0 +1,13 @@
+[package]
+name = "taskcraft-tql"
+description = "TQL, TaskCraft's query language: parser and syntax tree (no I/O)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+
+[lints]
+workspace = true
