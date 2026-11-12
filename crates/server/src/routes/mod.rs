@@ -11,6 +11,7 @@ pub mod integrations;
 pub mod issues;
 pub mod mail_in;
 pub mod moves;
+pub mod openapi;
 pub mod passkeys;
 pub mod portal;
 pub mod projects;
@@ -51,6 +52,9 @@ pub fn api() -> Router<AppState> {
         .route("/ready", get(ready))
         .route("/metrics", get(crate::metrics::scrape))
         .route("/events", get(crate::events::stream))
+        // this API's OpenAPI description (scripts/gen-openapi.py)
+        .route("/openapi.yaml", get(openapi::yaml))
+        .route("/openapi.json", get(openapi::json))
         // setup, sign-in, account
         .route("/setup", get(auth::setup_status).post(auth::setup))
         .route("/auth/login", post(auth::login))
