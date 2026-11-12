@@ -152,7 +152,7 @@ async fn main() -> anyhow::Result<()> {
             for k in &skip {
                 choices.insert(k.trim().to_uppercase(), Choice::Skip);
             }
-            let opts = Options { dry_run, people, choices, only: only.iter().map(|k| k.trim().to_uppercase()).collect(), template, time_zone };
+            let opts = Options { dry_run, people, choices, only: only.iter().map(|k| k.trim().to_uppercase()).collect(), template, time_zone, markup: None };
             eprintln!("reading {} …", path.display());
             let (mut source, backup) = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
                 let mut s = site_backup::Source::open(&path, attachments.as_deref())?;
@@ -192,7 +192,7 @@ async fn main() -> anyhow::Result<()> {
             taskcraft::schedule::spawn(&state);
             taskcraft::mail::spawn_worker(&state);
             taskcraft::mail_in::spawn(&state);
-            taskcraft::site_backup::jobs::spawn_cleanup(&state);
+            taskcraft::importer::jobs::spawn_cleanup(&state);
             taskcraft::portal::spawn(&state);
             let app = taskcraft::routes::router(state.clone());
             let listener = tokio::net::TcpListener::bind(bind).await?;

@@ -19,10 +19,11 @@ use serde_json::{Value, json};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
-use super::{Choice, Options, People, Progress, ProgressHandle, Source};
+use super::{Choice, Options, People, Progress, ProgressHandle};
 use crate::app::{AppState, audit, new_id};
 use crate::auth::{SessionUser, User, require_admin};
 use crate::error::{ApiError, ApiResult};
+use crate::site_backup::{self, Backup, Source};
 
 /// Uploaded backups are kept this long at most.
 const KEEP_HOURS: i64 = 24;
@@ -261,13 +262,13 @@ async fn with_heartbeat<T>(state: &AppState, id: Uuid, progress: ProgressHandle,
     out
 }
 
-async fn open(state: &AppState, id: Uuid, progress: &ProgressHandle, tz: chrono_tz::Tz) -> anyhow::Result<(Local, Source, super::Backup)> {
+async fn open(state: &AppState, id: Uuid, progress: &ProgressHandle, tz: chrono_tz::Tz) -> anyhow::Result<(Local, Source, Backup)> {
     super::set_progress(progress, "reading", None, 0, 0);
     let local = fetch(state, id).await?;
     let path = local.0.clone();
-    let (source, backup) = tokio::task::spawn_blocking(move || -> anyhow::Result<(Source, super::Backup)> {
+    let (source, backup) = tokio::task::spawn_blocking(move || -> anyhow::Result<(Source, Backup)> {
         let mut s = Source::open(&path, None)?;
-        let b = super::load(&mut s, tz)?;
+        let b = site_backup::load(&mut s, tz)?;
         Ok((s, b))
     })
     .await??;
@@ -278,7 +279,7 @@ async fn check(state: &AppState, id: Uuid, workspace: Uuid) -> anyhow::Result<Va
     let progress: ProgressHandle = Arc::default();
     with_heartbeat(state, id, progress.clone(), async {
         let (_local, source, backup) = open(state, id, &progress, chrono_tz::UTC).await?;
-        let summary = super::summarize(state, workspace, &source, &backup).await?;
+        let summary = site_backup::summarize(state, workspace, &source, &backup).await?;
         Ok(json!(summary))
     })
     .await
@@ -352,6 +353,7 @@ pub async fn start(
         only: vec![],
         template: None,
         time_zone: tz,
+        markup: None,
     };
     let st = state.clone();
     let u = user.clone();
@@ -359,7 +361,7 @@ pub async fn start(
         let progress: ProgressHandle = Arc::default();
         let result = with_heartbeat(&st, id, progress.clone(), async {
             let (_local, mut source, backup) = open(&st, id, &progress, opts.time_zone).await?;
-            super::run(&st, &u, &mut source, &backup, &opts, progress.clone()).await
+            site_backup::run(&st, &u, &mut source, &backup, &opts, progress.clone()).await
         })
         .await;
         match result {

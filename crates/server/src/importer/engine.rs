@@ -1,5 +1,6 @@
 //! The import itself: projects, people, issues with everything that hangs on them, then parents
-//! and links once all issues exist, all in one transaction.
+//! and links once all issues exist, all in one transaction. It works on the source-neutral
+//! [`Model`]; where the data came from only shows in the origin and the wording of warnings.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -8,15 +9,12 @@ use chrono::{DateTime, Duration, NaiveDate, Utc};
 use object_store::ObjectStoreExt;
 use object_store::path::Path as ObjPath;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
-use super::read::{self, Backup, Group, Issue, Item};
+use super::model::{self, Change, Field, Files, Format, Issue, Item, Model, Text, TooLarge, id_order};
 use super::text::{self, Names};
-use super::{
-    Choice, ExistingProject, Options, People, PeopleSummary, ProgressHandle, ProjectReport, ProjectSummary, Report, Source, Summary, Warning, set_progress,
-};
+use super::{Choice, ExistingProject, Options, People, PeopleSummary, ProgressHandle, ProjectReport, ProjectSummary, Report, Summary, Warning, set_progress};
 use crate::app::{AppState, audit, new_id};
 use crate::auth::User;
 use crate::events::{self, Event};
@@ -25,137 +23,17 @@ use crate::routes::import::{Lookup, create_status_in, guess_category};
 
 type Tx = Transaction<'static, Postgres>;
 
-/// Custom fields with a meaning here.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Special {
-    Sprint,
-    Points,
-    EpicLink,
-    Start,
-}
-
-fn special(f: &read::CustomField) -> Option<Special> {
-    let n = f.name.trim().to_lowercase();
-    let t = f.type_key.to_lowercase();
-    if t.ends_with("-sprint") || n == "sprint" {
-        Some(Special::Sprint)
-    } else if t.contains("story-points") || n == "story points" || n == "story point estimate" {
-        Some(Special::Points)
-    } else if t.ends_with("epic-link") || n == "epic link" {
-        Some(Special::EpicLink)
-    } else if n == "start date" {
-        Some(Special::Start)
-    } else {
-        None
-    }
-}
-
-/// The site a backup comes from: its own id, else a fingerprint of its projects.
-fn origin(b: &Backup) -> String {
-    if let Some(s) = b.site.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        return format!("site:{s}");
-    }
-    let mut ps: Vec<String> = b.projects.iter().map(|p| format!("{}:{}", p.id, p.original_key.as_deref().unwrap_or(&p.key))).collect();
-    ps.sort();
-    format!("projects:{}", hex::encode(&Sha256::digest(ps.join(",").as_bytes())[..12]))
-}
-
-/// The backup's rows grouped by issue.
-struct Index<'a> {
-    issue: HashMap<&'a str, &'a Issue>,
-    by_project: HashMap<&'a str, Vec<&'a Issue>>,
-    comments: HashMap<&'a str, Vec<&'a read::Comment>>,
-    worklogs: HashMap<&'a str, Vec<&'a read::Worklog>>,
-    attachments: HashMap<&'a str, Vec<&'a read::Attachment>>,
-    labels: HashMap<&'a str, Vec<&'a str>>,
-    watchers: HashMap<&'a str, Vec<&'a str>>,
-    components: HashMap<&'a str, Vec<&'a str>>,
-    fix_versions: HashMap<&'a str, Vec<&'a str>>,
-    values: HashMap<&'a str, Vec<(&'a read::CustomValue, Special)>>,
-    other_values: usize,
-    issue_sprints: HashMap<&'a str, Vec<&'a str>>,
-    /// change groups of an issue, oldest first
-    groups: HashMap<&'a str, Vec<(&'a str, &'a Group)>>,
-    items: HashMap<&'a str, Vec<&'a Item>>,
-    /// custom fields by lower-case name, as history items name them
-    special_names: HashMap<String, Special>,
-}
-
-fn group_by<'a, T>(rows: impl Iterator<Item = (&'a str, T)>) -> HashMap<&'a str, Vec<T>> {
-    let mut m: HashMap<&str, Vec<T>> = HashMap::new();
-    for (k, v) in rows {
-        m.entry(k).or_default().push(v);
-    }
-    m
-}
-
-/// Ids are numbers in the backup: order them as numbers.
-fn id_order(a: &str, b: &str) -> std::cmp::Ordering {
-    (a.len(), a).cmp(&(b.len(), b))
-}
-
-impl<'a> Index<'a> {
-    fn new(b: &'a Backup) -> Self {
-        let specials: HashMap<&str, Special> = b.fields.iter().filter_map(|(id, f)| special(f).map(|s| (id.as_str(), s))).collect();
-        let mut other_values = 0;
-        let mut values: HashMap<&str, Vec<(&read::CustomValue, Special)>> = HashMap::new();
-        for v in &b.values {
-            match specials.get(v.field.as_str()) {
-                Some(s) => values.entry(v.issue.as_str()).or_default().push((v, *s)),
-                None => other_values += 1,
-            }
-        }
-        let mut groups = group_by(b.groups.iter().map(|(id, g)| (g.issue.as_str(), (id.as_str(), g))));
-        for gs in groups.values_mut() {
-            gs.sort_by(|a, b| a.1.created.cmp(&b.1.created).then_with(|| id_order(a.0, b.0)));
-        }
-        Index {
-            issue: b.issues.iter().map(|i| (i.id.as_str(), i)).collect(),
-            by_project: group_by(b.issues.iter().map(|i| (i.project.as_str(), i))),
-            comments: group_by(b.comments.iter().map(|c| (c.issue.as_str(), c))),
-            worklogs: group_by(b.worklogs.iter().map(|w| (w.issue.as_str(), w))),
-            attachments: group_by(b.attachments.iter().map(|a| (a.issue.as_str(), a))),
-            labels: group_by(b.labels.iter().map(|(i, l)| (i.as_str(), l.as_str()))),
-            watchers: group_by(b.watchers.iter().map(|(i, u)| (i.as_str(), u.as_str()))),
-            components: group_by(b.issue_components.iter().map(|(i, c)| (i.as_str(), c.as_str()))),
-            fix_versions: group_by(b.fix_versions.iter().map(|(i, v)| (i.as_str(), v.as_str()))),
-            values,
-            other_values,
-            issue_sprints: group_by(b.issue_sprints.iter().map(|(i, s)| (i.as_str(), s.as_str()))),
-            groups,
-            items: group_by(b.items.iter().map(|it| (it.group.as_str(), it))),
-            special_names: b.fields.values().filter_map(|f| special(f).map(|s| (f.name.trim().to_lowercase(), s))).collect(),
-        }
-    }
-
-    fn special_item(&self, it: &Item) -> Option<Special> {
-        if it.custom { self.special_names.get(&it.field.trim().to_lowercase()).copied() } else { None }
-    }
-
-    fn history_count(&self, issue: &str) -> usize {
-        self.groups.get(issue).map_or(0, |gs| gs.iter().filter(|(_, g)| !g.initial).count())
-    }
-}
-
-/// The source person behind a user key (or user name).
-fn source_person<'b>(b: &'b Backup, key: &str) -> Option<&'b read::Person> {
-    b.user_keys.get(key).and_then(|l| b.people.get(l)).or_else(|| b.people.get(&key.to_lowercase()))
-}
-
-/// The one name of the person behind a user key, account id or user name (the key itself for
-/// people the backup doesn't list).
-fn canonical(b: &Backup, key: &str) -> String {
-    let key = key.trim();
-    if let Some(l) = b.user_keys.get(key) {
-        return l.clone();
-    }
-    let lower = key.to_lowercase();
-    if b.people.contains_key(&lower) { lower } else { key.to_string() }
-}
+/// The kinds a custom field can have here.
+const FIELD_KINDS: &[&str] = &["text", "number", "select", "multiselect", "date", "user", "checkbox", "url"];
 
 /// Keys that look like account ids rather than names.
 fn opaque(key: &str) -> bool {
     key.contains(':') || (key.len() >= 20 && key.chars().all(|c| c.is_ascii_hexdigit() || c == '-'))
+}
+
+/// The calendar day of a stored date (`2026-11-12`, also with a time after it).
+pub fn parse_day(s: &str) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(s.trim().get(..10)?, "%Y-%m-%d").ok()
 }
 
 /// Warnings, each once with how often it happened.
@@ -186,6 +64,11 @@ impl Warnings {
             }
         }
     }
+
+    fn push(&mut self, w: &Warning) {
+        let params: Vec<(&str, String)> = w.params.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
+        self.add_n(&w.code, &w.message, &params, w.count);
+    }
 }
 
 /// An issue as it ends up here.
@@ -211,7 +94,7 @@ struct Ev {
 
 /// One project being imported.
 struct Proj<'a> {
-    src: &'a read::Project,
+    src: &'a model::Project,
     id: Uuid,
     key: String,
     lookup: Lookup,
@@ -223,6 +106,8 @@ struct Proj<'a> {
     versions: HashMap<String, (Uuid, String)>,
     /// source sprint id → (id, name, sequence)
     sprints: HashMap<String, (Uuid, String, f64)>,
+    /// source field id → (id, name, kind, options)
+    fields: HashMap<String, (Uuid, String, String, Value)>,
     report: ProjectReport,
 }
 
@@ -246,13 +131,19 @@ impl Proj<'_> {
 struct Run<'a> {
     state: &'a AppState,
     user: &'a User,
-    b: &'a Backup,
-    ix: Index<'a>,
+    m: &'a Model,
     opts: &'a Options,
-    origin: String,
     progress: ProgressHandle,
     w: Warnings,
-    /// source user key → person here (None: left out)
+    /// how texts in the source's own markup are read
+    markup: Format,
+    /// source project id → its issues
+    by_project: HashMap<&'a str, Vec<&'a Issue>>,
+    /// (source project id, number in the source) → source issue id, for references in texts
+    numbers: HashMap<(&'a str, i32), &'a str>,
+    /// lower-case project path (`owner/repo`) → source project id
+    paths: HashMap<String, &'a str>,
+    /// person key → person here (None: left out)
     people: HashMap<String, Option<(Uuid, String)>>,
     people_counts: BTreeMap<String, u64>,
     /// source issue id → issue here
@@ -268,16 +159,29 @@ impl Names for Run<'_> {
     fn person(&self, key: &str) -> (Option<Uuid>, Option<String>) {
         let key = key.trim();
         // by the key the text uses, else by the person behind it (account id, user name)
-        if let Some(Some((id, name))) = self.people.get(key).or_else(|| self.people.get(&canonical(self.b, key))) {
+        if let Some(Some((id, name))) = self.people.get(key).or_else(|| self.people.get(&self.m.canonical(key))) {
             return (Some(*id), Some(name.clone()));
         }
-        (None, source_person(self.b, key).map(|p| p.name.clone()))
+        (None, self.m.person(key).map(|p| p.name.clone()))
+    }
+
+    fn issue(&self, project: &str, path: Option<&str>, number: &str) -> Option<String> {
+        let source: &str = if self.m.global_refs && path.is_none() {
+            number
+        } else {
+            let pid = match path {
+                Some(p) => *self.paths.get(&p.to_lowercase())?,
+                None => project,
+            };
+            self.numbers.get(&(pid, number.parse().ok()?))?
+        };
+        self.targets.get(source).map(|t| t.key.clone())
     }
 }
 
 /// The TaskCraft priority of each source priority: by name, else by its place in the list.
-fn priorities(b: &Backup) -> HashMap<String, i16> {
-    let mut list: Vec<(&String, &read::Priority)> = b.priorities.iter().collect();
+fn priorities(m: &Model) -> HashMap<String, i16> {
+    let mut list: Vec<(&String, &model::Priority)> = m.priorities.iter().collect();
     list.sort_by(|a, b| a.1.sequence.total_cmp(&b.1.sequence).then_with(|| id_order(a.0, b.0)));
     let n = list.len();
     list.iter()
@@ -308,83 +212,94 @@ fn type_look(name: &str, level: i16) -> (&'static str, &'static str) {
     }
 }
 
-/// Sources of the issues of a project that are new here.
-fn new_issues<'a>(ix: &Index<'a>, src: &read::Project, targets: &HashMap<String, Target>) -> Vec<&'a Issue> {
-    let mut v: Vec<&Issue> = ix.by_project.get(src.id.as_str()).cloned().unwrap_or_default();
-    v.retain(|i| targets.get(&i.id).is_some_and(|t| t.new));
-    v.sort_by_key(|i| i.number);
-    v
+fn group_by<'a, T>(rows: impl Iterator<Item = (&'a str, T)>) -> HashMap<&'a str, Vec<T>> {
+    let mut m: HashMap<&str, Vec<T>> = HashMap::new();
+    for (k, v) in rows {
+        m.entry(k).or_default().push(v);
+    }
+    m
+}
+
+/// Every person key the rows of `projects` mention.
+fn referenced_people(m: &Model, by_project: &HashMap<&str, Vec<&Issue>>, projects: &[&model::Project]) -> Vec<String> {
+    let mut keys: Vec<String> = Vec::new();
+    let mut seen = HashSet::new();
+    let mut add = |k: Option<&str>| {
+        if let Some(k) = k.map(str::trim).filter(|k| !k.is_empty())
+            && seen.insert(k.to_string())
+        {
+            keys.push(k.to_string());
+        }
+    };
+    let pids: HashSet<&str> = projects.iter().map(|p| p.id.as_str()).collect();
+    for p in projects {
+        add(p.lead.as_deref());
+    }
+    for c in m.components.iter().filter(|c| pids.contains(c.project.as_str())) {
+        add(c.lead.as_deref());
+    }
+    let user_fields: HashSet<&str> = m.fields.iter().filter(|(_, f)| f.kind == "user").map(|(id, _)| id.as_str()).collect();
+    for p in projects {
+        for i in by_project.get(p.id.as_str()).into_iter().flatten() {
+            add(i.reporter.as_deref());
+            add(i.assignee.as_deref());
+            add(i.creator.as_deref());
+            for c in &i.comments {
+                add(c.author.as_deref());
+            }
+            for w in &i.worklogs {
+                add(w.author.as_deref());
+            }
+            for a in &i.attachments {
+                add(a.author.as_deref());
+            }
+            for u in &i.watchers {
+                add(Some(u));
+            }
+            for g in &i.history {
+                add(g.author.as_deref());
+                for it in g.items.iter().filter(|it| matches!(it.field, Field::Assignee | Field::Reporter)) {
+                    add(it.old.as_deref());
+                    add(it.new.as_deref());
+                }
+            }
+            for (f, vals) in i.custom.iter().filter(|(f, _)| user_fields.contains(f.as_str())) {
+                let _ = f;
+                for v in vals {
+                    add(Some(v));
+                }
+            }
+        }
+    }
+    keys
 }
 
 impl<'a> Run<'a> {
     fn person(&self, key: Option<&str>) -> Option<Uuid> {
-        key.and_then(|k| self.people.get(k.trim())).and_then(|p| p.as_ref()).map(|p| p.0)
+        key.and_then(|k| self.people.get(k.trim()).or_else(|| self.people.get(&self.m.canonical(k)))).and_then(|p| p.as_ref()).map(|p| p.0)
     }
 
     fn person_json(&self, key: Option<&str>, name: Option<&str>) -> Value {
         match key.map(str::trim).filter(|k| !k.is_empty()) {
             None => Value::Null,
-            Some(k) => match self.people.get(k) {
+            Some(k) => match self.people.get(k).or_else(|| self.people.get(&self.m.canonical(k))) {
                 Some(Some((id, n))) => json!({"id": id, "name": n}),
                 _ => {
-                    json!({"id": null, "name": name.map(str::to_string).or_else(|| source_person(self.b, k).map(|p| p.name.clone())).unwrap_or_else(|| k.to_string())})
+                    json!({"id": null, "name": name.map(str::to_string).or_else(|| self.m.person(k).map(|p| p.name.clone())).unwrap_or_else(|| k.to_string())})
                 }
             },
         }
     }
-}
 
-/// Every user key the rows of `projects` mention.
-fn referenced_people(b: &Backup, ix: &Index, projects: &[&read::Project]) -> Vec<String> {
-    {
-        let mut keys: Vec<String> = Vec::new();
-        let mut seen = HashSet::new();
-        let mut add = |k: Option<&str>| {
-            if let Some(k) = k.map(str::trim).filter(|k| !k.is_empty())
-                && seen.insert(k.to_string())
-            {
-                keys.push(k.to_string());
-            }
-        };
-        let pids: HashSet<&str> = projects.iter().map(|p| p.id.as_str()).collect();
-        for p in projects {
-            add(p.lead.as_deref());
-        }
-        for c in b.components.iter().filter(|c| pids.contains(c.project.as_str())) {
-            add(c.lead.as_deref());
-        }
-        for i in b.issues.iter().filter(|i| pids.contains(i.project.as_str())) {
-            add(i.reporter.as_deref());
-            add(i.assignee.as_deref());
-            add(i.creator.as_deref());
-            let id = i.id.as_str();
-            for c in ix.comments.get(id).into_iter().flatten() {
-                add(c.author.as_deref());
-            }
-            for w in ix.worklogs.get(id).into_iter().flatten() {
-                add(w.author.as_deref());
-            }
-            for a in ix.attachments.get(id).into_iter().flatten() {
-                add(a.author.as_deref());
-            }
-            for u in ix.watchers.get(id).into_iter().flatten() {
-                add(Some(u));
-            }
-            for (gid, g) in ix.groups.get(id).into_iter().flatten() {
-                add(g.author.as_deref());
-                for it in ix.items.get(gid).into_iter().flatten() {
-                    if !it.custom && matches!(it.field.as_str(), "assignee" | "reporter") {
-                        add(it.old_value.as_deref());
-                        add(it.new_value.as_deref());
-                    }
-                }
-            }
-        }
-        keys
+    /// How a text is read.
+    fn fmt(&self, t: &Text) -> Format {
+        if t.format == Format::Source { self.markup } else { t.format }
     }
-}
 
-impl<'a> Run<'a> {
+    fn plain(&self, t: &Text) -> String {
+        text::plain(t, self.fmt(t))
+    }
+
     /// Finds or creates the people of the selected projects.
     async fn resolve_people(&mut self, tx: &mut Tx, keys: &[String]) -> anyhow::Result<()> {
         set_progress(&self.progress, "people", None, 0, keys.len() as u64);
@@ -398,7 +313,7 @@ impl<'a> Run<'a> {
             "SELECT s.source_id, s.target_id FROM import_sources s JOIN users u ON u.id = s.target_id WHERE s.workspace_id = $1 AND s.origin = $2 AND s.kind = 'user'",
         )
         .bind(ws)
-        .bind(&self.origin)
+        .bind(&self.m.origin)
         .fetch_all(&mut **tx)
         .await?
         .into_iter()
@@ -407,12 +322,12 @@ impl<'a> Run<'a> {
         // one person may be named by several keys (user key, account id, user name)
         let mut by_person: HashMap<String, Option<(Uuid, String)>> = HashMap::new();
         for key in keys {
-            let k = &canonical(self.b, key);
+            let k = &self.m.canonical(key);
             if let Some(p) = by_person.get(k) {
                 self.people.insert(key.clone(), p.clone());
                 continue;
             }
-            let src = source_person(self.b, k);
+            let src = self.m.people.get(k);
             let name = match src {
                 Some(p) => p.name.clone(),
                 None if opaque(k) => format!("Former user {}", k.chars().rev().take(6).collect::<Vec<_>>().into_iter().rev().collect::<String>()),
@@ -453,11 +368,7 @@ impl<'a> Run<'a> {
                         .await?;
                     *self.people_counts.entry(if active { "invited" } else { "deactivated" }.into()).or_default() += 1;
                     if src.is_none() {
-                        self.w.add(
-                            "people-unlisted",
-                            "people the backup names but doesn't list (removed from the source) are imported as deactivated accounts",
-                            &[],
-                        );
+                        self.w.add("people-unlisted", "people the source names but doesn't list (removed from it) are imported as deactivated accounts", &[]);
                     }
                     Some((id, display))
                 }
@@ -478,7 +389,7 @@ impl<'a> Run<'a> {
              ON CONFLICT (workspace_id, origin, kind, source_id) DO UPDATE SET target_id = EXCLUDED.target_id",
         )
         .bind(self.user.workspace_id)
-        .bind(&self.origin)
+        .bind(&self.m.origin)
         .bind(kind)
         .bind(source_id)
         .bind(target)
@@ -488,7 +399,7 @@ impl<'a> Run<'a> {
     }
 
     /// The project here for a source project: found by key, or created.
-    async fn open_project(&mut self, tx: &mut Tx, src: &'a read::Project, choice: &Choice) -> anyhow::Result<Option<Proj<'a>>> {
+    async fn open_project(&mut self, tx: &mut Tx, src: &'a model::Project, choice: &Choice) -> anyhow::Result<Option<Proj<'a>>> {
         let (key, mode) = match choice {
             Choice::Skip => return Ok(None),
             Choice::Auto { key } => (key, 0),
@@ -528,25 +439,26 @@ impl<'a> Run<'a> {
             components: HashMap::new(),
             versions: HashMap::new(),
             sprints: HashMap::new(),
-            report: ProjectReport { source: src.key.clone(), key, name: src.name.clone(), id: Some(id), created, skipped: false, counts: BTreeMap::new() },
+            fields: HashMap::new(),
+            report: ProjectReport {
+                source: src.key.clone(),
+                key,
+                name: src.name.clone(),
+                id: Some(id),
+                created,
+                skipped: false,
+                parent: src.parent.clone(),
+                counts: BTreeMap::new(),
+            },
         }))
     }
 
-    async fn create_project(&mut self, tx: &mut Tx, src: &read::Project, key: &str) -> anyhow::Result<Uuid> {
-        let has_sprints = self.ix.by_project.get(src.id.as_str()).is_some_and(|is| {
-            is.iter().any(|i| {
-                self.ix.values.get(i.id.as_str()).is_some_and(|v| v.iter().any(|(_, s)| *s == Special::Sprint))
-                    || self.ix.issue_sprints.contains_key(i.id.as_str())
-            })
-        });
-        let template = match self.opts.template.as_deref() {
+    async fn create_project(&mut self, tx: &mut Tx, src: &model::Project, key: &str) -> anyhow::Result<Uuid> {
+        let has_sprints = self.by_project.get(src.id.as_str()).is_some_and(|is| is.iter().any(|i| !i.sprints.is_empty()));
+        let template = match self.opts.template.as_deref().or(src.template.as_deref()) {
             Some(t) => t,
-            None => match src.kind.as_deref() {
-                Some("business") => "business",
-                Some("service_desk") => "tracker",
-                _ if has_sprints => "scrum",
-                _ => "kanban",
-            },
+            None if has_sprints => "scrum",
+            None => "kanban",
         };
         anyhow::ensure!(matches!(template, "scrum" | "kanban" | "tracker" | "business"), "template must be scrum, kanban, tracker or business");
         let taken: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM project_key_aliases WHERE workspace_id = $1 AND lower(key) = lower($2))")
@@ -567,7 +479,7 @@ impl<'a> Run<'a> {
         .bind(self.user.workspace_id)
         .bind(key)
         .bind(if name.is_empty() { key.to_string() } else { name })
-        .bind(src.description.as_deref().map(text::plain).filter(|d| !d.is_empty()))
+        .bind(src.description.as_ref().map(|d| self.plain(d)).filter(|d| !d.is_empty()))
         .bind(match template {
             "scrum" => "scrum",
             "tracker" => "tracker",
@@ -576,11 +488,10 @@ impl<'a> Run<'a> {
         .bind(lead)
         .bind(self.user.id)
         .bind({
-            let mut settings = json!({"estimation": estimation, "workflow": "free", "template": template, "importedFrom": "xml-site-backup"});
-            // the backup's own resolutions (Done, Won't Do, …) become the project's list
-            let names = resolution_names(self.b);
-            if !names.is_empty() {
-                settings["resolutions"] = json!(names);
+            let mut settings = json!({"estimation": estimation, "workflow": "free", "template": template, "importedFrom": self.m.source});
+            // the source's own resolutions (Done, Won't Do, …) become the project's list
+            if !self.m.resolutions.is_empty() {
+                settings["resolutions"] = json!(self.m.resolutions);
             }
             settings
         })
@@ -597,7 +508,7 @@ impl<'a> Run<'a> {
             .execute(&mut **tx)
             .await?;
         crate::routes::projects::apply_template(tx, id, key, template).await?;
-        // the backup brings its own sprints: no empty first sprint of the template
+        // the source brings its own sprints: no empty first sprint of the template
         if has_sprints {
             sqlx::query("DELETE FROM sprints WHERE project_id = $1").bind(id).execute(&mut **tx).await?;
         }
@@ -605,7 +516,7 @@ impl<'a> Run<'a> {
     }
 
     /// Statuses and types the project's issues use (created when missing), components,
-    /// versions and sprints.
+    /// versions, sprints and custom fields.
     async fn prepare(&mut self, tx: &mut Tx, p: &mut Proj<'a>, issues: &[&'a Issue]) -> anyhow::Result<()> {
         // statuses: of the issues and of their history (deleted statuses by the name history gives)
         let mut wanted: Vec<(String, Option<String>)> = Vec::new();
@@ -614,9 +525,9 @@ impl<'a> Run<'a> {
             if seen.insert(i.status.clone()) {
                 wanted.push((i.status.clone(), None));
             }
-            for (gid, _) in self.ix.groups.get(i.id.as_str()).into_iter().flatten() {
-                for it in self.ix.items.get(gid).into_iter().flatten().filter(|it| !it.custom && it.field.eq_ignore_ascii_case("status")) {
-                    for (v, s) in [(&it.old_value, &it.old_string), (&it.new_value, &it.new_string)] {
+            for g in &i.history {
+                for it in g.items.iter().filter(|it| it.field == Field::Status) {
+                    for (v, s) in [(&it.old, &it.old_name), (&it.new, &it.new_name)] {
                         if let Some(v) = v
                             && seen.insert(v.clone())
                         {
@@ -626,19 +537,22 @@ impl<'a> Run<'a> {
                 }
             }
         }
-        // done statuses with a resolution land in a done status
         for (sid, fallback) in wanted {
-            let (name, cat) = match self.b.statuses.get(&sid) {
-                Some(s) => (s.name.clone(), s.category),
-                None => (fallback.unwrap_or_else(|| format!("Status {sid}")), None),
+            let (name, cat, by_category) = match self.m.statuses.get(&sid) {
+                Some(s) => (s.name.clone(), s.category.clone(), s.by_category),
+                None => (fallback.unwrap_or_else(|| format!("Status {sid}")), None, false),
             };
-            let category = cat.unwrap_or_else(|| guess_category(&name));
-            let found = p.lookup.status(&name).and_then(|id| p.lookup.statuses.iter().find(|s| s.0 == id).cloned());
+            let category: String = cat.filter(|c| matches!(c.as_str(), "todo" | "in_progress" | "done")).unwrap_or_else(|| guess_category(&name).to_string());
+            let found = if by_category {
+                p.lookup.statuses.iter().find(|s| s.2 == category).cloned()
+            } else {
+                p.lookup.status(&name).and_then(|id| p.lookup.statuses.iter().find(|s| s.0 == id).cloned())
+            };
             let st = match found {
                 Some(s) => s,
                 None => {
-                    let id = create_status_in(tx, p.id, &name, category).await?;
-                    let s = (id, name.trim().to_string(), category.to_string());
+                    let id = create_status_in(tx, p.id, &name, &category).await?;
+                    let s = (id, name.trim().to_string(), category.clone());
                     p.lookup.statuses.push(s.clone());
                     p.count("statuses", 1, 0);
                     s
@@ -651,7 +565,7 @@ impl<'a> Run<'a> {
         type_ids.sort();
         type_ids.dedup();
         for tid in type_ids {
-            let (name, level) = self.b.types.get(tid).map(|t| (t.name.clone(), t.level)).unwrap_or_else(|| (format!("Type {tid}"), 0));
+            let (name, level) = self.m.types.get(tid).map(|t| (t.name.clone(), t.level)).unwrap_or_else(|| (format!("Type {tid}"), 0));
             let found = p
                 .lookup
                 .types
@@ -685,7 +599,7 @@ impl<'a> Run<'a> {
             p.types.insert(tid.to_string(), t);
         }
         // components and versions: by name
-        let comps: Vec<&read::Component> = self.b.components.iter().filter(|c| c.project == p.src.id).collect();
+        let comps: Vec<&model::Component> = self.m.components.iter().filter(|c| c.project == p.src.id).collect();
         for c in comps {
             let found: Option<Uuid> = sqlx::query_scalar("SELECT id FROM components WHERE project_id = $1 AND lower(name) = lower($2)")
                 .bind(p.id)
@@ -703,7 +617,7 @@ impl<'a> Run<'a> {
                         .bind(id)
                         .bind(p.id)
                         .bind(c.name.trim())
-                        .bind(c.description.as_deref().map(text::plain).filter(|d| !d.is_empty()))
+                        .bind(c.description.as_ref().map(|d| self.plain(d)).filter(|d| !d.is_empty()))
                         .bind(self.person(c.lead.as_deref()))
                         .execute(&mut **tx)
                         .await?;
@@ -713,7 +627,7 @@ impl<'a> Run<'a> {
             };
             p.components.insert(c.id.clone(), (id, c.name.trim().to_string()));
         }
-        let mut versions: Vec<&read::Version> = self.b.versions.iter().filter(|v| v.project == p.src.id).collect();
+        let mut versions: Vec<&model::Version> = self.m.versions.iter().filter(|v| v.project == p.src.id).collect();
         versions.sort_by(|a, b| a.sequence.total_cmp(&b.sequence));
         for v in versions {
             let found: Option<Uuid> = sqlx::query_scalar("SELECT id FROM versions WHERE project_id = $1 AND lower(name) = lower($2)")
@@ -743,7 +657,7 @@ impl<'a> Run<'a> {
                     .bind(id)
                     .bind(p.id)
                     .bind(v.name.trim())
-                    .bind(v.description.as_deref().map(text::plain).filter(|d| !d.is_empty()))
+                    .bind(v.description.as_ref().map(|d| self.plain(d)).filter(|d| !d.is_empty()))
                     .bind(status)
                     .bind(v.start_date)
                     .bind(v.release_date)
@@ -767,18 +681,12 @@ impl<'a> Run<'a> {
             }
         };
         for i in issues {
-            for (v, s) in self.ix.values.get(i.id.as_str()).into_iter().flatten() {
-                if *s == Special::Sprint {
-                    let id = v.number.map(|n| (n as i64).to_string()).or_else(|| v.string.clone()).unwrap_or_default();
-                    use_sprint(&id, &mut used);
-                }
-            }
-            for s in self.ix.issue_sprints.get(i.id.as_str()).into_iter().flatten() {
+            for s in &i.sprints {
                 use_sprint(s, &mut used);
             }
-            for (gid, _) in self.ix.groups.get(i.id.as_str()).into_iter().flatten() {
-                for it in self.ix.items.get(gid).into_iter().flatten().filter(|it| self.ix.special_item(it) == Some(Special::Sprint)) {
-                    for (v, s) in [(&it.old_value, &it.old_string), (&it.new_value, &it.new_string)] {
+            for g in &i.history {
+                for it in g.items.iter().filter(|it| it.field == Field::Sprint) {
+                    for (v, s) in [(&it.old, &it.old_name), (&it.new, &it.new_name)] {
                         let ids: Vec<&str> = v.as_deref().unwrap_or("").split(',').map(str::trim).filter(|x| !x.is_empty()).collect();
                         let names: Vec<&str> = s.as_deref().unwrap_or("").split(',').map(str::trim).collect();
                         for (k, id) in ids.iter().enumerate() {
@@ -799,11 +707,11 @@ impl<'a> Run<'a> {
                 "SELECT s.target_id FROM import_sources s JOIN sprints sp ON sp.id = s.target_id WHERE s.workspace_id = $1 AND s.origin = $2 AND s.kind = 'sprint' AND s.source_id = $3",
             )
             .bind(self.user.workspace_id)
-            .bind(&self.origin)
+            .bind(&self.m.origin)
             .bind(format!("{sid}@{}", p.id))
             .fetch_optional(&mut **tx)
             .await?;
-            let src = self.b.sprints.get(&sid);
+            let src = self.m.sprints.get(&sid);
             let name = src.map(|s| s.name.clone()).or_else(|| sprint_names.get(&sid).cloned()).unwrap_or_else(|| format!("Sprint {sid}"));
             let sequence = src.map(|s| s.sequence).unwrap_or_else(|| sid.parse().unwrap_or(0.0));
             let id = match known {
@@ -851,13 +759,81 @@ impl<'a> Run<'a> {
                 no_details,
             );
         }
+        self.prepare_fields(tx, p, issues).await
+    }
+
+    /// Custom fields the issues have values for: found by name, else created; options of
+    /// selects added as the values need them.
+    async fn prepare_fields(&mut self, tx: &mut Tx, p: &mut Proj<'a>, issues: &[&'a Issue]) -> anyhow::Result<()> {
+        let mut used: Vec<&str> = Vec::new();
+        let mut labels: HashMap<&str, Vec<&str>> = HashMap::new();
+        for i in issues {
+            for (f, vals) in &i.custom {
+                if !used.contains(&f.as_str()) {
+                    used.push(f);
+                }
+                labels.entry(f).or_default().extend(vals.iter().map(|v| v.trim()).filter(|v| !v.is_empty()));
+            }
+        }
+        for fid in used {
+            let Some(f) = self.m.fields.get(fid) else { continue };
+            let mut name: String = f.name.trim().chars().take(100).collect();
+            if name.is_empty() {
+                continue;
+            }
+            if crate::query::builtin_fields().contains(&name.to_lowercase().as_str()) {
+                name = format!("{name} (imported)");
+            }
+            let found: Option<(Uuid, String, Value)> =
+                sqlx::query_as("SELECT id, kind, options FROM custom_fields WHERE project_id = $1 AND lower(name) = lower($2)")
+                    .bind(p.id)
+                    .bind(&name)
+                    .fetch_optional(&mut **tx)
+                    .await?;
+            let (id, kind, mut options) = match found {
+                Some(x) => {
+                    p.count("fields", 0, 1);
+                    x
+                }
+                None => {
+                    let id = new_id();
+                    let kind = if FIELD_KINDS.contains(&f.kind.as_str()) { f.kind.clone() } else { "text".to_string() };
+                    sqlx::query(
+                        "INSERT INTO custom_fields (id, project_id, name, kind, options, position)
+                         VALUES ($1, $2, $3, $4, '[]', (SELECT COALESCE(max(position), 0) + 1 FROM custom_fields WHERE project_id = $2))",
+                    )
+                    .bind(id)
+                    .bind(p.id)
+                    .bind(&name)
+                    .bind(&kind)
+                    .execute(&mut **tx)
+                    .await?;
+                    p.count("fields", 1, 0);
+                    (id, kind, json!([]))
+                }
+            };
+            if matches!(kind.as_str(), "select" | "multiselect") {
+                let mut list: Vec<Value> = options.as_array().cloned().unwrap_or_default();
+                let before = list.len();
+                for l in f.options.iter().map(|o| o.trim()).chain(labels.get(fid).into_iter().flatten().copied()) {
+                    if !l.is_empty() && !list.iter().any(|o| o["label"].as_str().is_some_and(|x| x.eq_ignore_ascii_case(l))) {
+                        list.push(json!({"id": Uuid::new_v4().simple().to_string()[..12].to_string(), "label": l.chars().take(100).collect::<String>(), "color": null}));
+                    }
+                }
+                if list.len() != before {
+                    options = Value::Array(list);
+                    sqlx::query("UPDATE custom_fields SET options = $2 WHERE id = $1").bind(id).bind(&options).execute(&mut **tx).await?;
+                }
+            }
+            p.fields.insert(fid.to_string(), (id, name, kind, options));
+        }
         Ok(())
     }
 
     /// Ids and numbers for the issues: earlier imports are found again, the others keep their
     /// number when it's free.
     async fn plan_issues(&mut self, tx: &mut Tx, p: &mut Proj<'a>) -> anyhow::Result<()> {
-        let all: Vec<&Issue> = self.ix.by_project.get(p.src.id.as_str()).cloned().unwrap_or_default();
+        let all: Vec<&Issue> = self.by_project.get(p.src.id.as_str()).cloned().unwrap_or_default();
         let ids: Vec<String> = all.iter().map(|i| i.id.clone()).collect();
         let known: Vec<(String, Uuid, String, i32, String, i16)> = sqlx::query_as(
             "SELECT s.source_id, i.id, pr.key, i.number, i.title, it.level FROM import_sources s JOIN issues i ON i.id = s.target_id
@@ -865,7 +841,7 @@ impl<'a> Run<'a> {
               WHERE s.workspace_id = $1 AND s.origin = $2 AND s.kind = 'issue' AND s.source_id = ANY($3)",
         )
         .bind(self.user.workspace_id)
-        .bind(&self.origin)
+        .bind(&self.m.origin)
         .bind(&ids)
         .fetch_all(&mut **tx)
         .await?;
@@ -899,15 +875,11 @@ impl<'a> Run<'a> {
             }
         }
         for i in fresh {
-            let level = p.types.get(&i.type_id).map(|t| t.2).or_else(|| self.b.types.get(&i.type_id).map(|t| t.level)).unwrap_or(0);
+            let level = p.types.get(&i.type_id).map(|t| t.2).or_else(|| self.m.types.get(&i.type_id).map(|t| t.level)).unwrap_or(0);
             let n = numbers[i.id.as_str()];
-            self.targets.insert(i.id.clone(), Target { id: new_id(), key: format!("{}-{n}", p.key), title: clean_title(&i.summary, n), level, new: true });
+            self.targets.insert(i.id.clone(), Target { id: new_id(), key: format!("{}-{n}", p.key), title: clean_title(&i.title, n), level, new: true });
         }
         Ok(())
-    }
-
-    fn special_values(&self, issue: &str, which: Special) -> Vec<&'a read::CustomValue> {
-        self.ix.values.get(issue).into_iter().flatten().filter(|(_, s)| *s == which).map(|(v, _)| *v).collect()
     }
 
     fn points_value(raw: Option<&str>) -> Value {
@@ -916,70 +888,23 @@ impl<'a> Run<'a> {
 
     /// The history of an issue as events, and when its status last changed and it got done.
     fn history(&mut self, p: &Proj, i: &Issue, cur: &Current, created: DateTime<Utc>) -> (Vec<Ev>, DateTime<Utc>, Option<DateTime<Utc>>) {
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-        enum F {
-            Status,
-            Assignee,
-            Reporter,
-            Priority,
-            Type,
-            Title,
-            Description,
-            Due,
-            Labels,
-            Estimate,
-            Remaining,
-            Component,
-            Version,
-            Parent,
-            Sprint,
-            Points,
-        }
-        let field_of = |it: &Item| -> Option<F> {
-            if it.custom {
-                return match self.ix.special_item(it)? {
-                    Special::Sprint => Some(F::Sprint),
-                    Special::Points => Some(F::Points),
-                    Special::EpicLink => Some(F::Parent),
-                    Special::Start => None,
-                };
-            }
-            Some(match it.field.to_lowercase().as_str() {
-                "status" => F::Status,
-                "assignee" => F::Assignee,
-                "reporter" => F::Reporter,
-                "priority" => F::Priority,
-                "issuetype" => F::Type,
-                "summary" => F::Title,
-                "description" => F::Description,
-                "duedate" => F::Due,
-                "labels" => F::Labels,
-                "timeoriginalestimate" => F::Estimate,
-                "timeestimate" => F::Remaining,
-                "component" => F::Component,
-                "fix version" => F::Version,
-                "parent" => F::Parent,
-                _ => return None,
-            })
-        };
-        let groups: Vec<(&str, &Group)> = self.ix.groups.get(i.id.as_str()).cloned().unwrap_or_default();
+        let mut groups: Vec<&Change> = i.history.iter().collect();
+        groups.sort_by_key(|g| g.at);
         let creator = self.person(i.creator.as_deref().or(i.reporter.as_deref()));
         // the values the issue was created with: from the creation entry, else the old value
         // of its first change, else the value it has now
-        let mut initial: HashMap<F, (Option<&str>, Option<&str>)> = HashMap::new();
-        let mut changes: Vec<(&Group, &Item, F, bool)> = Vec::new();
-        let any_estimate = groups.iter().any(|(gid, _)| self.ix.items.get(gid).into_iter().flatten().any(|it| field_of(it) == Some(F::Estimate)));
-        for (gid, g) in &groups {
-            let items = self.ix.items.get(gid).cloned().unwrap_or_default();
+        let mut initial: HashMap<Field, (Option<&str>, Option<&str>)> = HashMap::new();
+        let mut changes: Vec<(&Change, &Item, bool)> = Vec::new();
+        let any_estimate = groups.iter().any(|g| g.items.iter().any(|it| it.field == Field::Estimate));
+        for g in &groups {
             // remaining estimates that went down because someone logged work aren't changes
-            let worklog = items.iter().any(|it| !it.custom && matches!(it.field.as_str(), "WorklogId" | "timespent" | "WorklogTimeSpent"));
-            for it in items {
-                let Some(f) = field_of(it) else { continue };
+            let worklog = g.items.iter().any(|it| it.field == Field::Worklog);
+            for it in g.items.iter().filter(|it| it.field != Field::Worklog) {
                 if g.initial {
-                    initial.entry(f).or_insert((it.new_value.as_deref(), it.new_string.as_deref()));
+                    initial.entry(it.field).or_insert((it.new.as_deref(), it.new_name.as_deref()));
                 } else {
-                    initial.entry(f).or_insert((it.old_value.as_deref(), it.old_string.as_deref()));
-                    changes.push((g, it, f, worklog));
+                    initial.entry(it.field).or_insert((it.old.as_deref(), it.old_name.as_deref()));
+                    changes.push((g, it, worklog));
                 }
             }
         }
@@ -995,16 +920,16 @@ impl<'a> Run<'a> {
         };
         let sprint_v =
             |v: Option<&str>| -> Value { p.sprint_of(v.unwrap_or("").split(',')).map(|(id, n)| json!({"id": id, "name": n})).unwrap_or(Value::Null) };
-        let initial_status = initial.get(&F::Status).map(|(v, s)| status_v(*v, *s)).filter(|v| !v.is_null()).unwrap_or_else(|| p.status_json(&i.status));
-        let initial_assignee = match initial.get(&F::Assignee) {
+        let initial_status = initial.get(&Field::Status).map(|(v, s)| status_v(*v, *s)).filter(|v| !v.is_null()).unwrap_or_else(|| p.status_json(&i.status));
+        let initial_assignee = match initial.get(&Field::Assignee) {
             Some((v, _)) => self.person(*v),
             None => cur.assignee,
         };
-        let initial_sprint = match initial.get(&F::Sprint) {
+        let initial_sprint = match initial.get(&Field::Sprint) {
             Some((v, _)) => sprint_v(*v),
             None => cur.sprint.as_ref().map(|(id, n)| json!({"id": id, "name": n})).unwrap_or(Value::Null),
         };
-        let initial_points = match initial.get(&F::Points) {
+        let initial_points = match initial.get(&Field::Points) {
             Some((_, s)) => Self::points_value(*s),
             None => cur.points.map(|n| json!(n)).unwrap_or(Value::Null),
         };
@@ -1022,15 +947,16 @@ impl<'a> Run<'a> {
         let mut done_at: Option<DateTime<Utc>> = None;
         let mut status_at = created;
         let mut last_at = created;
-        for (g, it, f, worklog) in changes {
-            let at = g.created.unwrap_or(created).max(created);
+        for (g, it, worklog) in changes {
+            let f = it.field;
+            let at = g.at.unwrap_or(created).max(created);
             last_at = last_at.max(at);
-            let (ov, os, nv, ns) = (it.old_value.as_deref(), it.old_string.as_deref(), it.new_value.as_deref(), it.new_string.as_deref());
+            let (ov, os, nv, ns) = (it.old.as_deref(), it.old_name.as_deref(), it.new.as_deref(), it.new_name.as_deref());
             let (field, old, new): (&'static str, Value, Value) = match f {
-                F::Status => ("status", status_v(ov, os), status_v(nv, ns)),
-                F::Assignee => ("assignee", self.person_json(ov, os), self.person_json(nv, ns)),
-                F::Reporter => ("reporter", self.person_json(ov, os), self.person_json(nv, ns)),
-                F::Priority => {
+                Field::Status => ("status", status_v(ov, os), status_v(nv, ns)),
+                Field::Assignee => ("assignee", self.person_json(ov, os), self.person_json(nv, ns)),
+                Field::Reporter => ("reporter", self.person_json(ov, os), self.person_json(nv, ns)),
+                Field::Priority => {
                     let pr = |v: Option<&str>, s: Option<&str>| -> Value {
                         v.and_then(|v| self.priorities.get(v.trim()).copied())
                             .or_else(|| s.and_then(parse_priority))
@@ -1039,7 +965,7 @@ impl<'a> Run<'a> {
                     };
                     ("priority", pr(ov, os), pr(nv, ns))
                 }
-                F::Type => {
+                Field::Type => {
                     let ty = |v: Option<&str>, s: Option<&str>| -> Value {
                         v.and_then(|v| p.types.get(v.trim()))
                             .map(|t| json!({"id": t.0, "name": t.1}))
@@ -1048,10 +974,10 @@ impl<'a> Run<'a> {
                     };
                     ("type", ty(ov, os), ty(nv, ns))
                 }
-                F::Title => ("title", json!(os.unwrap_or("")), json!(ns.unwrap_or(""))),
-                F::Description => ("description", Value::Null, Value::Null),
-                F::Due => ("due", json!(ov.and_then(read::parse_day)), json!(nv.and_then(read::parse_day))),
-                F::Labels => {
+                Field::Title => ("title", json!(os.unwrap_or("")), json!(ns.unwrap_or(""))),
+                Field::Description => ("description", Value::Null, Value::Null),
+                Field::Due => ("due", json!(ov.and_then(parse_day)), json!(nv.and_then(parse_day))),
+                Field::Labels => {
                     let ls = |s: Option<&str>| -> Value {
                         let mut v: Vec<String> = s.unwrap_or("").split_whitespace().map(normalize_label).filter(|l| !l.is_empty()).collect();
                         v.sort();
@@ -1060,8 +986,8 @@ impl<'a> Run<'a> {
                     };
                     ("labels", ls(os), ls(ns))
                 }
-                F::Estimate | F::Remaining => {
-                    if f == F::Remaining && (any_estimate || worklog || cur.original) {
+                Field::Estimate | Field::Remaining => {
+                    if f == Field::Remaining && (any_estimate || worklog || cur.original) {
                         continue;
                     }
                     let m = |v: Option<&str>| -> Value {
@@ -1069,17 +995,17 @@ impl<'a> Run<'a> {
                     };
                     ("estimate", m(ov), m(nv))
                 }
-                F::Component | F::Version => {
-                    let map = if f == F::Component { &p.components } else { &p.versions };
+                Field::Component | Field::Version => {
+                    let map = if f == Field::Component { &p.components } else { &p.versions };
                     let named = |v: Option<&str>, s: Option<&str>| -> Value {
                         v.and_then(|v| map.get(v.trim()))
                             .map(|(id, n)| json!({"id": id, "name": n}))
                             .or_else(|| s.map(|s| json!({"id": null, "name": s})))
                             .unwrap_or(Value::Null)
                     };
-                    (if f == F::Component { "component" } else { "version" }, named(ov, os), named(nv, ns))
+                    (if f == Field::Component { "component" } else { "version" }, named(ov, os), named(nv, ns))
                 }
-                F::Parent => {
+                Field::Parent => {
                     let parent = |v: Option<&str>, s: Option<&str>| -> Value {
                         v.and_then(|v| self.targets.get(v.trim()))
                             .map(|t| json!({"id": t.id, "key": t.key, "name": t.title}))
@@ -1088,14 +1014,15 @@ impl<'a> Run<'a> {
                     };
                     ("parent", parent(ov, os), parent(nv, ns))
                 }
-                F::Sprint => ("sprint", sprint_v(ov), sprint_v(nv)),
-                F::Points => ("points", Self::points_value(os), Self::points_value(ns)),
+                Field::Sprint => ("sprint", sprint_v(ov), sprint_v(nv)),
+                Field::Points => ("points", Self::points_value(os), Self::points_value(ns)),
+                Field::Worklog => continue,
             };
-            if old == new && f != F::Description {
+            if old == new && f != Field::Description {
                 continue;
             }
             match f {
-                F::Status => {
+                Field::Status => {
                     if new.is_null() {
                         continue;
                     }
@@ -1106,8 +1033,8 @@ impl<'a> Run<'a> {
                     status_at = at;
                     last_status = new.clone();
                 }
-                F::Sprint => last_sprint = new.clone(),
-                F::Points => last_points = new.clone(),
+                Field::Sprint => last_sprint = new.clone(),
+                Field::Points => last_points = new.clone(),
                 _ => {}
             }
             evs.push(Ev { kind: "field", field: Some(field), old, new, actor: self.person(g.author.as_deref()), at });
@@ -1162,13 +1089,45 @@ impl<'a> Run<'a> {
         Ok(n as u64)
     }
 
+    /// The custom field values of an issue, as this project's fields keep them.
+    fn custom_values(&mut self, p: &Proj, i: &Issue) -> serde_json::Map<String, Value> {
+        let mut out = serde_json::Map::new();
+        for (fid, vals) in &i.custom {
+            let Some((id, name, kind, options)) = p.fields.get(fid) else { continue };
+            let vals: Vec<&str> = vals.iter().map(|v| v.trim()).filter(|v| !v.is_empty()).collect();
+            let Some(first) = vals.first().copied() else { continue };
+            let opt = |label: &str| {
+                options
+                    .as_array()
+                    .and_then(|o| o.iter().find(|x| x["label"].as_str().is_some_and(|l| l.eq_ignore_ascii_case(label.trim()))))
+                    .and_then(|x| x["id"].as_str())
+                    .map(str::to_string)
+            };
+            let v = match kind.as_str() {
+                "number" => first.replace(',', ".").parse::<f64>().ok().filter(|n| n.is_finite()).map(|n| json!(n)),
+                "date" => parse_day(first).map(|d| json!(d)),
+                "checkbox" => Some(json!(matches!(first.to_lowercase().as_str(), "1" | "true" | "yes" | "y" | "x"))),
+                "select" => opt(first).map(|o| json!(o)),
+                "multiselect" => Some(json!(vals.iter().filter_map(|v| opt(v)).collect::<Vec<_>>())),
+                "user" => self.person(Some(first)).map(|u| json!(u.to_string())),
+                _ => Some(json!(vals.join(", ").chars().take(5000).collect::<String>())),
+            };
+            match v {
+                Some(v) => {
+                    out.insert(id.to_string(), v);
+                }
+                None => self.w.add("field-value", "values that don't fit the field {name} are left out", &[("name", name.clone())]),
+            }
+        }
+        out
+    }
+
     /// One issue with its comments, time logs, attachments, watchers, labels and history.
-    async fn import_issue(&mut self, tx: &mut Tx, source: &mut Source, p: &mut Proj<'a>, i: &'a Issue, rank: f64) -> anyhow::Result<()> {
+    async fn import_issue(&mut self, tx: &mut Tx, files: &mut dyn Files, p: &mut Proj<'a>, i: &'a Issue, rank: f64) -> anyhow::Result<()> {
         let t = self.targets[&i.id].clone();
         let id = t.id;
         let now = Utc::now();
         let created = i.created.or(i.updated).unwrap_or(now);
-        let iid = i.id.as_str();
         // where it is now
         let mut status = p.statuses.get(&i.status).cloned().ok_or_else(|| anyhow::anyhow!("status {} of {} unknown", i.status, t.key))?;
         if i.resolution.is_some()
@@ -1182,18 +1141,8 @@ impl<'a> Run<'a> {
             );
             status = done;
         }
-        let sprint = {
-            let mut ids: Vec<String> = self
-                .special_values(iid, Special::Sprint)
-                .iter()
-                .filter_map(|v| v.number.map(|n| (n as i64).to_string()).or_else(|| v.string.clone()))
-                .collect();
-            ids.extend(self.ix.issue_sprints.get(iid).into_iter().flatten().map(|s| s.to_string()));
-            p.sprint_of(ids.iter().map(String::as_str))
-        };
-        let points =
-            self.special_values(iid, Special::Points).iter().find_map(|v| v.number.or_else(|| v.string.as_deref().and_then(|s| s.trim().parse().ok())));
-        let start = self.special_values(iid, Special::Start).iter().find_map(|v| v.date.as_deref().or(v.string.as_deref()).and_then(read::parse_day));
+        let sprint = p.sprint_of(i.sprints.iter().map(String::as_str));
+        let points = i.points.filter(|n| n.is_finite());
         let estimate = i.original_estimate.filter(|s| *s > 0.0).or(i.remaining_estimate.filter(|s| *s > 0.0)).map(|s| (s / 60.0).round() as i32);
         let cur = Current {
             status: status.clone(),
@@ -1203,50 +1152,79 @@ impl<'a> Run<'a> {
             resolved: i.resolved,
             original: i.original_estimate.is_some_and(|s| s > 0.0),
         };
-        let mut comps: Vec<&str> = self.ix.components.get(iid).cloned().unwrap_or_default();
-        comps.sort_by(|a, b| id_order(a, b));
-        if comps.len() > 1 {
+        if i.components.len() > 1 {
             self.w.add("several-components", "issues with several components keep the first one (an issue has one component here)", &[]);
         }
-        let component = comps.iter().find_map(|c| p.components.get(*c)).map(|c| c.0);
-        let mut fixes: Vec<&str> = self.ix.fix_versions.get(iid).cloned().unwrap_or_default();
-        fixes.sort_by(|a, b| id_order(a, b));
-        if fixes.len() > 1 {
+        let component = i.components.iter().find_map(|c| p.components.get(c)).map(|c| c.0);
+        if i.versions.len() > 1 {
             self.w.add("several-versions", "issues with several fix versions keep the first one (an issue has one release here)", &[]);
         }
-        let version = fixes.iter().find_map(|v| p.versions.get(*v)).map(|v| v.0);
+        let version = i.versions.iter().find_map(|v| p.versions.get(v)).map(|v| v.0);
         // attachments first: descriptions and comments link to them
-        let mut atts: Vec<&read::Attachment> = self.ix.attachments.get(iid).cloned().unwrap_or_default();
-        atts.sort_by(|a, b| a.created.cmp(&b.created).then_with(|| id_order(&a.id, &b.id)));
-        let mut files: HashMap<String, Uuid> = HashMap::new();
-        let mut planned: Vec<(&read::Attachment, Uuid)> = Vec::new();
+        let mut atts: Vec<&model::Attachment> = i.attachments.iter().collect();
+        atts.sort_by_key(|a| a.created);
+        let mut linked: HashMap<String, Uuid> = HashMap::new();
+        let mut stored: Vec<(&model::Attachment, Uuid, String, i64, String, String)> = Vec::new();
         for a in atts {
-            if !source.has_file(&a.id) {
-                self.w.add("missing-file", "attachments whose file isn't in the backup are left out", &[]);
+            if !files.has(a) {
+                self.missing_file();
                 continue;
             }
-            let size = source.file_size(&a.id).unwrap_or(0);
-            if size > self.max_file {
-                self.w.add(
-                    "file-too-large",
-                    "attachments larger than the upload limit ({mb} MB) are left out",
-                    &[("mb", (self.max_file / (1024 * 1024)).to_string())],
-                );
+            let size = files.size(a);
+            if size.is_some_and(|s| s > self.max_file) {
+                self.too_large();
                 continue;
             }
             let aid = new_id();
-            files.insert(a.name.trim().to_string(), aid);
-            planned.push((a, aid));
+            let storage_key = format!("attachments/{id}/{aid}");
+            let mut name: String = a.name.replace(['/', '\\', '\0'], "_").chars().take(200).collect();
+            let mut mime = a.mime.clone().filter(|m| m.contains('/'));
+            let size = if self.opts.dry_run {
+                size.unwrap_or(0) as i64
+            } else {
+                match files.read(a, self.max_file).await {
+                    Ok(Some(f)) => {
+                        if !name.contains('.')
+                            && let Some(n) = f.name.filter(|n| n.contains('.'))
+                        {
+                            name = n.replace(['/', '\\', '\0'], "_").chars().take(200).collect();
+                        }
+                        mime = mime.or(f.mime.filter(|m| m.contains('/') && !m.starts_with("application/octet-stream")));
+                        let n = f.data.len() as i64;
+                        self.state.blobs.put(&ObjPath::from(storage_key.clone()), f.data.into()).await.map_err(|e| anyhow::anyhow!("storage: {e}"))?;
+                        self.written.push(storage_key.clone());
+                        n
+                    }
+                    Ok(None) => {
+                        self.missing_file();
+                        continue;
+                    }
+                    Err(e) if e.downcast_ref::<TooLarge>().is_some() => {
+                        self.too_large();
+                        continue;
+                    }
+                    Err(e) => {
+                        self.w.add("unreadable-file", "an attachment couldn't be read: {error}", &[("error", format!("{e:#}"))]);
+                        continue;
+                    }
+                }
+            };
+            let mime = mime.unwrap_or_else(|| mime_guess::from_path(&name).first_or_octet_stream().to_string());
+            for r in a.refs.iter().map(|r| r.trim()).filter(|r| !r.is_empty()) {
+                linked.insert(r.to_string(), aid);
+            }
+            stored.push((a, aid, storage_key, size, name, mime));
         }
-        let description = i.description.as_deref().filter(|d| !d.trim().is_empty()).map(|d| text::rich(d, self, &files));
+        let description = i.description.as_ref().filter(|d| !d.body.trim().is_empty()).map(|d| text::rich(d, self.fmt(d), self, &linked, &i.project));
         let description_text = description.as_ref().map(crate::doc::text).unwrap_or_default();
         let (mut evs, status_at, resolved) = self.history(p, i, &cur, created);
         let updated = i.updated.unwrap_or(created).max(created);
+        let custom = self.custom_values(p, i);
         sqlx::query(
             "INSERT INTO issues (id, workspace_id, project_id, number, title, description, description_text, type_id, status_id, priority, assignee_id, reporter_id,
                                  sprint_id, version_id, component_id, story_points, estimate_minutes, start_date, due_date, rank, resolved_at, status_changed_at,
-                                 created_by, created_at, updated_at, resolution)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)",
+                                 created_by, created_at, updated_at, resolution, custom)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)",
         )
         .bind(id)
         .bind(self.user.workspace_id)
@@ -1265,7 +1243,7 @@ impl<'a> Run<'a> {
         .bind(component)
         .bind(points)
         .bind(estimate)
-        .bind(start)
+        .bind(i.start)
         .bind(i.due)
         .bind(rank)
         .bind(resolved)
@@ -1274,21 +1252,26 @@ impl<'a> Run<'a> {
         .bind(created)
         .bind(updated)
         .bind((status.2 == "done").then(|| {
-            // its own resolution, else the backup's "Done" (or first), else Done
-            let names = resolution_names(self.b);
+            // its own resolution, else the source's "Done" (or first), else Done
+            let names = &self.m.resolutions;
             i.resolution
                 .as_deref()
-                .and_then(|r| self.b.resolutions.get(r))
-                .filter(|n| !n.trim().is_empty())
-                .map(|n| n.trim().to_string())
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map(str::to_string)
                 .or_else(|| names.iter().find(|n| n.eq_ignore_ascii_case("done")).or(names.first()).cloned())
                 .unwrap_or_else(|| "Done".into())
         }))
+        .bind(Value::Object(custom))
         .execute(&mut **tx)
         .await
         .with_context(|| format!("issue {}", t.key))?;
+        if i.confidential {
+            p.count("confidential", 1, 0);
+            self.w.add("confidential", "confidential issues are visible to everyone who can see the project", &[]);
+        }
         // labels and watchers
-        let mut labels: Vec<String> = self.ix.labels.get(iid).into_iter().flatten().map(|l| normalize_label(l)).filter(|l| !l.is_empty()).collect();
+        let mut labels: Vec<String> = i.labels.iter().map(|l| normalize_label(l)).filter(|l| !l.is_empty()).collect();
         labels.sort();
         labels.dedup();
         labels.truncate(30);
@@ -1301,7 +1284,7 @@ impl<'a> Run<'a> {
             p.count("labels", labels.len() as u64, 0);
         }
         let watchers: Vec<Uuid> = {
-            let mut w: Vec<Uuid> = self.ix.watchers.get(iid).into_iter().flatten().filter_map(|u| self.person(Some(u))).collect();
+            let mut w: Vec<Uuid> = i.watchers.iter().filter_map(|u| self.person(Some(u))).collect();
             w.sort();
             w.dedup();
             w
@@ -1315,11 +1298,11 @@ impl<'a> Run<'a> {
             p.count("watchers", watchers.len() as u64, 0);
         }
         // comments
-        let mut comments: Vec<&read::Comment> = self.ix.comments.get(iid).cloned().unwrap_or_default();
-        comments.sort_by(|a, b| a.created.cmp(&b.created).then_with(|| id_order(&a.id, &b.id)));
+        let mut comments: Vec<&model::Comment> = i.comments.iter().collect();
+        comments.sort_by_key(|a| a.created);
         let mut restricted = 0;
         for c in comments {
-            let body = text::rich(&c.body, self, &files);
+            let body = text::rich(&c.body, self.fmt(&c.body), self, &linked, &i.project);
             let body_text = crate::doc::text(&body);
             if body_text.trim().is_empty() {
                 self.w.add("empty-comment", "empty comments are left out", &[]);
@@ -1355,8 +1338,12 @@ impl<'a> Run<'a> {
         );
         // time logs, booked to whoever did the work on the day they did it
         let mut spent = 0i64;
-        let mut logs: Vec<&read::Worklog> = self.ix.worklogs.get(iid).cloned().unwrap_or_default();
-        logs.sort_by(|a, b| a.started.cmp(&b.started).then_with(|| id_order(&a.id, &b.id)));
+        let mut logs: Vec<&model::Worklog> = i.worklogs.iter().collect();
+        logs.sort_by(|a, b| {
+            a.started
+                .or(a.date.and_then(|d| d.and_hms_opt(12, 0, 0)).map(|t| t.and_utc()))
+                .cmp(&b.started.or(b.date.and_then(|d| d.and_hms_opt(12, 0, 0)).map(|t| t.and_utc())))
+        });
         for wl in logs {
             let minutes = (wl.seconds / 60.0).round() as i64;
             let minutes = if minutes == 0 && wl.seconds > 0.0 { 1 } else { minutes };
@@ -1364,9 +1351,9 @@ impl<'a> Run<'a> {
                 continue;
             }
             let minutes = minutes.min(i32::MAX as i64) as i32;
-            let day: NaiveDate = wl.started.or(wl.created).unwrap_or(created).with_timezone(&self.opts.time_zone).date_naive();
+            let day: NaiveDate = wl.date.unwrap_or_else(|| wl.started.or(wl.created).unwrap_or(created).with_timezone(&self.opts.time_zone).date_naive());
             let author = self.person(wl.author.as_deref());
-            let note = wl.body.as_deref().map(text::plain).filter(|n| !n.trim().is_empty());
+            let note = wl.note.as_ref().map(|n| self.plain(n)).filter(|n| !n.trim().is_empty());
             let at = wl.created.unwrap_or(created);
             sqlx::query("INSERT INTO worklogs (id, issue_id, user_id, minutes, work_date, note, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)")
                 .bind(new_id())
@@ -1385,27 +1372,8 @@ impl<'a> Run<'a> {
         if spent > 0 {
             sqlx::query("UPDATE issues SET spent_minutes = $2 WHERE id = $1").bind(id).bind(spent.min(i32::MAX as i64) as i32).execute(&mut **tx).await?;
         }
-        // attachments into the configured storage
-        for (a, aid) in planned {
-            let name: String = a.name.replace(['/', '\\', '\0'], "_").chars().take(200).collect();
-            let mime = a.mime.clone().filter(|m| m.contains('/')).unwrap_or_else(|| mime_guess::from_path(&name).first_or_octet_stream().to_string());
-            let storage_key = format!("attachments/{id}/{aid}");
-            let size = if self.opts.dry_run {
-                source.file_size(&a.id).unwrap_or(0) as i64
-            } else {
-                let data = match source.read_file(&a.id, self.max_file) {
-                    Ok(Some(d)) => d,
-                    Ok(None) => continue,
-                    Err(e) => {
-                        self.w.add("unreadable-file", "an attachment couldn't be read: {error}", &[("error", e.to_string())]);
-                        continue;
-                    }
-                };
-                let n = data.len() as i64;
-                self.state.blobs.put(&ObjPath::from(storage_key.clone()), data.into()).await.map_err(|e| anyhow::anyhow!("storage: {e}"))?;
-                self.written.push(storage_key.clone());
-                n
-            };
+        // the attachments, stored above
+        for (a, aid, storage_key, size, name, mime) in stored {
             let author = self.person(a.author.as_deref());
             let at = a.created.unwrap_or(created);
             sqlx::query(
@@ -1427,18 +1395,7 @@ impl<'a> Run<'a> {
         let n = Self::write_events(tx, id, p.id, evs).await?;
         p.count("history", n, 0);
         // the keys the issue had keep working
-        let mut keys: Vec<String> = i.keys.iter().map(|k| k.to_uppercase()).collect();
-        if i.number > 0 {
-            keys.push(format!("{}-{}", p.src.key.to_uppercase(), i.number));
-            for k in self.b.former_keys.get(&p.src.id).into_iter().flatten().chain(p.src.original_key.iter()) {
-                keys.push(format!("{}-{}", k.to_uppercase(), i.number));
-            }
-        }
-        for (gid, _) in self.ix.groups.get(iid).into_iter().flatten() {
-            for it in self.ix.items.get(gid).into_iter().flatten().filter(|it| !it.custom && it.field == "Key") {
-                keys.extend(it.old_string.iter().chain(it.old_value.iter()).map(|k| k.to_uppercase()));
-            }
-        }
+        let mut keys: Vec<String> = i.keys.iter().map(|k| k.trim().to_uppercase()).collect();
         keys.sort();
         keys.dedup();
         for k in keys.iter().filter(|k| **k != t.key.to_uppercase()) {
@@ -1452,59 +1409,38 @@ impl<'a> Run<'a> {
                     .await?;
             }
         }
-        self.remember(tx, "issue", iid, id).await?;
+        self.remember(tx, "issue", &i.id, id).await?;
         p.count("issues", 1, 0);
         Ok(())
     }
 
+    fn missing_file(&mut self) {
+        if self.m.source == "xml-site-backup" {
+            self.w.add("missing-file", "attachments whose file isn't in the backup are left out", &[]);
+        } else {
+            self.w.add("missing-download", "attachments whose file couldn't be found in the source are left out", &[]);
+        }
+    }
+
+    fn too_large(&mut self) {
+        self.w.add("file-too-large", "attachments larger than the upload limit ({mb} MB) are left out", &[("mb", (self.max_file / (1024 * 1024)).to_string())]);
+    }
+
     /// Parents (sub-tasks, epics) and links, once every issue exists.
     async fn connect(&mut self, tx: &mut Tx, reports: &mut [ProjectReport], project_of: &HashMap<Uuid, usize>) -> anyhow::Result<()> {
-        let b = self.b;
-        // candidates per child, most specific first
-        let mut parents: Vec<(&str, &str)> = Vec::new();
-        for i in &b.issues {
-            if let Some(pid) = &i.subtask_parent {
-                parents.push((&i.id, pid));
+        let m = self.m;
+        let mut links: Vec<&model::Link> = Vec::new();
+        for l in &m.links {
+            if !l.known {
+                self.w.add("link-type", "links of the type “{name}” are imported as “relates to”", &[("name", l.type_name.clone())]);
             }
+            links.push(l);
         }
-        let mut epic_links: Vec<(&str, &str)> = Vec::new();
-        let mut links: Vec<(&read::Link, &'static str, &str)> = Vec::new();
-        for l in &b.links {
-            let t = b.link_types.get(&l.kind);
-            match link_kind(b, l) {
-                LinkKind::SubTask => parents.push((&l.target, &l.source)),
-                LinkKind::Epic => epic_links.push((&l.target, &l.source)),
-                LinkKind::Link(kind, known) => {
-                    if !known {
-                        self.w.add(
-                            "link-type",
-                            "links of the type “{name}” are imported as “relates to”",
-                            &[("name", t.map(|t| t.name.clone()).unwrap_or_default())],
-                        );
-                    }
-                    links.push((l, kind, t.map(|t| t.outward.as_str()).unwrap_or("")));
-                }
-            }
-        }
-        parents.extend(b.parents.iter().map(|(c, p)| (c.as_str(), p.as_str())));
-        for (issue, vals) in &self.ix.values {
-            for (v, s) in vals {
-                if *s == Special::EpicLink
-                    && let Some(n) = v.number.map(|n| (n as i64).to_string()).or_else(|| v.string.clone())
-                {
-                    // the value is an issue id; refer to the issue's own string so it lives long enough
-                    if let Some(epic) = self.ix.issue.get(n.as_str()) {
-                        epic_links.push((issue, epic.id.as_str()));
-                    }
-                }
-            }
-        }
-        parents.extend(epic_links);
-        set_progress(&self.progress, "links", None, 0, (parents.len() + links.len()) as u64);
+        set_progress(&self.progress, "links", None, 0, (m.parents.len() + links.len()) as u64);
         let mut done: HashSet<&str> = HashSet::new();
-        for (child, parent) in parents {
+        for (child, parent) in &m.parents {
             let (Some(c), Some(pt)) = (self.targets.get(child), self.targets.get(parent)) else { continue };
-            if !c.new || done.contains(child) || c.id == pt.id {
+            if !c.new || done.contains(child.as_str()) || c.id == pt.id {
                 continue;
             }
             if pt.level < 0 {
@@ -1531,7 +1467,7 @@ impl<'a> Run<'a> {
             }
         }
         let mut outside = 0;
-        for (l, kind, _) in links {
+        for l in links {
             let (Some(s), Some(t)) = (self.targets.get(&l.source), self.targets.get(&l.target)) else {
                 outside += 1;
                 continue;
@@ -1539,6 +1475,12 @@ impl<'a> Run<'a> {
             if (!s.new && !t.new) || s.id == t.id {
                 continue;
             }
+            let kind: &'static str = match l.kind.as_str() {
+                "blocks" => "blocks",
+                "duplicates" => "duplicates",
+                "clones" => "clones",
+                _ => "relates",
+            };
             let at = l.created.unwrap_or_else(Utc::now);
             let inserted = sqlx::query(
                 "INSERT INTO issue_links (id, source_id, target_id, kind, created_by, created_at) VALUES ($1, $2, $3, $4, NULL, $5) ON CONFLICT DO NOTHING",
@@ -1578,33 +1520,6 @@ impl<'a> Run<'a> {
     }
 }
 
-enum LinkKind {
-    /// the source is the parent of the target
-    SubTask,
-    Epic,
-    /// blocks | duplicates | clones | relates, and whether the type was understood
-    Link(&'static str, bool),
-}
-
-/// What a link of the backup becomes here, by its type's names.
-fn link_kind(b: &Backup, l: &read::Link) -> LinkKind {
-    let t = b.link_types.get(&l.kind);
-    let name = t.map(|t| format!("{} {} {}", t.name, t.outward, t.style.as_deref().unwrap_or(""))).unwrap_or_default().to_lowercase();
-    if name.contains("subtask") || name.contains("sub-task") {
-        LinkKind::SubTask
-    } else if name.contains("epic") {
-        LinkKind::Epic
-    } else if name.contains("block") {
-        LinkKind::Link("blocks", true)
-    } else if name.contains("duplicat") {
-        LinkKind::Link("duplicates", true)
-    } else if name.contains("clone") {
-        LinkKind::Link("clones", true)
-    } else {
-        LinkKind::Link("relates", name.contains("relat"))
-    }
-}
-
 /// Where an issue is now.
 struct Current {
     status: (Uuid, String, String),
@@ -1621,39 +1536,48 @@ fn clean_title(t: &str, n: i32) -> String {
     if t.is_empty() { format!("Issue {n}") } else { t }
 }
 
-/// The projects of a backup with what to do with each.
-fn choices<'b>(b: &'b Backup, opts: &Options) -> Vec<(&'b read::Project, Choice)> {
-    let mut ps: Vec<&read::Project> = b.projects.iter().collect();
+/// The projects of a source with what to do with each.
+fn choices<'b>(m: &'b Model, opts: &Options) -> Vec<(&'b model::Project, Choice)> {
+    let mut ps: Vec<&model::Project> = m.projects.iter().collect();
     ps.sort_by(|a, b| a.key.cmp(&b.key));
     ps.into_iter()
         .filter(|p| opts.only.is_empty() || opts.only.iter().any(|o| o.eq_ignore_ascii_case(&p.key)))
-        .map(|p| (p, opts.choices.get(&p.key.to_uppercase()).cloned().unwrap_or_else(|| Choice::Auto { key: p.key.to_uppercase() })))
+        .map(|p| (p, opts.choices.get(&p.key.to_uppercase()).cloned().unwrap_or_else(|| Choice::Auto { key: p.suggested_key.to_uppercase() })))
         .collect()
 }
 
-/// Imports a backup (or with `dry_run` checks it). Runs as `user` (the workspace owner or an
+/// Imports a source (or with `dry_run` checks it). Runs as `user` (the workspace owner or an
 /// administrator), who becomes the actor of what has no person of its own.
-pub async fn run(state: &AppState, user: &User, source: &mut Source, b: &Backup, opts: &Options, progress: ProgressHandle) -> anyhow::Result<Report> {
+pub async fn run(state: &AppState, user: &User, files: &mut dyn Files, m: &Model, opts: &Options, progress: ProgressHandle) -> anyhow::Result<Report> {
+    let by_project = group_by(m.issues.iter().map(|i| (i.project.as_str(), i)));
+    let numbers = m.issues.iter().filter(|i| i.number > 0).map(|i| ((i.project.as_str(), i.number), i.id.as_str())).collect();
+    let paths = m.projects.iter().filter_map(|p| p.path.as_ref().map(|path| (path.to_lowercase(), p.id.as_str()))).collect();
+    let markup = match opts.markup.unwrap_or(m.markup) {
+        Format::Source => Format::Markdown,
+        f => f,
+    };
     let mut run = Run {
         state,
         user,
-        b,
-        ix: Index::new(b),
+        m,
         opts,
-        origin: origin(b),
         progress,
         w: Warnings::default(),
+        markup,
+        by_project,
+        numbers,
+        paths,
         people: HashMap::new(),
         people_counts: BTreeMap::new(),
         targets: HashMap::new(),
-        priorities: priorities(b),
+        priorities: priorities(m),
         written: Vec::new(),
         max_file: state.config.max_upload_mb.saturating_mul(1024 * 1024),
     };
     let mut tx: Tx = state.db.begin().await?;
     // one import at a time (a second one waits, then finds what the first brought in)
     sqlx::query("SELECT pg_advisory_xact_lock(7381201)").execute(&mut *tx).await?;
-    let result = run.everything(&mut tx, source).await;
+    let result = run.everything(&mut tx, files).await;
     match result {
         Ok(mut report) => {
             report.warnings = std::mem::take(&mut run.w.0);
@@ -1678,12 +1602,12 @@ pub async fn run(state: &AppState, user: &User, source: &mut Source, b: &Backup,
 }
 
 impl<'a> Run<'a> {
-    async fn everything(&mut self, tx: &mut Tx, source: &mut Source) -> anyhow::Result<Report> {
-        let b = self.b;
-        let selected = choices(b, self.opts);
-        anyhow::ensure!(!selected.is_empty(), "none of the backup's projects is selected");
-        let chosen: Vec<&read::Project> = selected.iter().filter(|(_, c)| *c != Choice::Skip).map(|(p, _)| *p).collect();
-        let keys = referenced_people(b, &self.ix, &chosen);
+    async fn everything(&mut self, tx: &mut Tx, files: &mut dyn Files) -> anyhow::Result<Report> {
+        let m = self.m;
+        let selected = choices(m, self.opts);
+        anyhow::ensure!(!selected.is_empty(), "none of the source's projects is selected");
+        let chosen: Vec<&model::Project> = selected.iter().filter(|(_, c)| *c != Choice::Skip).map(|(p, _)| *p).collect();
+        let keys = referenced_people(m, &self.by_project, &chosen);
         self.resolve_people(tx, &keys).await?;
         let mut projects: Vec<Proj<'a>> = Vec::new();
         let mut reports: Vec<ProjectReport> = Vec::new();
@@ -1691,25 +1615,31 @@ impl<'a> Run<'a> {
         for (src, choice) in &selected {
             match self.open_project(tx, src, choice).await? {
                 Some(mut p) => {
-                    let all: Vec<&Issue> = self.ix.by_project.get(src.id.as_str()).cloned().unwrap_or_default();
+                    let all: Vec<&Issue> = self.by_project.get(src.id.as_str()).cloned().unwrap_or_default();
                     self.prepare(tx, &mut p, &all).await?;
                     self.plan_issues(tx, &mut p).await?;
                     projects.push(p);
                 }
-                None => {
-                    skipped.push(ProjectReport { source: src.key.clone(), key: String::new(), name: src.name.clone(), skipped: true, ..Default::default() })
-                }
+                None => skipped.push(ProjectReport {
+                    source: src.key.clone(),
+                    key: String::new(),
+                    name: src.name.clone(),
+                    skipped: true,
+                    parent: src.parent.clone(),
+                    ..Default::default()
+                }),
             }
         }
         let mut project_of: HashMap<Uuid, usize> = HashMap::new();
         for (pi, mut p) in projects.into_iter().enumerate() {
-            let issues = new_issues(&self.ix, p.src, &self.targets);
-            let existing = self.ix.by_project.get(p.src.id.as_str()).map_or(0, |v| v.len()) - issues.len();
-            p.count("issues", 0, existing as u64);
+            let mut issues: Vec<&Issue> = self.by_project.get(p.src.id.as_str()).cloned().unwrap_or_default();
+            let all = issues.len();
+            issues.retain(|i| self.targets.get(&i.id).is_some_and(|t| t.new));
+            issues.sort_by_key(|i| i.number);
+            p.count("issues", 0, (all - issues.len()) as u64);
             // the backlog keeps its order: by the source's rank, else by number
             let mut order = issues.clone();
-            let rank_of = |i: &Issue| b.ranks.get(&i.id).map(String::as_str);
-            order.sort_by(|x, y| match (rank_of(x), rank_of(y)) {
+            order.sort_by(|x, y| match (x.rank.as_deref(), y.rank.as_deref()) {
                 (Some(r), Some(s)) => r.cmp(s).then(x.number.cmp(&y.number)),
                 (Some(_), None) => std::cmp::Ordering::Less,
                 (None, Some(_)) => std::cmp::Ordering::Greater,
@@ -1720,7 +1650,7 @@ impl<'a> Run<'a> {
             let total = issues.len() as u64;
             for (k, i) in issues.into_iter().enumerate() {
                 set_progress(&self.progress, "issues", Some(&p.key), k as u64, total);
-                self.import_issue(tx, source, &mut p, i, ranks[i.id.as_str()]).await?;
+                self.import_issue(tx, files, &mut p, i, ranks[i.id.as_str()]).await?;
                 project_of.insert(self.targets[&i.id].id, pi);
             }
             sqlx::query(
@@ -1732,14 +1662,11 @@ impl<'a> Run<'a> {
             reports.push(p.report);
         }
         self.connect(tx, &mut reports, &project_of).await?;
-        if b.affects_versions > 0 {
-            self.w.add_n("affects-versions", "affected versions aren't kept (an issue has one release here: its fix version)", &[], b.affects_versions as u64);
-        }
-        if self.ix.other_values > 0 {
-            self.w.add_n("other-fields", "values of other custom fields aren't imported", &[], self.ix.other_values as u64);
+        for w in &m.warnings {
+            self.w.push(w);
         }
         reports.extend(skipped);
-        Ok(Report { dry_run: self.opts.dry_run, origin: self.origin.clone(), people: self.people_counts.clone(), projects: reports, warnings: vec![] })
+        Ok(Report { dry_run: self.opts.dry_run, origin: m.origin.clone(), people: self.people_counts.clone(), projects: reports, warnings: vec![] })
     }
 
     /// Removes the files stored by a failed import.
@@ -1774,93 +1701,75 @@ impl<'a> Run<'a> {
             Some(self.user.id),
             "backup.import",
             Some(report.projects.iter().filter(|p| !p.skipped).map(|p| p.key.clone()).collect::<Vec<_>>().join(", ")),
-            json!({"issues": issues.imported, "people": report.people, "origin": report.origin}),
+            json!({"issues": issues.imported, "people": report.people, "origin": report.origin, "source": self.m.source}),
         )
         .await;
     }
 }
 
-/// What a backup holds and how it meets this workspace (the check before an import).
-pub async fn summarize(state: &AppState, workspace: Uuid, source: &Source, b: &Backup) -> anyhow::Result<Summary> {
-    let ix = Index::new(b);
-    let origin = origin(b);
+/// What a source holds and how it meets this workspace (the check before an import).
+pub async fn summarize(state: &AppState, workspace: Uuid, m: &Model, files: &dyn Files) -> anyhow::Result<Summary> {
+    let by_project = group_by(m.issues.iter().map(|i| (i.project.as_str(), i)));
     let mut projects = Vec::new();
-    let mut ps: Vec<&read::Project> = b.projects.iter().collect();
+    let mut ps: Vec<&model::Project> = m.projects.iter().collect();
     ps.sort_by(|a, b| a.key.cmp(&b.key));
     let mut has_sprints = false;
     for p in ps {
-        let issues: Vec<&Issue> = ix.by_project.get(p.id.as_str()).cloned().unwrap_or_default();
+        let issues: Vec<&Issue> = by_project.get(p.id.as_str()).cloned().unwrap_or_default();
         let ids: Vec<String> = issues.iter().map(|i| i.id.clone()).collect();
         let idset: HashSet<&str> = ids.iter().map(String::as_str).collect();
-        fn sum<T>(ids: &[String], m: &HashMap<&str, Vec<T>>) -> u64 {
-            ids.iter().map(|i| m.get(i.as_str()).map_or(0, |v| v.len() as u64)).sum()
-        }
-        let attachments: Vec<&read::Attachment> = ids.iter().flat_map(|i| ix.attachments.get(i.as_str()).cloned().unwrap_or_default()).collect();
-        let mut sprints: HashSet<String> = HashSet::new();
-        for i in &ids {
-            for (v, s) in ix.values.get(i.as_str()).into_iter().flatten() {
-                if *s == Special::Sprint
-                    && let Some(id) = v.number.map(|n| (n as i64).to_string()).or_else(|| v.string.clone())
-                {
-                    sprints.insert(id);
-                }
-            }
-            for s in ix.issue_sprints.get(i.as_str()).into_iter().flatten() {
-                sprints.insert(s.to_string());
-            }
-        }
+        let sprints: HashSet<&str> = issues.iter().flat_map(|i| i.sprints.iter().map(String::as_str)).filter(|s| !s.trim().is_empty()).collect();
         has_sprints |= !sprints.is_empty();
         let existing: Option<(String, String, i64)> = sqlx::query_as(
             "SELECT p.key, p.name, (SELECT count(*) FROM issues i WHERE i.project_id = p.id AND i.deleted_at IS NULL) FROM projects p
               WHERE p.workspace_id = $1 AND lower(p.key) = lower($2)",
         )
         .bind(workspace)
-        .bind(&p.key)
+        .bind(&p.suggested_key)
         .fetch_optional(&state.db)
         .await?;
         let imported: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM import_sources s JOIN issues i ON i.id = s.target_id WHERE s.workspace_id = $1 AND s.origin = $2 AND s.kind = 'issue' AND s.source_id = ANY($3)",
         )
         .bind(workspace)
-        .bind(&origin)
+        .bind(&m.origin)
         .bind(&ids)
         .fetch_one(&state.db)
         .await?;
-        let mut former: Vec<String> = b.former_keys.get(&p.id).cloned().unwrap_or_default();
-        former.extend(p.original_key.iter().cloned());
+        let mut former: Vec<String> = p.former_keys.clone();
         former.retain(|k| !k.eq_ignore_ascii_case(&p.key));
         former.sort();
         former.dedup();
+        let attachments = issues.iter().flat_map(|i| i.attachments.iter());
         projects.push(ProjectSummary {
             key: p.key.clone(),
+            suggested_key: p.suggested_key.clone(),
             name: p.name.clone(),
             former_keys: former,
+            parent: p.parent.clone(),
             issues: ids.len() as u64,
-            comments: sum(&ids, &ix.comments),
-            worklogs: sum(&ids, &ix.worklogs),
-            attachments: attachments.len() as u64,
-            missing_files: attachments.iter().filter(|a| !source.has_file(&a.id)).count() as u64,
-            links: b
-                .links
-                .iter()
-                .filter(|l| matches!(link_kind(b, l), LinkKind::Link(..)) && (idset.contains(l.source.as_str()) || idset.contains(l.target.as_str())))
-                .count() as u64,
+            comments: issues.iter().map(|i| i.comments.len() as u64).sum(),
+            worklogs: issues.iter().map(|i| i.worklogs.len() as u64).sum(),
+            attachments: issues.iter().map(|i| i.attachments.len() as u64).sum(),
+            missing_files: attachments.filter(|a| !files.has(a)).count() as u64,
+            links: m.links.iter().filter(|l| idset.contains(l.source.as_str()) || idset.contains(l.target.as_str())).count() as u64,
             sprints: sprints.len() as u64,
-            history: ids.iter().map(|i| ix.history_count(i) as u64).sum(),
+            history: issues.iter().map(|i| i.history.iter().filter(|g| !g.initial).count() as u64).sum(),
+            confidential: issues.iter().filter(|i| i.confidential).count() as u64,
             existing: existing.map(|(key, name, issues)| ExistingProject { key, name, issues }),
             imported: imported as u64,
             valid_key: crate::routes::projects::valid_key(&p.key).is_ok(),
         });
     }
     // people the work refers to, and how many have an account here already
-    let all: Vec<&read::Project> = b.projects.iter().collect();
+    let all: Vec<&model::Project> = m.projects.iter().collect();
     let mut seen = HashSet::new();
-    let keys: Vec<String> = referenced_people(b, &ix, &all).iter().map(|k| canonical(b, k)).filter(|k| seen.insert(k.clone())).collect();
+    let keys: Vec<String> = referenced_people(m, &by_project, &all).iter().map(|k| m.canonical(k)).filter(|k| seen.insert(k.clone())).collect();
     let users: Vec<(String, Option<String>)> =
         sqlx::query_as("SELECT name, email FROM users WHERE workspace_id = $1").bind(workspace).fetch_all(&state.db).await?;
     let mut people = PeopleSummary { total: keys.len() as u64, ..Default::default() };
     for k in &keys {
-        let src = source_person(b, k);
+        let src = m.people.get(k);
         if src.is_some_and(|p| p.active) {
             people.active += 1;
         } else {
@@ -1873,29 +1782,7 @@ pub async fn summarize(state: &AppState, workspace: Uuid, source: &Source, b: &B
         });
         people.matched += u64::from(matched);
     }
-    let mut warnings = Vec::new();
-    if !b.has_active_objects && has_sprints {
-        warnings.push(Warning {
-            code: "no-sprint-dates".into(),
-            message: "the backup has no activeobjects.xml: sprints come without their dates".into(),
-            params: BTreeMap::new(),
-            count: 1,
-        });
-    }
-    Ok(Summary { origin, projects, people, files: source.file_count() as u64, has_sprints, warnings })
-}
-
-/// The backup's resolution names in the order they were made (by id), without duplicates.
-fn resolution_names(b: &Backup) -> Vec<String> {
-    let mut list: Vec<(&String, &String)> = b.resolutions.iter().filter(|(_, n)| !n.trim().is_empty()).collect();
-    list.sort_by(|a, b| id_order(a.0, b.0));
-    let mut out: Vec<String> = Vec::new();
-    for (_, n) in list {
-        let n = n.trim().to_string();
-        if !out.iter().any(|o| o.eq_ignore_ascii_case(&n)) {
-            out.push(n);
-        }
-    }
-    out.truncate(20);
-    out
+    let markup =
+        (m.markup != Format::Source && m.issues.iter().any(|i| i.description.as_ref().is_some_and(|d| d.format == Format::Source))).then_some(m.markup);
+    Ok(Summary { source: m.source.clone(), origin: m.origin.clone(), projects, people, files: files.count(), has_sprints, markup, warnings: m.notes.clone() })
 }
