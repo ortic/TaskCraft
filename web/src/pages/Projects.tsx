@@ -2,7 +2,7 @@ import { t } from '../i18n'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Plus, Star, Archive, Kanban, ListTodo, Bug, Briefcase } from 'lucide-react'
+import { Plus, Star, Archive, ArchiveRestore, Kanban, ListTodo, Bug, Briefcase } from 'lucide-react'
 import { api } from '../api'
 import { Empty, Loading, Modal, useMe, useProjects, useToast } from '../ui'
 import { PROJECT_COLORS, PROJECT_ICONS, ProjectIcon } from '../icons'
@@ -14,6 +14,7 @@ export default function Projects() {
   const [creating, setCreating] = useState(false)
   const [archived, setArchived] = useState(false)
   const [q, setQ] = useState('')
+  const admin = me?.user?.role === 'owner' || me?.user?.role === 'admin'
   const list = (projects.data ?? []).filter((p) => (archived ? !!p.archivedAt : !p.archivedAt) && (!q || `${p.name} ${p.key}`.toLowerCase().includes(q.toLowerCase())))
   return (
     <div className="page">
@@ -22,6 +23,9 @@ export default function Projects() {
         <span className="spacer" />
         <input className="input" style={{ width: 220 }} placeholder={t('Filter projects…')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Filter projects')} />
         <button className={`btn ${archived ? 'active' : ''}`} onClick={() => setArchived((a) => !a)}><Archive size={15} /> {t('Archived')}</button>
+        {admin && (
+          <Link className="btn" to="/admin/import" title={t('Import a backup from another tracker')}><ArchiveRestore size={15} /> {t('Import')}</Link>
+        )}
         {me?.user?.role !== 'guest' && (
           <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={15} /> {t('Create project')}</button>
         )}
@@ -30,6 +34,11 @@ export default function Projects() {
       {projects.data && list.length === 0 && (
         <Empty icon={<Kanban size={34} />} title={archived ? t('No archived projects') : t('No projects yet')}>
           {!archived && t('A project holds issues, a workflow and boards. Start one from a template.')}
+          {!archived && admin && (
+            <p>
+              <Link to="/admin/import">{t('Moving from another tracker? Import its backup.')}</Link>
+            </p>
+          )}
         </Empty>
       )}
       <div className="grid-cards">

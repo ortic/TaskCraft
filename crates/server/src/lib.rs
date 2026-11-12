@@ -22,6 +22,7 @@ pub mod query;
 pub mod reports;
 pub mod routes;
 pub mod schedule;
+pub mod site_backup;
 pub mod sla;
 pub mod sso;
 pub mod web_assets;

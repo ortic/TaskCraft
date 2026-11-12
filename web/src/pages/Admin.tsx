@@ -2,8 +2,9 @@ import { t, AVAILABLE, LANGUAGES, locale } from '../i18n'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { BackupImportTab } from './BackupImport'
 import {
-  Check, ChevronDown, CircleDot, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, Mail, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, ShieldOff, Trash,
+  ArchiveRestore, Check, ChevronDown, CircleDot, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, Mail, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, ShieldOff, Trash,
   UserCheck, UserPlus, UserX, Users, Webhook,
 } from 'lucide-react'
 import { api, ago, dateTime, shortDate, type Me } from '../api'
@@ -15,8 +16,8 @@ import { SignInBadges, useSignInOptions, type SignInMethods } from '../component
 import { ResetTwoFactor, TwoFactorPolicy, canResetTwoFactor, useTwoFactorPolicy } from '../components/Security'
 import './Admin.css'
 
-type Tab = 'overview' | 'users' | 'teams' | 'webhooks' | 'audit'
-const TABS: Tab[] = ['overview', 'users', 'teams', 'webhooks', 'audit']
+type Tab = 'overview' | 'users' | 'teams' | 'webhooks' | 'import' | 'audit'
+const TABS: Tab[] = ['overview', 'users', 'teams', 'webhooks', 'import', 'audit']
 
 export default function Admin() {
   const me = useMe().data
@@ -49,6 +50,7 @@ export default function Admin() {
           { id: 'users', label: <><Users size={14} /> {t('Users')}</> },
           { id: 'teams', label: <><CircleDot size={14} /> {t('Teams')}</> },
           { id: 'webhooks', label: <><Webhook size={14} /> {t('Webhooks')}</> },
+          { id: 'import', label: <><ArchiveRestore size={14} /> {t('Import')}</> },
           { id: 'audit', label: <><ScrollText size={14} /> {t('Audit log')}</> },
         ]}
       />
@@ -56,6 +58,7 @@ export default function Admin() {
       {tab === 'users' && <UsersTab me={me} />}
       {tab === 'teams' && <TeamsTab />}
       {tab === 'webhooks' && <WebhooksTab />}
+      {tab === 'import' && <BackupImportTab />}
       {tab === 'audit' && <AuditTab />}
     </div>
   )

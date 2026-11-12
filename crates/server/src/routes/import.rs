@@ -84,7 +84,7 @@ pub fn suggest(header: &str) -> Option<&'static str> {
 const DONE_WORDS: &[&str] = &["resolved", "closed", "fixed", "won't fix", "wontfix", "rejected", "cancelled", "canceled", "verified"];
 
 /// The category of a status name nobody set up yet, from the words in it (a few languages).
-fn guess_category(name: &str) -> &'static str {
+pub(crate) fn guess_category(name: &str) -> &'static str {
     let l = name.trim().to_lowercase();
     if let Some(c) = parse_category(&l) {
         return c;
@@ -143,8 +143,15 @@ fn guess_category(name: &str) -> &'static str {
 /// A status the import needs: placed before the done statuses, reachable from all others, and on
 /// every board of the project as a column of its own (so its issues show up).
 async fn create_status(state: &AppState, project: Uuid, name: &str, category: &str) -> ApiResult<Uuid> {
-    let id = new_id();
     let mut tx = state.db.begin().await?;
+    let id = create_status_in(&mut tx, project, name, category).await?;
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// [`create_status`] inside the caller's transaction.
+pub(crate) async fn create_status_in(tx: &mut sqlx::PgConnection, project: Uuid, name: &str, category: &str) -> ApiResult<Uuid> {
+    let id = new_id();
     let at: f64 = sqlx::query_scalar(
         "SELECT COALESCE(min(position) FILTER (WHERE category = 'done' AND $2 <> 'done'), max(position) + 1, 0)::float8 FROM statuses WHERE project_id = $1",
     )
@@ -180,7 +187,6 @@ async fn create_status(state: &AppState, project: Uuid, name: &str, category: &s
         cols.insert(at, json!({"id": new_id(), "name": name.trim(), "statusIds": [id], "wipLimit": null}));
         sqlx::query("UPDATE boards SET config = $2 WHERE id = $1").bind(board).bind(&config).execute(&mut *tx).await?;
     }
-    tx.commit().await?;
     Ok(id)
 }
 
@@ -299,9 +305,10 @@ pub async fn preview(State(state): State<AppState>, CurrentUser(user): CurrentUs
     Ok(Json(json!({"headers": headers, "rows": rows.iter().take(5).collect::<Vec<_>>(), "total": rows.len(), "mapping": mapping, "fields": FIELDS})))
 }
 
-struct Lookup {
-    statuses: Vec<(Uuid, String, String)>,
-    types: Vec<(Uuid, String, i16)>,
+#[derive(Default)]
+pub(crate) struct Lookup {
+    pub statuses: Vec<(Uuid, String, String)>,
+    pub types: Vec<(Uuid, String, i16)>,
     people: Vec<(Uuid, String, Option<String>)>,
     sprints: HashMap<String, Uuid>,
     versions: HashMap<String, Uuid>,
@@ -312,7 +319,7 @@ struct Lookup {
 impl Lookup {
     /// A status for an imported name: the same name, a status whose name starts it ("Selected
     /// for development" → "Selected"), or for done-like names the first done status.
-    fn status(&self, v: &str) -> Option<Uuid> {
+    pub fn status(&self, v: &str) -> Option<Uuid> {
         let l = v.trim().to_lowercase();
         if let Some(s) = self.statuses.iter().find(|s| s.1.to_lowercase() == l) {
             return Some(s.0);

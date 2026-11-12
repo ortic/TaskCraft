@@ -1,0 +1,276 @@
+//! Migration from another tracker's XML site backup (a `.zip` with `entities.xml`,
+//! `activeobjects.xml` and the attachments): people, projects, issues with their numbers,
+//! comments, time logs, attachments, links, watchers, labels, components, versions, sprints and
+//! the history the reports replay.
+//!
+//! Everything lands in one transaction: an import either happens completely or not at all, a dry
+//! run is the same import rolled back (without storing files), and rows that came from the
+//! backup are remembered in `import_sources`, so importing the same backup again skips them.
+//! Imports tell nobody: no e-mails, notifications, webhooks or automation.
+
+mod engine;
+pub mod jobs;
+pub mod read;
+pub mod source;
+mod text;
+
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
+
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+pub use engine::{run, summarize};
+pub use read::Backup;
+pub use source::Source;
+
+/// What happens to people of the backup who have no account here yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum People {
+    /// accounts for them, invited (people still active in the source) or deactivated; nobody is
+    /// e-mailed, invitations are sent from the people settings when it's time
+    #[default]
+    Invite,
+    /// accounts for them, all deactivated (their names stay on their work)
+    Deactivated,
+    /// no accounts: their work is imported without a person
+    Skip,
+}
+
+impl std::str::FromStr for People {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "invite" => Ok(People::Invite),
+            "deactivated" | "deactivate" => Ok(People::Deactivated),
+            "skip" => Ok(People::Skip),
+            _ => Err("people must be invite, deactivated or skip".into()),
+        }
+    }
+}
+
+/// What to do with one project of the backup.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "action")]
+pub enum Choice {
+    /// into the project with this key: an existing one, else a new one
+    Auto {
+        key: String,
+    },
+    /// a new project with this key (refused when the key is taken)
+    New {
+        key: String,
+    },
+    /// into this existing project
+    Into {
+        key: String,
+    },
+    Skip,
+}
+
+#[derive(Debug, Clone)]
+pub struct Options {
+    /// check everything, change nothing (no files stored either)
+    pub dry_run: bool,
+    pub people: People,
+    /// per source project key (upper case); projects not named here go to the same key
+    pub choices: BTreeMap<String, Choice>,
+    /// only these source projects (upper-case keys; empty: all)
+    pub only: Vec<String>,
+    /// the template of projects the import creates (default: from the source project)
+    pub template: Option<String>,
+    /// the time zone the backup's times are written in
+    pub time_zone: chrono_tz::Tz,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Options { dry_run: false, people: People::default(), choices: BTreeMap::new(), only: vec![], template: None, time_zone: chrono_tz::UTC }
+    }
+}
+
+/// How far an import is.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Progress {
+    /// reading | people | issues | links | saving
+    pub phase: String,
+    /// the project being imported (its new key)
+    pub project: Option<String>,
+    pub done: u64,
+    pub total: u64,
+}
+
+pub type ProgressHandle = Arc<Mutex<Progress>>;
+
+pub(crate) fn set_progress(p: &ProgressHandle, phase: &str, project: Option<&str>, done: u64, total: u64) {
+    if let Ok(mut g) = p.lock() {
+        *g = Progress { phase: phase.into(), project: project.map(str::to_string), done, total };
+    }
+}
+
+/// Imported (or, in a dry run, importable) and already there from an earlier import.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Count {
+    pub imported: u64,
+    pub existing: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectReport {
+    /// the key in the backup
+    pub source: String,
+    pub key: String,
+    pub name: String,
+    pub id: Option<Uuid>,
+    /// made by this import (else imported into an existing project)
+    pub created: bool,
+    pub skipped: bool,
+    /// issues, comments, worklogs, attachments, links, watchers, labels, history, components,
+    /// versions, sprints, statuses, types
+    pub counts: BTreeMap<String, Count>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Warning {
+    /// what happened (`missing-file`, `link-type`, …), for the web app to word it
+    pub code: String,
+    /// in English
+    pub message: String,
+    pub params: BTreeMap<String, String>,
+    /// how often
+    pub count: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Report {
+    pub dry_run: bool,
+    /// the source site's id (or a fingerprint of its projects)
+    pub origin: String,
+    /// matched, invited, deactivated, skipped
+    pub people: BTreeMap<String, u64>,
+    pub projects: Vec<ProjectReport>,
+    pub warnings: Vec<Warning>,
+}
+
+impl Report {
+    pub fn total(&self, what: &str) -> Count {
+        self.projects
+            .iter()
+            .filter_map(|p| p.counts.get(what))
+            .fold(Count::default(), |a, c| Count { imported: a.imported + c.imported, existing: a.existing + c.existing })
+    }
+}
+
+impl std::fmt::Display for Report {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", if self.dry_run { "Dry run: nothing was changed. The import would bring in:" } else { "Imported:" })?;
+        let p = |k: &str| self.people.get(k).copied().unwrap_or(0);
+        writeln!(
+            f,
+            "  people: {} matched to accounts here, {} invited, {} deactivated, {} left out",
+            p("matched"),
+            p("invited"),
+            p("deactivated"),
+            p("skipped")
+        )?;
+        for pr in &self.projects {
+            if pr.skipped {
+                writeln!(f, "\n{} → skipped", pr.source)?;
+                continue;
+            }
+            let how = if pr.created { "new project" } else { "existing project" };
+            writeln!(f, "\n{} → {} “{}” ({how})", pr.source, pr.key, pr.name)?;
+            for (what, c) in &pr.counts {
+                if c.imported == 0 && c.existing == 0 {
+                    continue;
+                }
+                if c.existing > 0 {
+                    writeln!(f, "  {what:<12} {:>7}   ({} already there)", c.imported, c.existing)?;
+                } else {
+                    writeln!(f, "  {what:<12} {:>7}", c.imported)?;
+                }
+            }
+        }
+        if !self.warnings.is_empty() {
+            writeln!(f, "\nWarnings:")?;
+            for w in &self.warnings {
+                if w.count > 1 {
+                    writeln!(f, "  - {} (×{})", w.message, w.count)?;
+                } else {
+                    writeln!(f, "  - {}", w.message)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// What a backup holds, for the check before an import.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Summary {
+    pub origin: String,
+    pub projects: Vec<ProjectSummary>,
+    pub people: PeopleSummary,
+    /// the attachment files the backup holds
+    pub files: u64,
+    pub has_sprints: bool,
+    pub warnings: Vec<Warning>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSummary {
+    pub key: String,
+    pub name: String,
+    pub former_keys: Vec<String>,
+    pub issues: u64,
+    pub comments: u64,
+    pub worklogs: u64,
+    pub attachments: u64,
+    /// attachments without their file in the backup
+    pub missing_files: u64,
+    pub links: u64,
+    pub sprints: u64,
+    pub history: u64,
+    /// a project with the same key here
+    pub existing: Option<ExistingProject>,
+    /// issues an earlier import of this backup brought in already
+    pub imported: u64,
+    /// whether the key works here (2–10 letters or digits, starting with a letter)
+    pub valid_key: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExistingProject {
+    pub key: String,
+    pub name: String,
+    pub issues: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeopleSummary {
+    /// people the projects' work refers to
+    pub total: u64,
+    /// of them, people with an account here (same e-mail address or name)
+    pub matched: u64,
+    pub active: u64,
+    pub inactive: u64,
+}
+
+/// Reads a backup's rows (and sprints when it has `activeobjects.xml`).
+pub fn load(source: &mut Source, tz: chrono_tz::Tz) -> anyhow::Result<Backup> {
+    let mut b = Backup::read(source.entities()?, tz)?;
+    if let Some(ao) = source.active_objects()? {
+        b.read_active_objects(ao, tz)?;
+    }
+    anyhow::ensure!(!b.projects.is_empty() || !b.issues.is_empty(), "the backup holds no projects");
+    Ok(b)
+}

@@ -140,6 +140,99 @@ test('dashboards and portfolio', async ({ page }) => {
   await a11y(page, 'main')
 })
 
+/** A zip archive (stored, not compressed) of the given files. */
+function zip(files: Record<string, string | Buffer>): Buffer {
+  const crc32 = (b: Buffer) => {
+    let crc = 0xffffffff
+    for (const byte of b) {
+      crc ^= byte
+      for (let k = 0; k < 8; k++) crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1
+    }
+    return (crc ^ 0xffffffff) >>> 0
+  }
+  const locals: Buffer[] = []
+  const central: Buffer[] = []
+  let offset = 0
+  for (const [name, content] of Object.entries(files)) {
+    const data = Buffer.isBuffer(content) ? content : Buffer.from(content)
+    const n = Buffer.from(name)
+    const crc = crc32(data)
+    const local = Buffer.alloc(30)
+    local.writeUInt32LE(0x04034b50, 0)
+    local.writeUInt16LE(20, 4)
+    local.writeUInt16LE(0x21, 12)
+    local.writeUInt32LE(crc, 14)
+    local.writeUInt32LE(data.length, 18)
+    local.writeUInt32LE(data.length, 22)
+    local.writeUInt16LE(n.length, 26)
+    const dir = Buffer.alloc(46)
+    dir.writeUInt32LE(0x02014b50, 0)
+    dir.writeUInt16LE(20, 4)
+    dir.writeUInt16LE(20, 6)
+    dir.writeUInt16LE(0x21, 14)
+    dir.writeUInt32LE(crc, 16)
+    dir.writeUInt32LE(data.length, 20)
+    dir.writeUInt32LE(data.length, 24)
+    dir.writeUInt16LE(n.length, 28)
+    dir.writeUInt32LE(offset, 42)
+    locals.push(local, n, data)
+    central.push(dir, n)
+    offset += local.length + n.length + data.length
+  }
+  const size = central.reduce((s, b) => s + b.length, 0)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(central.length / 2, 8)
+  end.writeUInt16LE(central.length / 2, 10)
+  end.writeUInt32LE(size, 12)
+  end.writeUInt32LE(offset, 16)
+  return Buffer.concat([...locals, ...central, end])
+}
+
+test('import a backup from another tracker', async ({ page }) => {
+  // a small synthetic XML site backup
+  const entities = `<?xml version="1.0" encoding="UTF-8"?>
+<entity-engine-xml>
+  <User id="1" userName="lee" lowerUserName="lee" active="1" displayName="Lee Legacy" emailAddress="lee@example.com"/>
+  <ApplicationUser id="1" userKey="u-lee" lowerUserName="lee"/>
+  <Project id="10" key="LEG" name="Legacy tracker" lead="u-lee" projecttype="software"/>
+  <IssueType id="1" name="Task"/>
+  <Status id="1" name="Open" statuscategory="2"/>
+  <Status id="2" name="Closed" statuscategory="3"/>
+  <Priority id="1" name="High" sequence="1"/>
+  <Issue id="100" project="10" number="1" type="1" status="2" priority="1" summary="Move the wiki" reporter="u-lee" created="2026-01-05 09:00:00.0" updated="2026-01-09 17:00:00.0" resolution="1" resolutiondate="2026-01-09 17:00:00.0"/>
+  <Issue id="101" project="10" number="2" type="1" status="1" priority="1" summary="Archive old releases" reporter="u-lee" assignee="u-lee" created="2026-01-06 09:00:00.0" updated="2026-01-06 09:00:00.0"><description>h2. Why
+Keep *only* what we use.</description></Issue>
+  <Action id="1" issue="101" author="u-lee" type="comment" created="2026-01-07 10:00:00.0" body="Started on it."/>
+  <FileAttachment id="7" issue="101" filename="list.txt" mimetype="text/plain" filesize="5" author="u-lee" created="2026-01-07 10:00:00.0"/>
+</entity-engine-xml>`
+  const backup = zip({ 'entities.xml': entities, 'data/attachments/LEG/10000/LEG-2/7': 'a\nb\nc' })
+  await login(page)
+  await page.goto('/projects')
+  await page.getByRole('link', { name: 'Import', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Import a backup from another tracker' })).toBeVisible()
+  await a11y(page, 'main')
+  await page.getByLabel('Choose the .zip file or drop it here').setInputFiles({ name: 'site-backup.zip', mimeType: 'application/zip', buffer: backup })
+  await page.getByRole('button', { name: 'Upload and check' }).click()
+  await expect(page.getByRole('heading', { name: 'What the backup holds' })).toBeVisible()
+  const row = page.getByRole('row', { name: /Legacy tracker/ })
+  await expect(row).toContainText('LEG')
+  await expect(page.getByLabel('Key of the new project for LEG')).toHaveValue('LEG')
+  await page.getByRole('radio', { name: /Keep them as deactivated accounts/ }).check()
+  await a11y(page, 'main')
+  await page.getByRole('button', { name: 'Import 2 issues' }).click()
+  await expect(page.getByRole('heading', { name: 'Import finished' })).toBeVisible()
+  // a reload keeps the result
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Import finished' })).toBeVisible()
+  await a11y(page, 'main')
+  await page.getByRole('link', { name: 'LEG · Legacy tracker' }).click()
+  await page.goto('/issues/LEG-2')
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Archive old releases')
+  await expect(page.locator('main').getByText('list.txt')).toBeVisible()
+  await expect(page.locator('main').getByText('Started on it.')).toBeVisible()
+})
+
 test('command palette finds issues', async ({ page }) => {
   await login(page)
   await page.keyboard.press('Control+k')
