@@ -320,6 +320,7 @@ taskcraft healthcheck  # probe a running server (container HEALTHCHECK)
 taskcraft backup FILE  # database + attachments into one .tar.gz (`-` writes to standard output)
 taskcraft restore FILE # into an empty database (`--force` replaces an existing workspace)
 taskcraft import-backup FILE   # another tracker's XML site backup (.zip or unpacked folder)
+taskcraft import-github REPO…  # issues from another tracker's API (see "Migrating from another tracker")
 ```
 
 ### Backup and restore
@@ -338,6 +339,21 @@ from the data directory into S3 or back.
 
 ### Migrating from another tracker
 
+*Administration → Import* (owners and administrators; also linked from *Projects* and from an
+empty workspace) brings projects over from **Jira** (its XML site backup) and from the APIs of
+**GitHub**. Every source goes the same way: TaskCraft reads it and shows what it holds (nothing
+changes yet), you choose per project — *a new project* (with a key), *an existing project* or
+*leave it out* — and what happens to people without an account here, *Test the import* runs it
+without changing anything, and *Import* runs it in the background (the page can be left and
+reloaded) and ends with a report and links to the projects. An import is one transaction: it
+lands completely or not at all. Imports tell nobody (no e-mails, notifications, webhooks or
+automation), and importing the same source again skips what's already there — so a later import
+brings in just the new issues. People are matched by e-mail address, then name; *prepare
+invitations* gives the others invited accounts (nobody is e-mailed; send the invitations from
+*Users*), *keep them as deactivated accounts* keeps their names on their work.
+
+#### Jira (XML site backup)
+
 Trackers that write an **XML site backup** — a `.zip` with `entities.xml`, often
 `activeobjects.xml` (boards and sprints) and the attachments under `data/attachments` — move over
 completely: people, projects, issues with their numbers, descriptions and comments (wiki markup
@@ -347,8 +363,7 @@ watchers, labels, components, fix versions, sprints, estimates and story points,
 status, assignee, priority, sprint, estimate and points changes with their times and authors, so
 burndown, velocity, cumulative flow, cycle time and created vs resolved show the past as it was.
 
-**In the browser** (owners and administrators): *Administration → Import* (also linked from
-*Projects* and from an empty workspace).
+**In the browser**: *Administration → Import*, *Jira (XML backup)*.
 
 1. Download the XML site backup from the other tracker (with attachments).
 2. Choose the `.zip` and *Upload and check*. Uploads go up to `TASKCRAFT_MAX_UPLOAD_MB`; the file is
@@ -381,10 +396,51 @@ in the target project, and every former key (renamed projects, issues moved in t
 another key here) keeps working as a link; types, statuses and priorities are matched by name
 (missing statuses and types are created and put on the boards); an issue with a resolution is
 done, resolved at its resolution date; one component and one fix version per issue (the first);
-values of other custom fields are reported, not imported. The whole import is one transaction: it
-lands completely or not at all. Imports tell nobody (no e-mails, notifications, webhooks or
-automation), and importing the same backup again skips what's already there — so a later, newer
-backup brings in just the new issues.
+values of other custom fields are reported, not imported.
+
+#### From an API: GitHub
+
+TaskCraft reads the projects through the tracker's REST API with a token you enter. The token is
+used for reading and, while importing, for downloading attachments — it is kept in memory for
+that and never stored or logged (after a reload of the page, enter it again). What was read is
+kept like an uploaded backup, a day at most. Requests go only to the server you name (and the
+hosts it keeps files on); servers on private or loopback addresses — an in-house server — are
+refused unless `TASKCRAFT_IMPORT_ALLOW_PRIVATE=true`. Rate limits are waited out (the progress
+says until when), and everything is read page by page.
+
+**GitHub** (github.com, or GitHub Enterprise Server by its address): a personal access token —
+fine-grained (repository access to the repositories, *Issues* and *Metadata*: read) or classic
+(`repo` for private repositories, none for public ones). Public repositories can also be read
+without a token, but GitHub then allows 60 requests an hour. Choose repositories as `owner/repo`
+or list an owner's (or the token's own) repositories. Each repository becomes a project (key
+from its name, e.g. `octo/web-shop` → `WEBSHOP`).
+
+| GitHub | TaskCraft |
+|---|---|
+| issue `#12` (pull requests are left out) | `KEY-12` (the number is kept when it's free) |
+| title, body (Markdown) | title, description: `@login` mentions point to the people, `#12` and `owner/repo#12` to the imported issues, files attached in the text (`user-attachments`) are downloaded into TaskCraft and the links point to them |
+| open / closed (completed, not planned, duplicate) | the first to-do status / the first done status with the resolution *Done*, *Won't do* or *Duplicate* |
+| issue type (organizations that use them), else a `bug` label | issue type (*Feature* and others are created), else *Bug* or *Task* |
+| labels, milestone (with its due date) | labels, release (closed milestones are released) |
+| assignees, author | the first assignee; the others watch; reporter |
+| comments | comments with their authors and dates |
+| sub-issues | parents |
+| timeline: closed, reopened, assigned, labeled, milestoned, renamed | history, so created vs resolved, cycle time and cumulative flow replay it |
+
+People are matched by their public e-mail address, then by name; others get accounts named after
+their GitHub name (or login). Not imported: pull requests, reactions, projects (boards) and their
+fields, locked conversations' state, and attachments of private repositories (GitHub serves those
+to signed-in browsers only — the import reports them and keeps the links).
+
+```bash
+export TASKCRAFT_IMPORT_TOKEN=github_pat_…        # not on the command line
+taskcraft import-github octo/web octo/api --dry-run
+taskcraft import-github octo/web --project octo/web=WEB --people deactivated
+taskcraft import-github --url https://github.example.com corp/portal
+```
+
+The command-line imports take the same options as `import-backup` (`--dry-run`, `--project
+OLD=NEW`, `--skip`, `--people`, `--template`, `--as`) and read and import in one go.
 
 ### Kubernetes
 
@@ -419,6 +475,7 @@ set it under `images:` in `kustomization.yaml`.
 | `TASKCRAFT_LOG_FORMAT` | `text` | `json` for log shippers |
 | `TASKCRAFT_METRICS_TOKEN` | — | bearer token for Prometheus at `/api/metrics` (off without one) |
 | `TASKCRAFT_WEBHOOK_ALLOW_PRIVATE` | `false` | let webhooks call private / loopback addresses |
+| `TASKCRAFT_IMPORT_ALLOW_PRIVATE` | `false` | let imports from other trackers' APIs reach servers on private / loopback addresses |
 | `TASKCRAFT_WIKICRAFT_URL` | — | WikiCraft for linked pages, project docs and generated pages |
 | `TASKCRAFT_WIKICRAFT_TOKEN` | — | WikiCraft API token used when a person hasn't connected their own |
 | `TASKCRAFT_AUTH_PROVIDERS` / `_FILE` | — | sign-in providers as a JSON list, or a file holding it (below) |

@@ -71,6 +71,11 @@ pub struct Config {
     #[arg(long, env = "TASKCRAFT_WEBHOOK_ALLOW_PRIVATE", default_value_t = false)]
     pub webhook_allow_private: bool,
 
+    /// Allow imports from other trackers' APIs on private / loopback addresses (a server in the
+    /// same network; off by default: SSRF protection).
+    #[arg(long, env = "TASKCRAFT_IMPORT_ALLOW_PRIVATE", default_value_t = false)]
+    pub import_allow_private: bool,
+
     /// WikiCraft for documentation next to the work: linked pages with live titles, a project's
     /// wiki space, pages created from issues, sprints and releases. E.g. `https://wiki.example.com`.
     #[arg(long, env = "TASKCRAFT_WIKICRAFT_URL")]

@@ -384,6 +384,7 @@ pub fn id_order(a: &str, b: &str) -> std::cmp::Ordering {
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// The file of an attachment.
+#[derive(Debug)]
 pub struct File {
     pub data: Vec<u8>,
     /// its type, when the source says

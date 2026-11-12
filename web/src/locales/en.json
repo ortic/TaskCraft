@@ -1,4 +1,12 @@
 {
+  "{count} confidential issues": {
+    "one": "{count} confidential issue",
+    "other": "{count} confidential issues"
+  },
+  "{count} open issues": {
+    "one": "{count} open issue",
+    "other": "{count} open issues"
+  },
   "{count} days": {
     "one": "{count} day",
     "other": "{count} days"

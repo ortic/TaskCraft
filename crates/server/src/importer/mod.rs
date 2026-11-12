@@ -1,13 +1,17 @@
 //! Migration from other trackers: their data read into one source-neutral [`model::Model`]
 //! (people, projects, issues with their fields, history, comments, time logs, attachments, links,
-//! …) and written here by one engine. Producers: an XML site backup ([`crate::site_backup`]).
+//! …) and written here by one engine. Producers: an XML site backup ([`crate::site_backup`]) and
+//! the REST API of GitHub ([`github`]), connected to with [`api`] over [`http`].
 //!
 //! Everything lands in one transaction: an import either happens completely or not at all, a dry
 //! run is the same import rolled back (without storing files), and rows that came from a source
 //! are remembered in `import_sources`, so importing the same source again skips them. Imports
 //! tell nobody: no e-mails, notifications, webhooks or automation.
 
+pub mod api;
 mod engine;
+pub mod github;
+pub mod http;
 pub mod jobs;
 pub mod model;
 pub(crate) mod text;
@@ -305,6 +309,21 @@ pub struct PeopleSummary {
     pub matched: u64,
     pub active: u64,
     pub inactive: u64,
+}
+
+/// A project of an API source to choose from.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Available {
+    /// how it's asked for (`owner/repo`, `group/project`, an identifier)
+    pub key: String,
+    pub name: String,
+    pub description: Option<String>,
+    /// open issues, when the source says
+    pub issues: Option<u64>,
+    pub private: bool,
+    /// the project it belongs to (subprojects)
+    pub parent: Option<String>,
 }
 
 /// A project key that works here made from a source's name (`my-cool-repo` → `MYCOOLREPO`).

@@ -11941,6 +11941,165 @@
     ]
    }
   },
+  "/admin/backup-imports/connect": {
+   "post": {
+    "tags": [
+     "Backup import"
+    ],
+    "summary": "Read projects from another tracker's API and check them in the background",
+    "operationId": "connectImportSource",
+    "description": "Answers at once with the job in `checking` while the projects are read (issues, comments, history, people; attachments are downloaded later, while importing). Requests go to the given server only; private and loopback addresses are refused unless TASKCRAFT_IMPORT_ALLOW_PRIVATE allows them; rate limits are waited out (progress phase `waiting`). What was read is kept for a day at most; the token is never stored. One import at a time (409). Workspace owners and admins, in the browser (API tokens are refused).",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ImportConnection"
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "Connected; being read",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BackupImport"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    },
+    "security": [
+     {
+      "session": []
+     }
+    ]
+   }
+  },
+  "/admin/backup-imports/browse": {
+   "post": {
+    "tags": [
+     "Backup import"
+    ],
+    "summary": "Projects of another tracker's API to choose from",
+    "operationId": "browseImportSource",
+    "description": "The token's own repositories or projects, or those of an owner (user, organization, group); at most 300. 400 with the source's answer when it refuses. Workspace owners and admins, in the browser (API tokens are refused).",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "source": {
+          "type": "string",
+          "enum": [
+           "github"
+          ],
+          "description": "the tracker whose API is read"
+         },
+         "baseUrl": {
+          "type": "string"
+         },
+         "token": {
+          "type": "string"
+         },
+         "owner": {
+          "type": "string",
+          "description": "a user, organization or group"
+         }
+        },
+        "required": [
+         "source"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "projects": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "key": {
+              "type": "string"
+             },
+             "name": {
+              "type": "string"
+             },
+             "description": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "issues": {
+              "type": "integer",
+              "description": "open issues, when the source says"
+             },
+             "private": {
+              "type": "boolean"
+             },
+             "parent": {
+              "type": [
+               "string",
+               "null"
+              ]
+             }
+            },
+            "required": [
+             "key",
+             "name"
+            ]
+           }
+          }
+         },
+         "required": [
+          "projects"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    },
+    "security": [
+     {
+      "session": []
+     }
+    ]
+   }
+  },
   "/health": {
    "get": {
     "tags": [
@@ -19033,6 +19192,14 @@
    "BackupSummary": {
     "type": "object",
     "properties": {
+     "source": {
+      "type": "string",
+      "enum": [
+       "xml-site-backup",
+       "github"
+      ],
+      "description": "where the import comes from"
+     },
      "origin": {
       "type": "string",
       "description": "the source site's id (or a fingerprint of its projects)"
@@ -19043,7 +19210,12 @@
        "type": "object",
        "properties": {
         "key": {
-         "type": "string"
+         "type": "string",
+         "description": "the project's key in the source (or its path, owner/repo)"
+        },
+        "suggestedKey": {
+         "type": "string",
+         "description": "a key that works here, proposed for a new project"
         },
         "name": {
          "type": "string"
@@ -19053,6 +19225,13 @@
          "items": {
           "type": "string"
          }
+        },
+        "parent": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "the source project's parent (subprojects)"
         },
         "issues": {
          "type": "integer"
@@ -19078,6 +19257,10 @@
         },
         "history": {
          "type": "integer"
+        },
+        "confidential": {
+         "type": "integer",
+         "description": "issues only some could see in the source"
         },
         "existing": {
          "type": [
@@ -19145,10 +19328,22 @@
      },
      "files": {
       "type": "integer",
-      "description": "attachment files the backup holds"
+      "description": "attachment files the source holds"
      },
      "hasSprints": {
       "type": "boolean"
+     },
+     "markup": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "textile",
+       "markdown",
+       null
+      ],
+      "description": "sources whose markup is a server setting: how the texts are read (found from them)"
      },
      "warnings": {
       "type": "array",
@@ -19191,7 +19386,7 @@
      "hasSprints",
      "warnings"
     ],
-    "description": "What an uploaded backup holds, for the choices before importing."
+    "description": "What an uploaded backup or a source read through its API holds, for the choices before importing."
    },
    "BackupImportReport": {
     "type": "object",
@@ -19239,6 +19434,13 @@
         "skipped": {
          "type": "boolean"
         },
+        "parent": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "the source project's parent (subprojects)"
+        },
         "counts": {
          "type": "object",
          "additionalProperties": {
@@ -19257,7 +19459,7 @@
            "existing"
           ]
          },
-         "description": "by kind: issues, comments, worklogs, attachments, links, watchers, labels, history, components, versions, sprints, statuses, types"
+         "description": "by kind: issues, comments, worklogs, attachments, links, parents, watchers, labels, history, components, versions, sprints, statuses, types, fields, confidential"
         }
        },
        "required": [
@@ -19412,9 +19614,61 @@
      "timeZone": {
       "type": "string",
       "description": "IANA time zone the backup's times are written in (default UTC)"
+     },
+     "token": {
+      "type": "string",
+      "description": "API sources: the token again (attachments are downloaded while importing; required when the connection had one, except for dry runs). Never stored."
+     },
+     "markup": {
+      "type": "string",
+      "enum": [
+       "textile",
+       "markdown"
+      ],
+      "description": "API sources whose markup is a server setting: how texts are written (default: what the check found)"
      }
     },
     "description": "The choices for an import."
+   },
+   "ImportConnection": {
+    "type": "object",
+    "properties": {
+     "source": {
+      "type": "string",
+      "enum": [
+       "github"
+      ],
+      "description": "the tracker whose API is read"
+     },
+     "baseUrl": {
+      "type": "string",
+      "description": "the server's address (GitHub: empty for github.com, else the Enterprise address)"
+     },
+     "token": {
+      "type": "string",
+      "description": "a personal access token or API key with read access; used for this request only, never stored"
+     },
+     "projects": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "repositories or projects to read: owner/repo, group/project or identifiers (1 to 50)"
+     },
+     "markup": {
+      "type": "string",
+      "enum": [
+       "textile",
+       "markdown"
+      ],
+      "description": "how texts are written, when the server doesn't say"
+     }
+    },
+    "required": [
+     "source",
+     "projects"
+    ],
+    "description": "Another tracker's API to read projects from."
    },
    "BackupImport": {
     "type": "object",
@@ -19423,8 +19677,45 @@
       "type": "string",
       "format": "uuid"
      },
+     "source": {
+      "type": "string",
+      "enum": [
+       "xml-site-backup",
+       "github"
+      ],
+      "description": "where the import comes from"
+     },
+     "connection": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "baseUrl": {
+        "type": "string"
+       },
+       "projects": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "token": {
+        "type": "boolean",
+        "description": "a token was given (it isn't kept)"
+       },
+       "markup": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      },
+      "description": "API sources: what was asked for"
+     },
      "fileName": {
-      "type": "string"
+      "type": "string",
+      "description": "the backup's file name, or the source and its projects"
      },
      "size": {
       "type": "integer",
@@ -19566,6 +19857,8 @@
         "type": "string",
         "enum": [
          "reading",
+         "fetching",
+         "waiting",
          "people",
          "issues",
          "links",
@@ -19577,13 +19870,18 @@
          "string",
          "null"
         ],
-        "description": "the project being imported (its new key)"
+        "description": "the project being read or imported"
        },
        "done": {
         "type": "integer"
        },
        "total": {
         "type": "integer"
+       },
+       "until": {
+        "type": "string",
+        "format": "date-time",
+        "description": "waiting: when the source's rate limit lets requests through again"
        }
       },
       "required": [
@@ -19613,7 +19911,7 @@
      },
      "fileKept": {
       "type": "boolean",
-      "description": "the uploaded file is still there (removed after a real import, else after a day)"
+      "description": "the uploaded file (or what was read) is still there (removed after a real import, else after a day)"
      },
      "createdAt": {
       "type": "string",
@@ -19652,7 +19950,7 @@
      "finishedAt",
      "expiresAt"
     ],
-    "description": "An upload of another tracker's XML site backup and its import."
+    "description": "An upload of another tracker's XML site backup, or a connection to its API, and the import."
    }
   }
  }

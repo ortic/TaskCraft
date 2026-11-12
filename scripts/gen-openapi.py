@@ -2528,15 +2528,20 @@ D_WARNING = obj(
     },
     ["code", "message", "params", "count"],
 )
+D_API_SOURCE = enum("github", desc="the tracker whose API is read")
+D_IMPORT_SOURCE = enum("xml-site-backup", "github", desc="where the import comes from")
 schemas["BackupSummary"] = obj(
     {
+        "source": D_IMPORT_SOURCE,
         "origin": d(txt, "the source site's id (or a fingerprint of its projects)"),
         "projects": arr(
             obj(
                 {
-                    "key": txt,
+                    "key": d(txt, "the project's key in the source (or its path, owner/repo)"),
+                    "suggestedKey": d(txt, "a key that works here, proposed for a new project"),
                     "name": txt,
                     "formerKeys": arr(txt),
+                    "parent": ntxt("the source project's parent (subprojects)"),
                     "issues": num,
                     "comments": num,
                     "worklogs": num,
@@ -2545,6 +2550,7 @@ schemas["BackupSummary"] = obj(
                     "links": num,
                     "sprints": num,
                     "history": num,
+                    "confidential": d(num, "issues only some could see in the source"),
                     "existing": null(obj({"key": txt, "name": txt, "issues": num}, ["key", "name", "issues"]), "a project with the same key here"),
                     "imported": d(num, "issues an earlier import of this backup brought in already"),
                     "validKey": d(boolean, "the key works here (2–10 letters or digits, starting with a letter)"),
@@ -2561,12 +2567,13 @@ schemas["BackupSummary"] = obj(
             },
             ["total", "matched", "active", "inactive"],
         ),
-        "files": d(num, "attachment files the backup holds"),
+        "files": d(num, "attachment files the source holds"),
         "hasSprints": boolean,
+        "markup": null(enum("textile", "markdown"), "sources whose markup is a server setting: how the texts are read (found from them)"),
         "warnings": arr(D_WARNING),
     },
     ["origin", "projects", "people", "files", "hasSprints", "warnings"],
-    "What an uploaded backup holds, for the choices before importing.",
+    "What an uploaded backup or a source read through its API holds, for the choices before importing.",
 )
 schemas["BackupImportReport"] = obj(
     {
@@ -2582,9 +2589,10 @@ schemas["BackupImportReport"] = obj(
                     "id": nuuid(),
                     "created": d(boolean, "made by this import (else imported into an existing project)"),
                     "skipped": boolean,
+                    "parent": ntxt("the source project's parent (subprojects)"),
                     "counts": d(
                         {"type": "object", "additionalProperties": D_COUNT},
-                        "by kind: issues, comments, worklogs, attachments, links, watchers, labels, history, components, versions, sprints, statuses, types",
+                        "by kind: issues, comments, worklogs, attachments, links, parents, watchers, labels, history, components, versions, sprints, statuses, types, fields, confidential",
                     ),
                 },
                 ["source", "key", "name", "created", "skipped", "counts"],
@@ -2609,13 +2617,31 @@ schemas["BackupImportRun"] = obj(
         "people": D_PEOPLE,
         "dryRun": d(boolean, "run the whole import and roll it back: nothing changes"),
         "timeZone": d(txt, "IANA time zone the backup's times are written in (default UTC)"),
+        "token": d(txt, "API sources: the token again (attachments are downloaded while importing; required when the connection had one, except for dry runs). Never stored."),
+        "markup": enum("textile", "markdown", desc="API sources whose markup is a server setting: how texts are written (default: what the check found)"),
     },
     desc="The choices for an import.",
+)
+schemas["ImportConnection"] = obj(
+    {
+        "source": D_API_SOURCE,
+        "baseUrl": d(txt, "the server's address (GitHub: empty for github.com, else the Enterprise address)"),
+        "token": d(txt, "a personal access token or API key with read access; used for this request only, never stored"),
+        "projects": arr(txt, "repositories or projects to read: owner/repo, group/project or identifiers (1 to 50)"),
+        "markup": enum("textile", "markdown", desc="how texts are written, when the server doesn't say"),
+    },
+    ["source", "projects"],
+    "Another tracker's API to read projects from.",
 )
 schemas["BackupImport"] = obj(
     {
         "id": uuid,
-        "fileName": txt,
+        "source": D_IMPORT_SOURCE,
+        "connection": null(
+            obj({"baseUrl": txt, "projects": arr(txt), "token": d(boolean, "a token was given (it isn't kept)"), "markup": ntxt()}),
+            "API sources: what was asked for",
+        ),
+        "fileName": d(txt, "the backup's file name, or the source and its projects"),
         "size": d(num, "bytes"),
         "status": enum(
             "checking", "checked", "running", "done", "failed", desc="checking: being read after the upload; checked: ready to import; running: importing; done; failed (see error)"
@@ -2628,10 +2654,11 @@ schemas["BackupImport"] = obj(
         "progress": null(
             obj(
                 {
-                    "phase": enum("reading", "people", "issues", "links", "saving"),
-                    "project": ntxt("the project being imported (its new key)"),
+                    "phase": enum("reading", "fetching", "waiting", "people", "issues", "links", "saving"),
+                    "project": ntxt("the project being read or imported"),
                     "done": num,
                     "total": num,
+                    "until": d(dt, "waiting: when the source's rate limit lets requests through again"),
                 },
                 ["phase", "done", "total"],
             ),
@@ -2639,14 +2666,14 @@ schemas["BackupImport"] = obj(
         ),
         "report": null(S("BackupImportReport"), "after a run"),
         "error": ntxt("why it failed"),
-        "fileKept": d(boolean, "the uploaded file is still there (removed after a real import, else after a day)"),
+        "fileKept": d(boolean, "the uploaded file (or what was read) is still there (removed after a real import, else after a day)"),
         "createdAt": dt,
         "updatedAt": dt,
         "finishedAt": ndt(),
         "expiresAt": d(dt, "when the uploaded file is removed at the latest"),
     },
     ["id", "fileName", "size", "status", "summary", "options", "progress", "report", "error", "fileKept", "createdAt", "updatedAt", "finishedAt", "expiresAt"],
-    "An upload of another tracker's XML site backup and its import.",
+    "An upload of another tracker's XML site backup, or a connection to its API, and the import.",
 )
 
 # ---- Integrations (WikiCraft, Git) ----
@@ -2884,6 +2911,15 @@ op("post", "/admin/backup-imports/{id}/run", "runBackupImport", "Backup import",
    "progress and the report. " + D_BACKUP_NOTE,
    auth="session", pp={"id": (uuid, "import id")}, req=body(S("BackupImportRun")),
    res=ok(S("BackupImport"), "Started", "202"), err="409")
+op("post", "/admin/backup-imports/connect", "connectImportSource", "Backup import", "Read projects from another tracker's API and check them in the background",
+   desc="Answers at once with the job in `checking` while the projects are read (issues, comments, history, people; attachments are downloaded later, while importing). "
+   "Requests go to the given server only; private and loopback addresses are refused unless TASKCRAFT_IMPORT_ALLOW_PRIVATE allows them; rate limits are waited out (progress phase `waiting`). "
+   "What was read is kept for a day at most; the token is never stored. One import at a time (409). " + D_BACKUP_NOTE,
+   auth="session", req=body(S("ImportConnection")), res=ok(S("BackupImport"), "Connected; being read", "202"), err="409")
+op("post", "/admin/backup-imports/browse", "browseImportSource", "Backup import", "Projects of another tracker's API to choose from",
+   desc="The token's own repositories or projects, or those of an owner (user, organization, group); at most 300. 400 with the source's answer when it refuses. " + D_BACKUP_NOTE,
+   auth="session", req=body(obj({**{"source": D_API_SOURCE, "baseUrl": txt, "token": txt}, "owner": d(txt, "a user, organization or group")}, ["source"])),
+   res=ok(obj({"projects": arr(obj({"key": txt, "name": txt, "description": ntxt(), "issues": d(num, "open issues, when the source says"), "private": boolean, "parent": ntxt()}, ["key", "name"]))}, ["projects"])))
 
 # ==== Operations ====
 

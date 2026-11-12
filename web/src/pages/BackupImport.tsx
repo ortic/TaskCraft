@@ -1,10 +1,12 @@
-// Administration → Import: a backup from another tracker (its XML site backup, a .zip) uploaded,
-// checked by the server, the projects and people decided on, then imported in the background.
+// Administration → Import: from another tracker. Its XML site backup (a .zip) is uploaded, or
+// TaskCraft connects to its API with a token and reads the projects chosen; either way the
+// server checks what it got, the projects and people are decided on, then it's imported in the
+// background. Tokens stay in this page's memory and are sent with the requests that need them.
 import { t, locale } from '../i18n'
-import { useEffect, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArchiveRestore, CircleCheck, CircleX, FileArchive, FolderKanban, RotateCcw, TriangleAlert, Upload } from 'lucide-react'
+import { ArchiveRestore, CircleCheck, CircleX, FileArchive, FolderKanban, ListChecks, Plug, Plus, RotateCcw, TriangleAlert, Upload, X } from 'lucide-react'
 import { api, ago, ApiError, dateTime } from '../api'
 import { Confirm, ErrorBox, Loading, Spinner, useProjects, useToast } from '../ui'
 import './BackupImport.css'
@@ -18,8 +20,10 @@ interface Warning {
 
 interface ProjectSummary {
   key: string
+  suggestedKey?: string
   name: string
   formerKeys: string[]
+  parent?: string | null
   issues: number
   comments: number
   worklogs: number
@@ -28,16 +32,21 @@ interface ProjectSummary {
   links: number
   sprints: number
   history: number
+  confidential?: number
   existing: { key: string; name: string; issues: number } | null
   imported: number
   validKey: boolean
 }
 
+type Markup = 'textile' | 'markdown'
+
 interface Summary {
+  source?: string
   projects: ProjectSummary[]
   people: { total: number; matched: number; active: number; inactive: number }
   files: number
   hasSprints: boolean
+  markup?: Markup | null
   warnings: Warning[]
 }
 
@@ -53,6 +62,7 @@ interface ProjectReport {
   id: string | null
   created: boolean
   skipped: boolean
+  parent?: string | null
   counts: Record<string, Count>
 }
 
@@ -68,18 +78,25 @@ interface Progress {
   project: string | null
   done: number
   total: number
+  until?: string | null
 }
 
 type Choice = { action: 'new'; key: string } | { action: 'into'; key: string } | { action: 'skip' }
 type People = 'invite' | 'deactivated'
 
+/** Where an import comes from: an uploaded backup or another tracker's API. */
+type Source = 'xml-site-backup' | 'github'
+type ApiSource = Exclude<Source, 'xml-site-backup'>
+
 interface Job {
   id: string
+  source?: Source
+  connection?: { baseUrl: string; projects: string[]; token: boolean; markup?: Markup | null } | null
   fileName: string
   size: number
   status: 'checking' | 'checked' | 'running' | 'done' | 'failed'
   summary: Summary | null
-  options: { projects: Record<string, Choice>; people: People; dryRun: boolean } | null
+  options: { projects: Record<string, Choice>; people: People; dryRun: boolean; markup?: Markup | null } | null
   progress: Progress | null
   report: Report | null
   error: string | null
@@ -94,6 +111,43 @@ interface Jobs {
   maxUploadMb: number
 }
 
+interface Available {
+  key: string
+  name: string
+  description: string | null
+  issues: number | null
+  private: boolean
+  parent: string | null
+}
+
+/** The trackers an import can come from (names on this screen only). */
+const SOURCES: { id: Source; label: () => string }[] = [
+  { id: 'xml-site-backup', label: () => t('{tool} (XML backup)', { tool: 'Jira' }) },
+  { id: 'github', label: () => 'GitHub' },
+]
+
+const sourceName = (s: Source | undefined) => SOURCES.find((x) => x.id === s)?.label() ?? ''
+const isApi = (s: Source | undefined): s is ApiSource => !!s && s !== 'xml-site-backup'
+
+/** What the connect form asks for, per API source. */
+function apiFields(s: ApiSource) {
+  switch (s) {
+    case 'github':
+      return {
+        url: t('Address'),
+        urlHint: t('Leave it empty for github.com; for GitHub Enterprise, its address.'),
+        urlPlaceholder: 'https://github.com',
+        urlRequired: false,
+        token: t('Personal access token'),
+        tokenHint: t('Fine-grained or classic; reading is enough (issues and metadata). Public repositories can be read without one, but slowly.'),
+        projects: t('Repositories'),
+        projectPlaceholder: 'owner/repo',
+        owner: t('Owner (user or organization)'),
+        list: t('Show repositories'),
+      }
+  }
+}
+
 const busy = (j: Job | undefined) => j?.status === 'checking' || j?.status === 'running'
 
 function bytes(n: number): string {
@@ -105,7 +159,7 @@ function bytes(n: number): string {
 function warningText(w: Warning): string {
   const p = w.params
   switch (w.code) {
-    case 'people-unlisted': return t('People the backup names but doesn’t list (removed from the other tracker) become deactivated accounts')
+    case 'people-unlisted': return t('People the source names but doesn’t list (removed from it) become deactivated accounts')
     case 'sprints-no-dates': return t('Sprints without their dates in the backup are imported as future sprints')
     case 'no-sprint-dates': return t('The backup has no activeobjects.xml: sprints come without their dates')
     case 'number-taken': return t('{key} is taken in {project}: the issue gets a new number (its old key keeps working)', { key: p.key, project: p.project })
@@ -113,16 +167,22 @@ function warningText(w: Warning): string {
     case 'several-components': return t('Issues with several components keep the first one')
     case 'several-versions': return t('Issues with several fix versions keep the first one')
     case 'missing-file': return t('Attachments whose file isn’t in the backup are left out')
+    case 'missing-download': return t('Attachments whose file couldn’t be found in the source are left out')
     case 'file-too-large': return t('Attachments larger than the upload limit ({mb} MB) are left out', { mb: p.mb })
     case 'unreadable-file': return t('An attachment couldn’t be read: {error}', { error: p.error })
     case 'empty-comment': return t('Empty comments are left out')
     case 'restricted-comments': return t('Comments only a group or role could see are visible to everyone who can see the project')
+    case 'confidential': return t('Confidential issues are visible to everyone who can see the project')
     case 'link-type': return t('Links of the type “{name}” are imported as “relates to”', { name: p.name })
     case 'subtask-parent': return t('Sub-tasks can’t have children here: such parent links are left out')
     case 'parent-cycle': return t('Parent links that would go round in a circle are left out')
     case 'links-outside': return t('Links to issues of projects that aren’t imported are left out')
     case 'affects-versions': return t('Affected versions aren’t kept (an issue has one release here: its fix version)')
     case 'other-fields': return t('Values of other custom fields aren’t imported')
+    case 'field-value': return t('Values that don’t fit the field {name} are left out', { name: p.name })
+    case 'no-token': return t('Without a token GitHub allows 60 requests an hour: reading more than a small repository takes long (the import waits for the limit)')
+    case 'issues-off': return t('{project} has its issues turned off', { project: p.project })
+    case 'pull-requests': return t('Pull requests aren’t imported, only issues')
     default: return w.message
   }
 }
@@ -144,6 +204,9 @@ function Warnings({ list }: { list: Warning[] }) {
 export function BackupImportTab() {
   const qc = useQueryClient()
   const [another, setAnother] = useState(false)
+  const [source, setSource] = useState<Source>('xml-site-backup')
+  // tokens by job, in this page's memory only: needed again to download attachments
+  const [tokens, setTokens] = useState<Record<string, string>>({})
   const jobs = useQuery({
     queryKey: ['admin', 'backup-imports'],
     queryFn: () => api.get<Jobs>('/admin/backup-imports'),
@@ -159,15 +222,49 @@ export function BackupImportTab() {
   return (
     <div className="bi">
       <p className="adm-intro muted">
-        {t('Moving from another tracker? Download its XML site backup (a .zip with entities.xml and the attachments) and upload it here. TaskCraft checks it and shows what it holds; nothing changes until you start the import. People, projects, issues with their numbers, comments, time logs, attachments, links, watchers, components, releases, sprints and the history the reports need come along. Nobody gets an e-mail.')}
+        {showCurrent || !isApi(source)
+          ? t('Moving from another tracker? Download its XML site backup (a .zip with entities.xml and the attachments) and upload it here, or connect to its API. TaskCraft checks what it gets and shows it; nothing changes until you start the import. People, projects, issues with their numbers, comments, time logs, attachments, links, watchers, components, releases, sprints and the history the reports need come along. Nobody gets an e-mail.')
+          : t('TaskCraft connects to {source} with a token that can read the projects, reads them and shows what they hold; nothing changes until you start the import. Issues with their numbers, comments, labels, assignees, releases, history and attached files come along. The token is only used while reading and importing and isn’t stored. Nobody gets an e-mail.', { source: sourceName(source) })}
       </p>
       {showCurrent ? (
-        <CurrentImport job={current} onChanged={refresh} onAnother={() => setAnother(true)} />
+        <CurrentImport job={current} token={tokens[current.id] ?? ''} onToken={(v) => setTokens((all) => ({ ...all, [current.id]: v }))} onChanged={refresh} onAnother={() => setAnother(true)} />
       ) : (
-        <UploadCard maxMb={jobs.data?.maxUploadMb ?? 256} onUploaded={() => { setAnother(false); refresh() }} />
+        <>
+          <SourcePicker value={source} onChange={setSource} />
+          {isApi(source) ? (
+            <ConnectCard
+              key={source}
+              source={source}
+              onConnected={(id, token) => {
+                setTokens((all) => ({ ...all, [id]: token }))
+                setAnother(false)
+                refresh()
+              }}
+            />
+          ) : (
+            <UploadCard maxMb={jobs.data?.maxUploadMb ?? 256} onUploaded={() => { setAnother(false); refresh() }} />
+          )}
+        </>
       )}
       {list.length > (showCurrent ? 1 : 0) && <EarlierImports jobs={showCurrent ? list.slice(1) : list} />}
     </div>
+  )
+}
+
+function SourcePicker({ value, onChange }: { value: Source; onChange: (s: Source) => void }) {
+  return (
+    <fieldset className="bi-sources">
+      <legend>{t('Import from')}</legend>
+      <div className="bi-source-list">
+        {SOURCES.map((s) => (
+          <label key={s.id} className={`bi-source ${value === s.id ? 'on' : ''}`}>
+            <input type="radio" name="bi-source" value={s.id} checked={value === s.id} onChange={() => onChange(s.id)} />
+            {isApi(s.id) ? <Plug size={14} /> : <FileArchive size={14} />}
+            <span>{s.label()}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
   )
 }
 
@@ -258,6 +355,137 @@ function UploadCard({ maxMb, onUploaded }: { maxMb: number; onUploaded: () => vo
   )
 }
 
+/** The address, a token and the projects to read from another tracker's API. */
+function ConnectCard({ source, onConnected }: { source: ApiSource; onConnected: (id: string, token: string) => void }) {
+  const f = apiFields(source)
+  const [url, setUrl] = useState('')
+  const [token, setToken] = useState('')
+  const [owner, setOwner] = useState('')
+  const [entry, setEntry] = useState('')
+  const [chosen, setChosen] = useState<string[]>([])
+  const [available, setAvailable] = useState<Available[] | null>(null)
+  const [listing, setListing] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const id = `bi-${source}`
+  const add = (k: string) => {
+    const v = k.trim().replace(/^\/+|\/+$/g, '')
+    if (v && !chosen.includes(v)) setChosen((c) => [...c, v])
+  }
+  const toggle = (k: string) => setChosen((c) => (c.includes(k) ? c.filter((x) => x !== k) : [...c, k]))
+  const connection = () => ({ source, baseUrl: url.trim(), token: token.trim() || null })
+  const list = async () => {
+    setListing(true)
+    setError(null)
+    try {
+      const r = await api.post<{ projects: Available[] }>('/admin/backup-imports/browse', { ...connection(), owner: owner.trim() || null })
+      setAvailable(r.projects)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e))
+    } finally {
+      setListing(false)
+    }
+  }
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    const all = [...chosen]
+    if (entry.trim() && !all.includes(entry.trim())) all.push(entry.trim())
+    if (!all.length) {
+      setError(t('Choose at least one project to read.'))
+      return
+    }
+    setSending(true)
+    setError(null)
+    try {
+      const job = await api.post<Job>('/admin/backup-imports/connect', { ...connection(), projects: all })
+      onConnected(job.id, token.trim())
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e))
+    } finally {
+      setSending(false)
+    }
+  }
+  return (
+    <form className="adm-card bi-card" onSubmit={submit}>
+      <div className="adm-card-head">
+        <h2><Plug size={16} /> {t('Connect to {source}', { source: sourceName(source) })}</h2>
+        <p className="muted small">{t('Read access is enough. The token is used while reading and importing only; it isn’t stored.')}</p>
+      </div>
+      <div className="adm-card-body bi-connect">
+        <div className="field">
+          <label htmlFor={`${id}-url`}>{f.url}{!f.urlRequired && <span className="faint"> {t('(optional)')}</span>}</label>
+          <input id={`${id}-url`} className="input" type="url" inputMode="url" placeholder={f.urlPlaceholder} value={url} required={f.urlRequired} onChange={(e) => setUrl(e.target.value)} aria-describedby={`${id}-url-hint`} />
+          <span id={`${id}-url-hint`} className="faint small">{f.urlHint}</span>
+        </div>
+        <div className="field">
+          <label htmlFor={`${id}-token`}>{f.token}</label>
+          <input id={`${id}-token`} className="input" type="password" autoComplete="off" spellCheck={false} value={token} onChange={(e) => setToken(e.target.value)} aria-describedby={`${id}-token-hint`} />
+          <span id={`${id}-token-hint`} className="faint small">{f.tokenHint}</span>
+        </div>
+        <fieldset className="bi-projects">
+          <legend>{f.projects}</legend>
+          {chosen.length > 0 && (
+            <ul className="bi-chosen" aria-label={t('Chosen projects')}>
+              {chosen.map((k) => (
+                <li key={k}>
+                  <span className="issue-key">{k}</span>
+                  <button type="button" className="icon-btn" aria-label={t('Remove {name}', { name: k })} onClick={() => toggle(k)}><X size={13} /></button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="bi-add">
+            <input
+              className="input"
+              aria-label={t('Add a project by name')}
+              placeholder={f.projectPlaceholder}
+              value={entry}
+              onChange={(e) => setEntry(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  add(entry)
+                  setEntry('')
+                }
+              }}
+            />
+            <button type="button" className="btn" disabled={!entry.trim()} onClick={() => { add(entry); setEntry('') }}><Plus size={14} /> {t('Add')}</button>
+          </div>
+          <div className="bi-add">
+            <input className="input" aria-label={f.owner} placeholder={f.owner} value={owner} onChange={(e) => setOwner(e.target.value)} />
+            <button type="button" className="btn" disabled={listing} onClick={list}>{listing ? <Spinner size={14} /> : <ListChecks size={14} />} {f.list}</button>
+          </div>
+          {available && (
+            available.length === 0 ? (
+              <p className="faint small">{t('Nothing to choose from here.')}</p>
+            ) : (
+              <ul className="bi-available">
+                {available.map((a) => (
+                  <li key={a.key}>
+                    <label className="bi-radio">
+                      <input type="checkbox" checked={chosen.includes(a.key)} onChange={() => toggle(a.key)} />
+                      <span>
+                        <strong>{a.key}</strong>
+                        <span className="faint small">
+                          {[a.parent && t('in {parent}', { parent: a.parent }), a.issues != null && t('{count} open issues', { count: a.issues }), a.private && t('private'), a.description].filter(Boolean).join(' · ')}
+                        </span>
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )
+          )}
+        </fieldset>
+        {error && <p className="error-text" role="alert">{error}</p>}
+      </div>
+      <div className="adm-card-foot">
+        <button className="btn btn-primary" type="submit" disabled={sending}>{sending ? <Spinner size={14} /> : <Plug size={14} />} {t('Connect and check')}</button>
+      </div>
+    </form>
+  )
+}
+
 /** A progress bar (`value` 0…1, or unknown). */
 function Bar({ value, label }: { value: number | null; label: string }) {
   const pct = value === null ? null : Math.round(Math.min(1, Math.max(0, value)) * 100)
@@ -271,10 +499,14 @@ function Bar({ value, label }: { value: number | null; label: string }) {
   )
 }
 
-function phaseText(p: Progress | null, checking: boolean): string {
-  if (!p || p.phase === 'reading') return checking ? t('Reading and checking the backup…') : t('Reading the backup…')
+function phaseText(p: Progress | null, checking: boolean, api: boolean): string {
+  if (!p || p.phase === 'reading') return api ? t('Reading…') : checking ? t('Reading and checking the backup…') : t('Reading the backup…')
   switch (p.phase) {
-    case 'people': return t('Matching people…')
+    case 'fetching':
+      if (p.project && p.total) return t('Reading {project}: issue {done} of {total}', { project: p.project, done: p.done + 1, total: p.total })
+      return p.project ? t('Reading {project}…', { project: p.project }) : t('Reading…')
+    case 'waiting': return t('Waiting for the source’s rate limit until {time}…', { time: p.until ? new Intl.DateTimeFormat(locale(), { timeStyle: 'short' }).format(new Date(p.until)) : '' })
+    case 'people': return checking ? t('Reading people…') : t('Matching people…')
     case 'issues': return t('Importing {project}: issue {done} of {total}', { project: p.project ?? '', done: p.done + 1, total: p.total })
     case 'links': return t('Connecting parents and links…')
     case 'saving': return t('Saving…')
@@ -282,23 +514,28 @@ function phaseText(p: Progress | null, checking: boolean): string {
   }
 }
 
-function CurrentImport({ job, onChanged, onAnother }: { job: Job; onChanged: () => void; onAnother: () => void }) {
+function CurrentImport({ job, token, onToken, onChanged, onAnother }: { job: Job; token: string; onToken: (v: string) => void; onChanged: () => void; onAnother: () => void }) {
   const [discarding, setDiscarding] = useState(false)
+  const fromApi = isApi(job.source)
   const head = (
     <div className="adm-card-head bi-head">
-      <h2><FileArchive size={16} /> {job.fileName}</h2>
-      <p className="muted small">{bytes(job.size)} · {t('uploaded {when}', { when: ago(job.createdAt) })}</p>
+      <h2>{fromApi ? <Plug size={16} /> : <FileArchive size={16} />} {job.fileName}</h2>
+      <p className="muted small">
+        {fromApi ? t('{url} · connected {when}', { url: job.connection?.baseUrl ?? '', when: ago(job.createdAt) }) : `${bytes(job.size)} · ${t('uploaded {when}', { when: ago(job.createdAt) })}`}
+      </p>
     </div>
   )
   if (job.status === 'checking' || job.status === 'running') {
     const p = job.progress
-    const value = p?.phase === 'issues' && p.total ? p.done / p.total : null
+    const value = (p?.phase === 'issues' || p?.phase === 'fetching' || p?.phase === 'people') && p.total ? p.done / p.total : null
     return (
       <div className="adm-card bi-card" aria-busy="true">
         {head}
         <div className="adm-card-body" aria-live="polite">
-          <Bar value={value} label={phaseText(p, job.status === 'checking')} />
-          <p className="faint small">{job.status === 'running' ? t('This can take a while for big backups. You can leave this page; the import goes on.') : t('This takes a moment.')}</p>
+          <Bar value={value} label={phaseText(p, job.status === 'checking', fromApi)} />
+          <p className="faint small">
+            {job.status === 'running' || fromApi ? t('This can take a while for big projects. You can leave this page; it goes on.') : t('This takes a moment.')}
+          </p>
         </div>
       </div>
     )
@@ -309,22 +546,24 @@ function CurrentImport({ job, onChanged, onAnother }: { job: Job; onChanged: () 
         <div className="adm-card bi-card">
           {head}
           <div className="adm-card-body">
-            <p className="bi-failed" role="alert"><CircleX size={16} /> {job.summary ? t('The import stopped; nothing was changed.') : t('The backup couldn’t be read.')}</p>
+            <p className="bi-failed" role="alert">
+              <CircleX size={16} /> {job.summary ? t('The import stopped; nothing was changed.') : fromApi ? t('The source couldn’t be read.') : t('The backup couldn’t be read.')}
+            </p>
             {job.error && <pre className="bi-error">{job.error}</pre>}
           </div>
           <div className="adm-card-foot">
-            <button className="btn" onClick={onAnother}><RotateCcw size={14} /> {t('Upload another backup')}</button>
+            <button className="btn" onClick={onAnother}><RotateCcw size={14} /> {fromApi ? t('Connect again') : t('Upload another backup')}</button>
           </div>
         </div>
       )}
       {job.status === 'done' && job.report && <ReportCard job={job} report={job.report} onAnother={onAnother} />}
       {job.summary && job.fileKept && (job.status === 'checked' || job.status === 'failed' || job.report?.dryRun) && (
-        <Choices key={job.id} job={job} summary={job.summary} onStarted={onChanged} onDiscard={() => setDiscarding(true)} />
+        <Choices key={job.id} job={job} summary={job.summary} token={token} onToken={onToken} onStarted={onChanged} onDiscard={() => setDiscarding(true)} />
       )}
       {discarding && (
         <Confirm
-          title={t('Discard this backup?')}
-          body={t('The uploaded file is deleted. Nothing was imported from it.')}
+          title={fromApi ? t('Discard what was read?') : t('Discard this backup?')}
+          body={fromApi ? t('What TaskCraft read is deleted. Nothing was imported from it.') : t('The uploaded file is deleted. Nothing was imported from it.')}
           confirmLabel={t('Discard')}
           danger
           onConfirm={async () => {
@@ -338,23 +577,27 @@ function CurrentImport({ job, onChanged, onAnother }: { job: Job; onChanged: () 
   )
 }
 
-function Choices({ job, summary, onStarted, onDiscard }: { job: Job; summary: Summary; onStarted: () => void; onDiscard: () => void }) {
+function Choices({ job, summary, token, onToken, onStarted, onDiscard }: { job: Job; summary: Summary; token: string; onToken: (v: string) => void; onStarted: () => void; onDiscard: () => void }) {
   const toast = useToast()
   const projects = useProjects().data ?? []
   const open = projects.filter((p) => !p.archivedAt)
+  const fromApi = isApi(job.source)
+  const needsToken = fromApi && !!job.connection?.token
+  const newKey = (p: ProjectSummary) => (p.validKey ? p.key : (p.suggestedKey ?? ''))
   const initial = (): Record<string, Choice> => {
     const out: Record<string, Choice> = {}
     for (const p of summary.projects) {
       const before = job.options?.projects?.[p.key]
       if (before) out[p.key] = before
-      // a project with the same key here: into it (the backup's earlier import, or the same team)
+      // a project with the same key here: into it (the source's earlier import, or the same team)
       else if (p.existing) out[p.key] = { action: 'into', key: p.existing.key }
-      else out[p.key] = { action: 'new', key: p.validKey ? p.key : '' }
+      else out[p.key] = { action: 'new', key: newKey(p) }
     }
     return out
   }
   const [choices, setChoices] = useState<Record<string, Choice>>(initial)
   const [people, setPeople] = useState<People>(job.options?.people ?? 'invite')
+  const [markup, setMarkup] = useState<Markup | null>(job.options?.markup ?? summary.markup ?? null)
   const [starting, setStarting] = useState(false)
   const nf = new Intl.NumberFormat(locale())
   const taken = new Set(open.map((p) => p.key.toUpperCase()))
@@ -374,11 +617,12 @@ function Choices({ job, summary, onStarted, onDiscard }: { job: Job; summary: Su
   const chosen = summary.projects.filter((p) => choices[p.key]?.action !== 'skip')
   if (!chosen.length) problems.push(t('Choose at least one project to import.'))
   const issues = chosen.reduce((n, p) => n + p.issues - p.imported, 0)
+  const missingToken = needsToken && !token.trim()
   const start = async (dryRun: boolean) => {
     setStarting(true)
     try {
       const body = Object.fromEntries(Object.entries(choices).map(([k, c]) => [k, c.action === 'skip' ? c : { ...c, key: c.key.trim().toUpperCase() }]))
-      await api.post(`/admin/backup-imports/${job.id}/run`, { projects: body, people, dryRun })
+      await api.post(`/admin/backup-imports/${job.id}/run`, { projects: body, people, dryRun, ...(fromApi ? { token: token.trim() || null, markup } : {}) })
       onStarted()
     } catch (e) {
       toast(e instanceof ApiError ? e.message : String(e))
@@ -390,7 +634,7 @@ function Choices({ job, summary, onStarted, onDiscard }: { job: Job; summary: Su
   return (
     <div className="adm-card bi-card">
       <div className="adm-card-head">
-        <h2>{t('What the backup holds')}</h2>
+        <h2>{fromApi ? t('What {source} holds', { source: sourceName(job.source) }) : t('What the backup holds')}</h2>
         <p className="muted small">
           {t('{count} people are named in it; {matched} of them have an account here already (same e-mail address or name).', { count: summary.people.total, matched: summary.people.matched })}
           {' '}{t('{count} attachment files.', { count: summary.files })}
@@ -399,7 +643,7 @@ function Choices({ job, summary, onStarted, onDiscard }: { job: Job; summary: Su
       <div className="adm-card-body">
         <div className="adm-table-wrap">
           <table className="list adm-table bi-table">
-            <caption className="sr-only">{t('Projects in the backup')}</caption>
+            <caption className="sr-only">{fromApi ? t('Projects read') : t('Projects in the backup')}</caption>
             <thead>
               <tr>
                 <th scope="col">{t('Project')}</th>
@@ -418,9 +662,11 @@ function Choices({ job, summary, onStarted, onDiscard }: { job: Job; summary: Su
                 return (
                   <tr key={p.key} className={c.action === 'skip' ? 'adm-off' : ''}>
                     <td>
-                      <div className="bi-project"><span className="issue-key">{p.key}</span> <span>{p.name}</span></div>
+                      <div className="bi-project"><span className="issue-key">{p.key}</span> {p.name !== p.key && <span>{p.name}</span>}</div>
+                      {p.parent && <div className="faint small">{t('a subproject of {parent}', { parent: p.parent })}</div>}
                       {p.formerKeys.length > 0 && <div className="faint small">{t('formerly {keys}', { keys: p.formerKeys.join(', ') })}</div>}
                       {p.sprints > 0 && <div className="faint small">{t('{count} sprints', { count: p.sprints })}</div>}
+                      {(p.confidential ?? 0) > 0 && <div className="faint small">{t('{count} confidential issues', { count: p.confidential ?? 0 })}</div>}
                       {p.imported > 0 && <div className="small bi-note">{t('{count} issues are here from an earlier import and are skipped', { count: p.imported })}</div>}
                     </td>
                     <td className="num">{nf.format(p.issues)}</td>
@@ -439,8 +685,9 @@ function Choices({ job, summary, onStarted, onDiscard }: { job: Job; summary: Su
                         value={c.action}
                         onChange={(e) => {
                           const a = e.target.value
+                          const k = newKey(p)
                           if (a === 'skip') set(p.key, { action: 'skip' })
-                          else if (a === 'new') set(p.key, { action: 'new', key: taken.has(p.key) || !p.validKey ? '' : p.key })
+                          else if (a === 'new') set(p.key, { action: 'new', key: taken.has(k) ? '' : k })
                           else set(p.key, { action: 'into', key: p.existing?.key ?? open[0]?.key ?? '' })
                         }}
                       >
@@ -476,7 +723,7 @@ function Choices({ job, summary, onStarted, onDiscard }: { job: Job; summary: Su
             <input type="radio" name="bi-people" checked={people === 'invite'} onChange={() => setPeople('invite')} />
             <span>
               <strong>{t('Prepare invitations')}</strong>
-              <span className="faint small">{t('Accounts waiting for an invitation, which you send from Users when you’re ready. People who are inactive in the backup get deactivated accounts.')}</span>
+              <span className="faint small">{t('Accounts waiting for an invitation, which you send from Users when you’re ready. People who are inactive in the source get deactivated accounts.')}</span>
             </span>
           </label>
           <label className="bi-radio">
@@ -487,6 +734,23 @@ function Choices({ job, summary, onStarted, onDiscard }: { job: Job; summary: Su
             </span>
           </label>
         </fieldset>
+        {summary.markup && (
+          <div className="field bi-markup">
+            <label htmlFor={`bi-markup-${job.id}`}>{t('Texts are written in')}</label>
+            <select id={`bi-markup-${job.id}`} className="select" value={markup ?? summary.markup} onChange={(e) => setMarkup(e.target.value as Markup)} aria-describedby={`bi-markup-hint-${job.id}`}>
+              <option value="textile">Textile</option>
+              <option value="markdown">Markdown</option>
+            </select>
+            <span id={`bi-markup-hint-${job.id}`} className="faint small">{t('Found from the texts; change it if the server is set up otherwise.')}</span>
+          </div>
+        )}
+        {needsToken && (
+          <div className="field bi-markup">
+            <label htmlFor={`bi-token-${job.id}`}>{t('Token')}</label>
+            <input id={`bi-token-${job.id}`} className="input" type="password" autoComplete="off" spellCheck={false} value={token} onChange={(e) => onToken(e.target.value)} aria-describedby={`bi-token-hint-${job.id}`} />
+            <span id={`bi-token-hint-${job.id}`} className="faint small">{t('The import downloads the attachments with it. It isn’t stored: after a reload, enter it again.')}</span>
+          </div>
+        )}
         <Warnings list={summary.warnings} />
         {problems.map((m, i) => <p key={i} className="error-text">{m}</p>)}
       </div>
@@ -494,7 +758,7 @@ function Choices({ job, summary, onStarted, onDiscard }: { job: Job; summary: Su
         <span className="adm-foot-msg faint small">{t('Kept until {when}, then deleted.', { when: dateTime(job.expiresAt) })}</span>
         <button className="btn" onClick={onDiscard} disabled={starting}>{t('Discard')}</button>
         <button className="btn" onClick={() => start(true)} disabled={starting || problems.length > 0}>{t('Test the import')}</button>
-        <button className="btn btn-primary" onClick={() => start(false)} disabled={starting || problems.length > 0}>
+        <button className="btn btn-primary" onClick={() => start(false)} disabled={starting || problems.length > 0 || missingToken} title={missingToken ? t('Enter the token first') : undefined}>
           {starting ? <Spinner size={14} /> : <Upload size={14} />} {t('Import {count} issues', { count: issues })}
         </button>
       </div>
@@ -516,6 +780,8 @@ const COUNTS: [string, () => string][] = [
   ['sprints', () => t('Sprints')],
   ['statuses', () => t('New statuses')],
   ['types', () => t('New issue types')],
+  ['fields', () => t('Custom fields')],
+  ['confidential', () => t('Confidential issues')],
   ['history', () => t('History entries')],
 ]
 
@@ -544,7 +810,8 @@ function ReportCard({ job, report, onAnother }: { job: Job; report: Report; onAn
                 {report.dryRun || !r.id ? <span>{r.key}</span> : <Link to={`/projects/${r.key}`}>{r.key} · {r.name}</Link>}
                 <span className="badge">{r.created ? t('new project') : t('existing project')}</span>
               </h3>
-              {r.source !== r.key && <p className="faint small">{t('{old} in the backup', { old: r.source })}</p>}
+              {r.source !== r.key && <p className="faint small">{isApi(job.source) ? t('{old} in {source}', { old: r.source, source: sourceName(job.source) }) : t('{old} in the backup', { old: r.source })}</p>}
+              {r.parent && <p className="faint small">{t('a subproject of {parent}', { parent: r.parent })}</p>}
               <dl className="bi-counts">
                 {COUNTS.filter(([k]) => r.counts[k] && (r.counts[k].imported || r.counts[k].existing)).map(([k, label]) => (
                   <div key={k}>
@@ -566,7 +833,7 @@ function ReportCard({ job, report, onAnother }: { job: Job; report: Report; onAn
       </div>
       <div className="adm-card-foot">
         {!report.dryRun && p('invited') > 0 && <Link className="btn" to="/admin/users">{t('Send invitations')}</Link>}
-        {!report.dryRun && <button className="btn" onClick={onAnother}><Upload size={14} /> {t('Import another backup')}</button>}
+        {!report.dryRun && <button className="btn" onClick={onAnother}><Upload size={14} /> {t('Import something else')}</button>}
       </div>
     </div>
   )
@@ -583,11 +850,11 @@ function EarlierImports({ jobs }: { jobs: Job[] }) {
   }
   return (
     <div className="bi-earlier">
-      <h3>{t('Earlier uploads')}</h3>
+      <h3>{t('Earlier imports')}</h3>
       <ul>
         {jobs.map((j) => (
           <li key={j.id}>
-            <FileArchive size={14} /> <span>{j.fileName}</span>
+            {isApi(j.source) ? <Plug size={14} /> : <FileArchive size={14} />} <span>{j.fileName}</span>
             <span className="faint small">{dateTime(j.createdAt)} · {status(j)}</span>
             {j.status === 'done' && !j.report?.dryRun && j.report?.projects.filter((p) => !p.skipped).map((p) => (
               <Link key={p.key} className="issue-key" to={`/projects/${p.key}`}>{p.key}</Link>

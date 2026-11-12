@@ -73,6 +73,82 @@ enum Command {
         #[arg(long = "as", value_name = "EMAIL")]
         as_user: Option<String>,
     },
+    /// Import issues from GitHub (github.com or GitHub Enterprise): repositories as projects,
+    /// issues with their numbers, comments, labels, milestones, sub-issues, history and files.
+    ImportGithub(ApiImport),
+}
+
+/// What an import from another tracker's API takes on the command line.
+#[derive(clap::Args)]
+struct ApiImport {
+    /// the repositories or projects to import (`owner/repo`, `group/project`, an identifier)
+    #[arg(required = true, value_name = "PROJECT")]
+    projects: Vec<String>,
+    /// the server's address (GitHub: empty for github.com, else the Enterprise address)
+    #[arg(long)]
+    url: Option<String>,
+    /// a personal access token or API key with read access (best given in the environment)
+    #[arg(long, env = "TASKCRAFT_IMPORT_TOKEN", hide_env_values = true)]
+    token: Option<String>,
+    /// check and report only; nothing is changed
+    #[arg(long)]
+    dry_run: bool,
+    /// import a project under another key: `OLD=NEW` (OLD as named above, NEW may be an existing project); repeatable
+    #[arg(long = "project", value_name = "OLD=NEW")]
+    rename: Vec<String>,
+    /// leave a project out (subprojects that come along); repeatable
+    #[arg(long, value_name = "PROJECT")]
+    skip: Vec<String>,
+    /// people without an account here: invite, deactivated or skip (nobody is e-mailed)
+    #[arg(long, default_value = "invite")]
+    people: taskcraft::importer::People,
+    /// template of projects the import creates: scrum, kanban, tracker or business
+    #[arg(long)]
+    template: Option<String>,
+    /// how texts are written when the server doesn't say: textile or markdown
+    #[arg(long)]
+    markup: Option<taskcraft::importer::Format>,
+    /// the administrator the import runs as (e-mail address; default: the owner)
+    #[arg(long = "as", value_name = "EMAIL")]
+    as_user: Option<String>,
+}
+
+/// The administrator an import from the command line runs as.
+async fn import_user(state: &AppState, as_user: Option<&str>) -> anyhow::Result<taskcraft::auth::User> {
+    Ok(match as_user {
+        Some(email) => sqlx::query_as(
+            "SELECT id, workspace_id, email, name, role, status FROM users WHERE lower(email) = lower($1) AND role IN ('owner', 'admin') AND status = 'active'",
+        )
+        .bind(email)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("no active administrator with the e-mail address {email}"))?,
+        None => sqlx::query_as("SELECT id, workspace_id, email, name, role, status FROM users WHERE role = 'owner' ORDER BY created_at LIMIT 1")
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("set up the workspace first (open the web app)"))?,
+    })
+}
+
+/// Imports from another tracker's API, as the command line asked.
+async fn import_api(config: taskcraft::config::Config, kind: taskcraft::importer::api::Kind, a: ApiImport) -> anyhow::Result<()> {
+    use taskcraft::importer::{Choice, Options, api::Connection};
+    let state = AppState::new(config).await?;
+    let user = import_user(&state, a.as_user.as_deref()).await?;
+    let mut choices = std::collections::BTreeMap::new();
+    for p in &a.rename {
+        let (old, new) = p.split_once('=').ok_or_else(|| anyhow::anyhow!("--project takes OLD=NEW, like --project octo/web=WEB"))?;
+        choices.insert(old.trim().to_uppercase(), Choice::Auto { key: new.trim().to_uppercase() });
+    }
+    for k in &a.skip {
+        choices.insert(k.trim().to_uppercase(), Choice::Skip);
+    }
+    let opts = Options { dry_run: a.dry_run, people: a.people, choices, template: a.template, markup: a.markup, ..Options::default() };
+    let conn = Connection { source: kind, base_url: a.url.unwrap_or_default(), token: a.token, projects: a.projects, markup: a.markup };
+    eprintln!("reading {} from {} …", conn.projects.join(", "), conn.shown_url());
+    let report = taskcraft::importer::jobs::import_api(&state, &user, &conn, &opts).await?;
+    println!("{report}");
+    Ok(())
 }
 
 /// Plain-TCP GET of `/api/health` on the configured bind address (no curl needed in the image).
@@ -131,19 +207,7 @@ async fn main() -> anyhow::Result<()> {
         Command::ImportBackup { path, dry_run, projects, only, skip, people, attachments, time_zone, template, as_user } => {
             use taskcraft::site_backup::{self, Choice, Options};
             let state = AppState::new(cli.config).await?;
-            let user: taskcraft::auth::User = match &as_user {
-                Some(email) => sqlx::query_as(
-                    "SELECT id, workspace_id, email, name, role, status FROM users WHERE lower(email) = lower($1) AND role IN ('owner', 'admin') AND status = 'active'",
-                )
-                .bind(email)
-                .fetch_optional(&state.db)
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("no active administrator with the e-mail address {email}"))?,
-                None => sqlx::query_as("SELECT id, workspace_id, email, name, role, status FROM users WHERE role = 'owner' ORDER BY created_at LIMIT 1")
-                    .fetch_optional(&state.db)
-                    .await?
-                    .ok_or_else(|| anyhow::anyhow!("set up the workspace first (open the web app)"))?,
-            };
+            let user = import_user(&state, as_user.as_deref()).await?;
             let mut choices = std::collections::BTreeMap::new();
             for p in &projects {
                 let (old, new) = p.split_once('=').ok_or_else(|| anyhow::anyhow!("--project takes OLD=NEW, like --project ABC=WEB"))?;
@@ -175,6 +239,7 @@ async fn main() -> anyhow::Result<()> {
             let report = site_backup::run(&state, &user, &mut source, &backup, &opts, progress).await?;
             println!("{report}");
         }
+        Command::ImportGithub(a) => import_api(cli.config, taskcraft::importer::api::Kind::Github, a).await?,
         Command::Demo => {
             let state = AppState::new(cli.config).await?;
             let owner: uuid::Uuid = sqlx::query_scalar("SELECT id FROM users WHERE role = 'owner' ORDER BY created_at LIMIT 1")

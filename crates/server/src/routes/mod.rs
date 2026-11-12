@@ -197,6 +197,9 @@ pub fn api() -> Router<AppState> {
         .route("/admin/backup-imports", get(crate::importer::jobs::list).post(crate::importer::jobs::upload))
         .route("/admin/backup-imports/{id}", get(crate::importer::jobs::get).delete(crate::importer::jobs::discard))
         .route("/admin/backup-imports/{id}/run", post(crate::importer::jobs::start))
+        // ... or from another tracker's API (connect, read and check in the background)
+        .route("/admin/backup-imports/connect", post(crate::importer::jobs::connect))
+        .route("/admin/backup-imports/browse", post(crate::importer::jobs::browse))
         // single sign-on: /auth/providers, /auth/sso/{id}/…, /me/sign-in
         .merge(crate::sso::routes())
         // two-factor authentication, passkeys, sessions
