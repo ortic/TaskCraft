@@ -2528,8 +2528,8 @@ D_WARNING = obj(
     },
     ["code", "message", "params", "count"],
 )
-D_API_SOURCE = enum("github", "gitlab", desc="the tracker whose API is read")
-D_IMPORT_SOURCE = enum("xml-site-backup", "github", "gitlab", desc="where the import comes from")
+D_API_SOURCE = enum("github", "gitlab", "redmine", desc="the tracker whose API is read")
+D_IMPORT_SOURCE = enum("xml-site-backup", "github", "gitlab", "redmine", desc="where the import comes from")
 schemas["BackupSummary"] = obj(
     {
         "source": D_IMPORT_SOURCE,
@@ -2625,9 +2625,9 @@ schemas["BackupImportRun"] = obj(
 schemas["ImportConnection"] = obj(
     {
         "source": D_API_SOURCE,
-        "baseUrl": d(txt, "the server's address (empty: github.com or gitlab.com; else the Enterprise or self-managed server)"),
-        "token": d(txt, "a personal access token or API key with read access; used for this request only, never stored"),
-        "projects": arr(txt, "repositories or projects to read: owner/repo, group/project or identifiers (1 to 50)"),
+        "baseUrl": d(txt, "the server's address (empty: github.com or gitlab.com; else the Enterprise or self-managed server; required for Redmine)"),
+        "token": d(txt, "a personal access token or API key with read access (Redmine: an administrator's key also brings watchers, e-mail addresses and custom field definitions); used for this request only, never stored"),
+        "projects": arr(txt, "repositories or projects to read: owner/repo, group/project or identifiers (1 to 50; Redmine projects bring their subprojects)"),
         "markup": enum("textile", "markdown", desc="how texts are written, when the server doesn't say"),
     },
     ["source", "projects"],

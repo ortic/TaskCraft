@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::http::Http;
 use super::model::{Attachment, BoxFuture, File, Files, Format, Model};
-use super::{Available, ProgressHandle, github, gitlab};
+use super::{Available, ProgressHandle, github, gitlab, redmine};
 
 /// The trackers whose APIs are read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -15,6 +15,7 @@ use super::{Available, ProgressHandle, github, gitlab};
 pub enum Kind {
     Github,
     Gitlab,
+    Redmine,
 }
 
 impl Kind {
@@ -23,6 +24,7 @@ impl Kind {
         match self {
             Kind::Github => "github",
             Kind::Gitlab => "gitlab",
+            Kind::Redmine => "redmine",
         }
     }
 
@@ -31,6 +33,7 @@ impl Kind {
         match self {
             Kind::Github => "GitHub",
             Kind::Gitlab => "GitLab",
+            Kind::Redmine => "Redmine",
         }
     }
 }
@@ -41,7 +44,8 @@ impl std::str::FromStr for Kind {
         match s.trim().to_ascii_lowercase().as_str() {
             "github" => Ok(Kind::Github),
             "gitlab" => Ok(Kind::Gitlab),
-            _ => Err("source must be github or gitlab".into()),
+            "redmine" => Ok(Kind::Redmine),
+            _ => Err("source must be github, gitlab or redmine".into()),
         }
     }
 }
@@ -81,6 +85,7 @@ impl Connection {
         match self.source {
             Kind::Github => github::client(&github::site(&self.base_url)?, self.token(), allow_private, progress),
             Kind::Gitlab => gitlab::client(&gitlab::site(&self.base_url)?, self.token(), allow_private, progress),
+            Kind::Redmine => redmine::client(&self.base_url, self.token(), allow_private, progress),
         }
     }
 
@@ -89,6 +94,7 @@ impl Connection {
         match self.source {
             Kind::Github => github::site(&self.base_url).map(|s| s.web.to_string()).unwrap_or_else(|_| self.base_url.clone()),
             Kind::Gitlab => gitlab::site(&self.base_url).map(|s| s.web.to_string()).unwrap_or_else(|_| self.base_url.clone()),
+            Kind::Redmine => super::http::base_url(&self.base_url).map(|u| u.to_string()).unwrap_or_else(|_| self.base_url.clone()),
         }
     }
 
@@ -98,6 +104,7 @@ impl Connection {
         match self.source {
             Kind::Github => github::fetch(http, &github::site(&self.base_url)?, &self.projects, progress).await,
             Kind::Gitlab => gitlab::fetch(http, &gitlab::site(&self.base_url)?, &self.projects, progress).await,
+            Kind::Redmine => redmine::fetch(http, &self.projects, self.markup, progress).await,
         }
     }
 
@@ -107,6 +114,7 @@ impl Connection {
         match self.source {
             Kind::Github => github::browse(http, owner).await,
             Kind::Gitlab => gitlab::browse(http, owner).await,
+            Kind::Redmine => redmine::browse(http, owner).await,
         }
     }
 }

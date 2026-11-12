@@ -538,15 +538,30 @@ impl<'a> Run<'a> {
             }
         }
         for (sid, fallback) in wanted {
-            let (name, cat, by_category) = match self.m.statuses.get(&sid) {
-                Some(s) => (s.name.clone(), s.category.clone(), s.by_category),
-                None => (fallback.unwrap_or_else(|| format!("Status {sid}")), None, false),
+            let (name, cat, by_category, exact) = match self.m.statuses.get(&sid) {
+                Some(s) => (s.name.clone(), s.category.clone(), s.by_category, s.exact),
+                None => (fallback.unwrap_or_else(|| format!("Status {sid}")), None, false, false),
             };
             let category: String = cat.filter(|c| matches!(c.as_str(), "todo" | "in_progress" | "done")).unwrap_or_else(|| guess_category(&name).to_string());
+            let loose = |p: &Proj| p.lookup.status(&name).and_then(|id| p.lookup.statuses.iter().find(|s| s.0 == id).cloned());
             let found = if by_category {
                 p.lookup.statuses.iter().find(|s| s.2 == category).cloned()
+            } else if exact {
+                match p.lookup.statuses.iter().find(|s| s.1.trim().eq_ignore_ascii_case(name.trim())).cloned() {
+                    // a project made by this import follows the source's workflow
+                    Some(s) if s.2 != category && p.report.created => {
+                        sqlx::query("UPDATE statuses SET category = $2 WHERE id = $1").bind(s.0).bind(&category).execute(&mut **tx).await?;
+                        if let Some(x) = p.lookup.statuses.iter_mut().find(|x| x.0 == s.0) {
+                            x.2 = category.clone();
+                        }
+                        Some((s.0, s.1, category.clone()))
+                    }
+                    Some(s) => Some(s),
+                    None if p.report.created => None,
+                    None => loose(p),
+                }
             } else {
-                p.lookup.status(&name).and_then(|id| p.lookup.statuses.iter().find(|s| s.0 == id).cloned())
+                loose(p)
             };
             let st = match found {
                 Some(s) => s,

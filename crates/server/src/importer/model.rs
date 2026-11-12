@@ -93,6 +93,10 @@ pub struct Status {
     /// any status of the category will do (the first one); `name` only when there's none
     #[serde(default)]
     pub by_category: bool,
+    /// the source's own workflow: matched by its exact name, and in projects the import creates
+    /// it keeps the source's category (missing ones are created rather than matched loosely)
+    #[serde(default)]
+    pub exact: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -270,6 +270,8 @@ impl Http {
                     continue;
                 }
                 Err(e) => {
+                    // without the address reqwest puts in its message (signed links carry tokens)
+                    let e = e.without_url();
                     let mut msg = format!("{} → {e}", shown(&url));
                     let mut src = std::error::Error::source(&e);
                     while let Some(s) = src {

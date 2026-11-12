@@ -144,8 +144,8 @@ pub async fn fetch(http: &Http, site: &Site, repos: &[String], progress: &Progre
     anyhow::ensure!(!repos.is_empty(), "name at least one repository (owner/repo)");
     let web_host = site.web.host_str().unwrap_or("github.com").to_string();
     let mut m = Model { origin: format!("github:{web_host}"), source: "github".into(), markup: Format::Markdown, ..Default::default() };
-    m.statuses.insert("open".into(), model::Status { name: "Open".into(), category: Some("todo".into()), by_category: true });
-    m.statuses.insert("closed".into(), model::Status { name: "Closed".into(), category: Some("done".into()), by_category: true });
+    m.statuses.insert("open".into(), model::Status { name: "Open".into(), category: Some("todo".into()), by_category: true, exact: false });
+    m.statuses.insert("closed".into(), model::Status { name: "Closed".into(), category: Some("done".into()), by_category: true, exact: false });
     m.types.insert("task".into(), model::IssueType { name: "Task".into(), level: 0 });
     m.types.insert("bug".into(), model::IssueType { name: "Bug".into(), level: 0 });
     if !http.has_auth() {

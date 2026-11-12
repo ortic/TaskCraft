@@ -8039,6 +8039,7 @@ paths:
                   enum:
                   - github
                   - gitlab
+                  - redmine
                   description: the tracker whose API is read
                 baseUrl:
                   type: string
@@ -13205,6 +13206,7 @@ components:
           - xml-site-backup
           - github
           - gitlab
+          - redmine
           description: where the import comes from
         origin:
           type: string
@@ -13519,18 +13521,22 @@ components:
           enum:
           - github
           - gitlab
+          - redmine
           description: the tracker whose API is read
         baseUrl:
           type: string
-          description: 'the server''s address (empty: github.com or gitlab.com; else the Enterprise or self-managed server)'
+          description: 'the server''s address (empty: github.com or gitlab.com; else the Enterprise or self-managed server;
+            required for Redmine)'
         token:
           type: string
-          description: a personal access token or API key with read access; used for this request only, never stored
+          description: 'a personal access token or API key with read access (Redmine: an administrator''s key also brings
+            watchers, e-mail addresses and custom field definitions); used for this request only, never stored'
         projects:
           type: array
           items:
             type: string
-          description: 'repositories or projects to read: owner/repo, group/project or identifiers (1 to 50)'
+          description: 'repositories or projects to read: owner/repo, group/project or identifiers (1 to 50; Redmine projects
+            bring their subprojects)'
         markup:
           type: string
           enum:
@@ -13553,6 +13559,7 @@ components:
           - xml-site-backup
           - github
           - gitlab
+          - redmine
           description: where the import comes from
         connection:
           type:

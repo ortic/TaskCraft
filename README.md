@@ -320,8 +320,7 @@ taskcraft healthcheck  # probe a running server (container HEALTHCHECK)
 taskcraft backup FILE  # database + attachments into one .tar.gz (`-` writes to standard output)
 taskcraft restore FILE # into an empty database (`--force` replaces an existing workspace)
 taskcraft import-backup FILE   # another tracker's XML site backup (.zip or unpacked folder)
-taskcraft import-github REPO…  # issues from another tracker's API (see "Migrating from another tracker")
-taskcraft import-gitlab PROJECT…
+taskcraft import-… PROJECT…    # from another tracker's API (see "Migrating from another tracker")
 ```
 
 ### Backup and restore
@@ -342,7 +341,7 @@ from the data directory into S3 or back.
 
 *Administration → Import* (owners and administrators; also linked from *Projects* and from an
 empty workspace) brings projects over from **Jira** (its XML site backup) and from the APIs of
-**GitHub** and **GitLab**. Every source goes the same way: TaskCraft reads it and shows what it holds (nothing
+**GitHub**, **GitLab** and **Redmine**. Every source goes the same way: TaskCraft reads it and shows what it holds (nothing
 changes yet), you choose per project — *a new project* (with a key), *an existing project* or
 *leave it out* — and what happens to people without an account here, *Test the import* runs it
 without changing anything, and *Import* runs it in the background (the page can be left and
@@ -399,7 +398,7 @@ another key here) keeps working as a link; types, statuses and priorities are ma
 done, resolved at its resolution date; one component and one fix version per issue (the first);
 values of other custom fields are reported, not imported.
 
-#### From an API: GitHub, GitLab
+#### From an API: GitHub, GitLab, Redmine
 
 TaskCraft reads the projects through the tracker's REST API with a token you enter. The token is
 used for reading and, while importing, for downloading attachments — it is kept in memory for
@@ -459,12 +458,46 @@ then by name; blocked or deactivated GitLab accounts become deactivated accounts
 merge requests, tasks' place under their issue (they're imported as issues of the type *Task*),
 reactions, iterations, health status, and changes of other fields.
 
+**Redmine** (any server with *Administration → Settings → API → Enable REST web service* on): the
+server's address and an API key (*My account → API access key*). An administrator's key also
+brings watchers, e-mail addresses, locked accounts and the definitions of custom fields — without
+one, the check says what's missing and custom fields get their kind from their values. Choose
+projects by identifier (or list them, a parent's subprojects too); each project's subprojects come
+along and each becomes a project of its own (the check and the report name the parent). Texts are
+read as Textile or Markdown as the server writes them: the check finds out from the texts, and you
+can change it before importing (`--markup` on the command line).
+
+| Redmine | TaskCraft |
+|---|---|
+| issue `#123` | `KEY-123` when the number is free in the project (else a new number, and `KEY-123` of the project's suggested key keeps working) |
+| subject, description (Textile or Markdown) | title, description: headings, lists, code, links, `!image.png!` and `attachment:file` pointing to the imported files, `#123` to the imported issues, `@login` to the people |
+| tracker | issue type (by name, created when missing) |
+| status | status by name; in projects the import creates, the statuses keep Redmine's meaning (closed ones are done, others aren't; missing ones like *Rejected* are created) |
+| closed as *Rejected* / *Duplicate* / otherwise | resolution *Won't do* / *Duplicate* / *Done* |
+| priority | priority by name (*Low*, *Normal*, *High*, *Urgent*), else by its place in the list (*Immediate* is urgent) |
+| category, target version | component, release (shared versions too) |
+| parent task | parent (across projects too) |
+| start and due date, estimated time | start and due date, estimate |
+| custom fields (string, text, integer, float, date, boolean, list, enumeration, key/value, user, link) | custom fields of the project, created by name and kind when missing (lists as selects, multiple ones as multi-selects, versions as text) |
+| journal notes; private notes | comments; private ones are visible to everyone who can see the project (the report says so) |
+| journal details (status, assignee, priority, tracker, subject, description, due date, estimate, category, version, parent) | history, as the reports replay it |
+| time entries (user, hours, day, activity, comment) | time logs by their authors on their days, the activity before the comment (`Development: …`) until TaskCraft has time categories |
+| attachments | attachments, downloaded with the API key |
+| relations: relates, duplicates, blocks, precedes / follows, copied to / from | links: relates, duplicates, blocks (precedes counts as blocks), clones |
+| watchers (with an administrator's key) | watchers |
+| private issues | issues (counted in the check and the report: visible to everyone who can see the project) |
+
+Not imported: the percentage done (the report counts the issues that had one), time logged on a
+project rather than an issue, changes of custom fields in the history, wiki, forums, news,
+documents and repositories.
+
 ```bash
 export TASKCRAFT_IMPORT_TOKEN=github_pat_…        # not on the command line
 taskcraft import-github octo/web octo/api --dry-run
 taskcraft import-github octo/web --project octo/web=WEB --people deactivated
 taskcraft import-github --url https://github.example.com corp/portal
 TASKCRAFT_IMPORT_TOKEN=glpat-… taskcraft import-gitlab acme/web acme/platform/api
+TASKCRAFT_IMPORT_TOKEN=… taskcraft import-redmine --url https://redmine.example.com shop --skip shop-legacy
 ```
 
 The command-line imports take the same options as `import-backup` (`--dry-run`, `--project

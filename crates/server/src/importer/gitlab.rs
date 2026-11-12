@@ -154,8 +154,8 @@ pub async fn fetch(http: &Http, site: &Site, paths: &[String], progress: &Progre
     anyhow::ensure!(!paths.is_empty(), "name at least one project (group/project)");
     let host = format!("{}{}", site.web.host_str().unwrap_or("gitlab"), site.web.path().trim_end_matches('/'));
     let mut m = Model { origin: format!("gitlab:{host}"), source: "gitlab".into(), markup: Format::Markdown, ..Default::default() };
-    m.statuses.insert("opened".into(), model::Status { name: "Open".into(), category: Some("todo".into()), by_category: true });
-    m.statuses.insert("closed".into(), model::Status { name: "Closed".into(), category: Some("done".into()), by_category: true });
+    m.statuses.insert("opened".into(), model::Status { name: "Open".into(), category: Some("todo".into()), by_category: true, exact: false });
+    m.statuses.insert("closed".into(), model::Status { name: "Closed".into(), category: Some("done".into()), by_category: true, exact: false });
     for (k, name, level) in [("task", "Task", 0), ("bug", "Bug", 0), ("incident", "Incident", 0), ("test_case", "Test case", 0), ("epic", "Epic", 1)] {
         m.types.insert(k.into(), model::IssueType { name: name.into(), level });
     }

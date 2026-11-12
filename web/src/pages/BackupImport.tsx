@@ -85,7 +85,7 @@ type Choice = { action: 'new'; key: string } | { action: 'into'; key: string } |
 type People = 'invite' | 'deactivated'
 
 /** Where an import comes from: an uploaded backup or another tracker's API. */
-type Source = 'xml-site-backup' | 'github' | 'gitlab'
+type Source = 'xml-site-backup' | 'github' | 'gitlab' | 'redmine'
 type ApiSource = Exclude<Source, 'xml-site-backup'>
 
 interface Job {
@@ -125,6 +125,7 @@ const SOURCES: { id: Source; label: () => string }[] = [
   { id: 'xml-site-backup', label: () => t('{tool} (XML backup)', { tool: 'Jira' }) },
   { id: 'github', label: () => 'GitHub' },
   { id: 'gitlab', label: () => 'GitLab' },
+  { id: 'redmine', label: () => 'Redmine' },
 ]
 
 const sourceName = (s: Source | undefined) => SOURCES.find((x) => x.id === s)?.label() ?? ''
@@ -157,6 +158,19 @@ function apiFields(s: ApiSource) {
         projects: t('Projects'),
         projectPlaceholder: 'group/project',
         owner: t('Group or user'),
+        list: t('Show projects'),
+      }
+    case 'redmine':
+      return {
+        url: t('Address'),
+        urlHint: t('The server’s address. Its REST API must be on (Administration → Settings → API).'),
+        urlPlaceholder: 'https://redmine.example.com',
+        urlRequired: true,
+        token: t('API key'),
+        tokenHint: t('Under My account → API access key. An administrator’s key also brings watchers, e-mail addresses, locked accounts and the definitions of custom fields.'),
+        projects: t('Projects'),
+        projectPlaceholder: t('project identifier'),
+        owner: t('Parent project (optional)'),
         list: t('Show projects'),
       }
   }
@@ -200,6 +214,13 @@ function warningText(w: Warning): string {
     case 'no-token-gitlab': return t('Without a token only public projects can be read, and confidential issues and internal notes stay out')
     case 'time-subtracted': return t('Time subtracted in the source is left out: some issues show more time spent there')
     case 'notes-need-token': return t('The server shows comments, time logs and their history only with a token: they stay out')
+    case 'no-key': return t('Without an API key only public projects can be read, without private issues and notes')
+    case 'not-admin': return t('The API key isn’t an administrator’s: watchers, e-mail addresses, locked accounts and custom field definitions may be missing')
+    case 'no-time-entries': return t('Time entries couldn’t be read (time tracking is off, or the API key can’t see them)')
+    case 'time-without-issue': return t('Time logged on a project rather than an issue is left out')
+    case 'time-elsewhere': return t('Time logged on issues of projects that aren’t read is left out')
+    case 'done-ratio': return t('The percentage done of issues isn’t kept')
+    case 'fields-guessed': return t('Custom fields were read without their definitions (an administrator’s key has them): their kinds are guessed from the values')
     default: return w.message
   }
 }

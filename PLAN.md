@@ -83,5 +83,5 @@
 - [ ] E-mails in each person's language (they're English only)
 - [ ] Voting on issues; issue lists and issues as Excel and PDF, a print view
 - [ ] Portal: suggest WikiCraft articles while a requester types, before the request is sent
-- [ ] Importers from other trackers' APIs (GitHub / GitLab issues and similar), next to CSV and XML site backups
+- [x] Importers from other trackers' APIs (GitHub / GitLab issues and similar), next to CSV and XML site backups: three sources, read with a token into the same check, choices, background import and report (Administration → Import, and `taskcraft import-…` on the command line)
 

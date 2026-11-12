@@ -165,7 +165,7 @@ pub fn to_model(b: &Backup) -> Model {
     m.statuses = b
         .statuses
         .iter()
-        .map(|(id, s)| (id.clone(), model::Status { name: s.name.clone(), category: s.category.map(str::to_string), by_category: false }))
+        .map(|(id, s)| (id.clone(), model::Status { name: s.name.clone(), category: s.category.map(str::to_string), by_category: false, exact: false }))
         .collect();
     m.types = b.types.iter().map(|(id, t)| (id.clone(), model::IssueType { name: t.name.clone(), level: t.level })).collect();
     m.priorities = b.priorities.iter().map(|(id, p)| (id.clone(), model::Priority { name: p.name.clone(), sequence: p.sequence })).collect();
