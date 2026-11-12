@@ -1,0 +1,191 @@
+name: Release
+
+# A version tag (v0.1.0) publishes:
+#   - the container image ghcr.io/<owner>/taskcraft — amd64 and arm64, each built natively, then
+#     joined under one tag (version, major.minor, latest)
+#   - Linux binaries (x86_64, aarch64; the web app built in) on the GitHub release, with the
+#     changelog's section as release notes
+# Started by hand it builds and smoke-tests everything without publishing (tick "publish" on a
+# tag to publish from there).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the image and the release (run it on a v* tag)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/taskcraft
+  PUBLISH: ${{ github.event_name == 'push' || inputs.publish == true }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        name: Version from Cargo.toml (and the tag when publishing)
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$PUBLISH" = "true" ]; then
+            [[ "$GITHUB_REF" == refs/tags/v* ]] || { echo "::error::publishing needs a v* tag"; exit 1; }
+            [ "${GITHUB_REF_NAME#v}" = "$version" ] || { echo "::error::tag $GITHUB_REF_NAME doesn't match version $version in Cargo.toml"; exit 1; }
+            grep -q "^## \[$version\]" CHANGELOG.md || { echo "::error::CHANGELOG.md has no section for $version"; exit 1; }
+          fi
+
+  image:
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - { arch: amd64, os: ubuntu-24.04 }
+          - { arch: arm64, os: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - if: env.PUBLISH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          outputs: ${{ env.PUBLISH == 'true' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE) || 'type=docker,name=taskcraft:check' }}
+          cache-from: type=gha,scope=image-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=image-${{ matrix.arch }}
+      - name: Smoke test
+        if: env.PUBLISH != 'true'
+        run: docker run --rm taskcraft:check --version
+      - name: Keep the digest
+        if: env.PUBLISH == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+      - if: env.PUBLISH == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          retention-days: 1
+
+  manifest:
+    needs: [check, image]
+    if: github.event_name == 'push' || inputs.publish == true
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digest-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+      - name: One tag for both architectures
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          # shellcheck disable=SC2046 # the tags and digests are meant to split into arguments
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "$IMAGE@sha256:%s " *)
+      - name: Smoke test
+        run: |
+          docker buildx imagetools inspect "$IMAGE:${{ needs.check.outputs.version }}"
+          docker run --rm "$IMAGE:${{ needs.check.outputs.version }}" --version
+
+  binaries:
+    needs: check
+    strategy:
+      matrix:
+        include:
+          # 22.04: binaries that run on older distributions too (glibc 2.35)
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-22.04 }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Web app (built into the binary)
+        working-directory: web
+        run: npm ci --no-audit --no-fund && npm run build
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+      - run: cargo build --release --locked -p taskcraft
+      - name: Smoke test
+        run: ./target/release/taskcraft --version
+      - name: Package
+        run: |
+          name="taskcraft-${{ needs.check.outputs.version }}-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          cp target/release/taskcraft README.md LICENSE-MIT LICENSE-APACHE CHANGELOG.md "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: dist/*.tar.gz*
+          retention-days: 7
+
+  release:
+    needs: [check, manifest, binaries]
+    if: github.event_name == 'push' || inputs.publish == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: binaries-*
+          merge-multiple: true
+      - name: Release notes from the changelog
+        run: |
+          v="${{ needs.check.outputs.version }}"
+          awk -v v="$v" '$0 ~ "^## \\[" v "\\]" {on=1; next} /^## \[/ {on=0} on' CHANGELOG.md > notes.md
+          # shellcheck disable=SC2016 # the backticks are Markdown
+          printf '\n**Container image:** `%s:%s` (amd64, arm64)\n' "$IMAGE" "$v" >> notes.md
+      - name: GitHub release
+        run: |
+          pre=""; [[ "$GITHUB_REF_NAME" == *-* ]] && pre="--prerelease"
+          gh release create "$GITHUB_REF_NAME" dist/* --title "TaskCraft ${GITHUB_REF_NAME#v}" --notes-file notes.md $pre
+        env:
+          GH_TOKEN: ${{ github.token }}

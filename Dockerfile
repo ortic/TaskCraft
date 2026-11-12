@@ -23,6 +23,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # ---- runtime ----
 FROM debian:bookworm-slim
 ARG FEATURES=""
+LABEL org.opencontainers.image.title="TaskCraft" \
+      org.opencontainers.image.description="Self-hosted issue and project management" \
+      org.opencontainers.image.source="https://github.com/ortic/TaskCraft" \
+      org.opencontainers.image.licenses="MIT OR Apache-2.0"
 RUN extra=""; case "$FEATURES" in *saml*) extra="libxml2 libxmlsec1 libxmlsec1-openssl" ;; esac; \
     apt-get update && apt-get install -y --no-install-recommends ca-certificates $extra && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home /data taskcraft && mkdir -p /data && chown -R taskcraft /data
