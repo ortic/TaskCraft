@@ -48,6 +48,7 @@ pub fn api() -> Router<AppState> {
     Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
+        .route("/metrics", get(crate::metrics::scrape))
         .route("/events", get(crate::events::stream))
         // setup, sign-in, account
         .route("/setup", get(auth::setup_status).post(auth::setup))
@@ -184,7 +185,10 @@ pub fn api() -> Router<AppState> {
 
 pub fn router(state: AppState) -> Router {
     let max_upload = (state.config.max_upload_mb as usize).saturating_mul(1024 * 1024);
-    let api = api().layer(DefaultBodyLimit::max(max_upload.max(2 * 1024 * 1024)));
+    // route_layer: counted under the matched route pattern (unknown paths aren't routes)
+    let api = api()
+        .route_layer(axum::middleware::from_fn_with_state(state.clone(), crate::metrics::track))
+        .layer(DefaultBodyLimit::max(max_upload.max(2 * 1024 * 1024)));
     let spa = crate::web_assets::service(&state.config.static_dir);
     let hsts = state.config.base_url.starts_with("https://").then(|| {
         tower_http::set_header::SetResponseHeaderLayer::if_not_present(

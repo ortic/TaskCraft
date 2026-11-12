@@ -27,6 +27,8 @@ pub struct Inner {
     pub shutting_down: std::sync::atomic::AtomicBool,
     /// configured external sign-in providers (single sign-on)
     pub providers: Vec<crate::sso::Provider>,
+    /// request counters for `/api/metrics`
+    pub metrics: crate::metrics::Metrics,
 }
 
 impl std::ops::Deref for AppState {
@@ -53,7 +55,19 @@ impl AppState {
             .timeout(std::time::Duration::from_secs(15))
             .redirect(reqwest::redirect::Policy::none())
             .build()?;
-        Ok(AppState { inner: Arc::new(Inner { db, config, blobs, hub: Hub::new(), http, mailer, shutting_down: Default::default(), providers }) })
+        Ok(AppState {
+            inner: Arc::new(Inner {
+                db,
+                config,
+                blobs,
+                hub: Hub::new(),
+                http,
+                mailer,
+                shutting_down: Default::default(),
+                providers,
+                metrics: Default::default(),
+            }),
+        })
     }
 }
 

@@ -77,6 +77,11 @@ impl Default for Hub {
 }
 
 impl Hub {
+    /// Browsers following live updates on this replica.
+    pub fn subscribers(&self) -> usize {
+        self.tx.receiver_count()
+    }
+
     pub fn new() -> Self {
         Hub { tx: broadcast::channel(1024).0 }
     }

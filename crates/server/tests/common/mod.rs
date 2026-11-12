@@ -62,6 +62,7 @@ pub async fn spawn_with(tweak: impl FnOnce(&mut Config)) -> TestApp {
         secure_cookies: false,
         session_days: 30,
         log_format: "text".into(),
+        metrics_token: None,
         webhook_allow_private: true,
         wikicraft_url: None,
         wikicraft_token: None,

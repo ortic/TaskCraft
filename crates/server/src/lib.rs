@@ -16,6 +16,7 @@ pub mod mail;
 pub mod mail_in;
 pub mod markup;
 pub mod mcp;
+pub mod metrics;
 pub mod mfa;
 pub mod notify;
 pub mod query;

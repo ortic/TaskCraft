@@ -63,6 +63,10 @@ pub struct Config {
     #[arg(long, env = "TASKCRAFT_LOG_FORMAT", default_value = "text")]
     pub log_format: String,
 
+    /// Bearer token for Prometheus at `/api/metrics` (without one the endpoint is off).
+    #[arg(long, env = "TASKCRAFT_METRICS_TOKEN", hide_env_values = true)]
+    pub metrics_token: Option<String>,
+
     /// Allow webhooks to private / loopback addresses (off by default: SSRF protection).
     #[arg(long, env = "TASKCRAFT_WEBHOOK_ALLOW_PRIVATE", default_value_t = false)]
     pub webhook_allow_private: bool,

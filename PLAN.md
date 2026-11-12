@@ -54,7 +54,7 @@
 ## Next (round 3)
 
 - [ ] Releases: container image on GHCR (amd64 + arm64) and Linux binaries on tagged releases, a changelog — the Kubernetes manifests and the website point at that image
-- [ ] Operations: Prometheus metrics (requests, database pool, outboxes, workers), protected by a token
+- [x] Operations: Prometheus metrics (requests by route with durations, database pool, outboxes, e-mail in, live connections, counts), protected by a token
 - [ ] API description: OpenAPI document of the REST API and a browsable reference
 - [ ] Full migration from another tracker's XML site backup: people, projects, issues with their numbers, comments, time logs, attachments, links, watchers, components and versions, and the status history the reports replay
 - [ ] Service desk portal: requesters follow and answer their requests on a small portal (sign-in by e-mailed link), public request forms per project

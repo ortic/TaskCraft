@@ -351,6 +351,7 @@ set it under `images:` in `kustomization.yaml`.
 | `TASKCRAFT_SECURE_COOKIES` | `false` | `true` behind HTTPS (an `https://` base URL also enables HSTS) |
 | `TASKCRAFT_SESSION_DAYS` | `30` | session lifetime |
 | `TASKCRAFT_LOG_FORMAT` | `text` | `json` for log shippers |
+| `TASKCRAFT_METRICS_TOKEN` | — | bearer token for Prometheus at `/api/metrics` (off without one) |
 | `TASKCRAFT_WEBHOOK_ALLOW_PRIVATE` | `false` | let webhooks call private / loopback addresses |
 | `TASKCRAFT_WIKICRAFT_URL` | — | WikiCraft for linked pages, project docs and generated pages |
 | `TASKCRAFT_WIKICRAFT_TOKEN` | — | WikiCraft API token used when a person hasn't connected their own |
@@ -485,6 +486,23 @@ What happens to a message:
 
 *Project settings → E-mail* lists the latest messages and what became of each (workspace admins
 also see those that reached no project); the log is kept for 90 days.
+
+### Monitoring
+
+`/api/health` answers while the process runs, `/api/ready` while it can serve (it reports not
+ready while draining connections before a stop). With `TASKCRAFT_METRICS_TOKEN` set,
+`/api/metrics` serves Prometheus metrics: requests by method, route pattern and status class with
+durations, database pool connections, e-mail and webhook outboxes (waiting, given up, age of the
+oldest), e-mail in by outcome, live connections and counts of issues, projects and people. Each
+replica reports its own requests, so scrape every replica:
+
+```yaml
+scrape_configs:
+  - job_name: taskcraft
+    metrics_path: /api/metrics
+    authorization: { credentials: "<TASKCRAFT_METRICS_TOKEN>" }
+    static_configs: [{ targets: ["taskcraft:8788"] }]
+```
 
 ## API
 
