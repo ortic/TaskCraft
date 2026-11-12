@@ -31,9 +31,12 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser,
         author_name: Option<String>,
         via_email: bool,
         to_requester_at: Option<chrono::DateTime<chrono::Utc>>,
+        for_requester: bool,
+        via_portal: bool,
     }
     let rows: Vec<Row> = sqlx::query_as(
-        "SELECT c.id, c.author_id, u.name, c.body, c.created_at, c.updated_at, c.edited, c.author_email, c.author_name, c.via_email, c.to_requester_at
+        "SELECT c.id, c.author_id, u.name, c.body, c.created_at, c.updated_at, c.edited, c.author_email, c.author_name, c.via_email, c.to_requester_at,
+                c.for_requester, c.via_portal
            FROM comments c LEFT JOIN users u ON u.id = c.author_id
           WHERE c.issue_id = $1 ORDER BY c.created_at",
     )
@@ -55,11 +58,12 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser,
                         by_kind.entry(kind.clone()).or_default().push(json!({"id": uid, "name": un}));
                     }
                 }
-                // someone without an account (an issue's requester, by e-mail)
+                // someone without an account (the issue's requester: by e-mail or in the portal)
                 let external = c.author_email.as_ref().filter(|_| c.author_id.is_none()).map(|e| json!({"email": e, "name": c.author_name}));
                 json!({
                     "id": c.id, "author": c.author_id.map(|a| json!({"id": a, "name": c.name})), "external": external, "body": c.body,
-                    "createdAt": c.created_at, "updatedAt": c.updated_at, "edited": c.edited, "viaEmail": c.via_email, "emailedAt": c.to_requester_at,
+                    "createdAt": c.created_at, "updatedAt": c.updated_at, "edited": c.edited, "viaEmail": c.via_email, "viaPortal": c.via_portal,
+                    "forRequester": c.for_requester, "emailedAt": c.to_requester_at,
                     "reactions": by_kind.into_iter().map(|(k, people)| json!({"reaction": k, "people": people})).collect::<Vec<_>>()
                 })
             })
@@ -72,6 +76,10 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser,
 pub struct CommentOpts {
     /// it came in by e-mail
     pub via_email: bool,
+    /// written in the service desk portal
+    pub via_portal: bool,
+    /// the issue's requester sees it (in the portal; marked for them, or written by them)
+    pub for_requester: bool,
     /// written by someone without an account (an issue's requester): e-mail address and name
     pub external: Option<(String, Option<String>)>,
 }
@@ -95,7 +103,8 @@ pub async fn add_with(state: &AppState, actor: &Actor, issue: Uuid, body: Value,
     let by = opts.external.as_ref().map(|(e, n)| n.clone().unwrap_or_else(|| e.clone()));
     let mut tx = state.db.begin().await?;
     sqlx::query(
-        "INSERT INTO comments (id, issue_id, author_id, body, body_text, author_email, author_name, via_email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        "INSERT INTO comments (id, issue_id, author_id, body, body_text, author_email, author_name, via_email, via_portal, for_requester)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind(id)
     .bind(issue)
@@ -105,6 +114,8 @@ pub async fn add_with(state: &AppState, actor: &Actor, issue: Uuid, body: Value,
     .bind(author_email)
     .bind(author_name.flatten())
     .bind(opts.via_email)
+    .bind(opts.via_portal)
+    .bind(opts.for_requester)
     .execute(&mut *tx)
     .await?;
     let excerpt: String = text.chars().take(200).collect();
@@ -140,7 +151,11 @@ pub async fn add_with(state: &AppState, actor: &Actor, issue: Uuid, body: Value,
 pub struct CommentReq {
     body: Option<Value>,
     markdown: Option<String>,
-    /// also e-mail it to the issue's requester (people who can edit the issue)
+    /// visible to the issue's requester: in the portal, and e-mailed to them when mail is set up
+    /// (people who can edit the issue)
+    #[serde(default)]
+    for_requester: bool,
+    /// the earlier name of `forRequester`
     #[serde(default)]
     email_requester: bool,
 }
@@ -163,23 +178,24 @@ pub async fn create(
     Json(req): Json<CommentReq>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let (issue, _, role) = issue_for(&state, &user, &key, Role::Viewer).await?;
-    let to_requester = req.email_requester;
+    let to_requester = req.for_requester || req.email_requester;
     if to_requester {
         if role < Role::Member {
             return Err(ApiError::Denied("only people who can edit the issue may write to its requester".into()));
         }
         if crate::mail_in::requester(&state, issue).await?.is_none() {
-            return Err(ApiError::bad("this issue has no requester to e-mail"));
+            return Err(ApiError::bad("this issue has no requester"));
         }
     }
     let body = req.doc()?;
-    let id = add(&state, &Actor::of(&user), issue, body.clone()).await?;
+    let opts = CommentOpts { for_requester: to_requester, ..Default::default() };
+    let id = add_with(&state, &Actor::of(&user), issue, body.clone(), &opts).await?;
     let emailed = to_requester
         && crate::mail_in::mail_requester(&state, issue, id, &body, &user.name).await.unwrap_or_else(|e| {
             tracing::warn!("e-mailing the requester failed: {e:#}");
             false
         });
-    Ok((StatusCode::CREATED, Json(json!({"id": id, "emailed": emailed}))))
+    Ok((StatusCode::CREATED, Json(json!({"id": id, "forRequester": to_requester, "emailed": emailed}))))
 }
 
 async fn comment_issue(state: &AppState, id: Uuid) -> ApiResult<(Uuid, Option<Uuid>)> {

@@ -14,10 +14,13 @@ try {
   /* storage unavailable */
 }
 
-// the language first, then the app: labels defined when modules load are translated too
+// the language first, then the app: labels defined when modules load are translated too. The
+// service desk portal (/portal) is a small app of its own for people without an account, in their
+// browser's language.
 async function start() {
-  await loadLanguage(rememberedLanguage() ?? chooseLanguage())
-  const { default: App } = await import('./App')
+  const portal = location.pathname === '/portal' || location.pathname.startsWith('/portal/')
+  await loadLanguage(portal ? chooseLanguage() : (rememberedLanguage() ?? chooseLanguage()))
+  const { default: App } = portal ? await import('./portal/Portal') : await import('./App')
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>

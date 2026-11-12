@@ -39,7 +39,6 @@
 - [x] Two-factor authentication (authenticator app, recovery codes) and passkeys; sessions list; "require two-factor" per workspace
 - [x] Move issues between projects: new key (the old one keeps working), type / status mapped by name or category, custom fields by name and kind, sub-tasks along; editing time logs
 - [x] CSV import with field mapping (suggested from header names, values matched by name, dry run, source keys kept as aliases, parents from the file); TaskCraft's own CSV export imports back
-- [x] Full migration from another tracker's XML site backup: people, projects, issues with their numbers, comments, time logs, attachments, links, watchers, components and versions, and the status history the reports replay (uploaded, checked and imported in the background from Administration → Import, or `taskcraft import-backup`; a second import skips what's there)
 - [x] Scheduled automation ("every weekday at 08:00, issues due tomorrow → notify the assignee", local time zones), a notify action; service-level goals (first response, resolution) per priority with a queue and alerts
 - [x] Dashboards people compose from report widgets and saved filters
 - [x] Portfolio view across projects (epics and releases on one timeline), capacity per team
@@ -54,11 +53,11 @@
 
 ## Next (round 3)
 
-- [ ] Releases: container image on GHCR (amd64 + arm64) and Linux binaries on tagged releases, a changelog — the Kubernetes manifests and the website point at that image
+- [~] Releases: container image on GHCR (amd64 + arm64) and Linux binaries on tagged releases, a changelog — the workflow is ready and checked; the first release is a `v0.1.0` tag away
 - [x] Operations: Prometheus metrics (requests by route with durations, database pool, outboxes, e-mail in, live connections, counts), protected by a token
 - [ ] API description: OpenAPI document of the REST API and a browsable reference
-- [ ] Full migration from another tracker's XML site backup: people, projects, issues with their numbers, comments, time logs, attachments, links, watchers, components and versions, and the status history the reports replay
-- [ ] Service desk portal: requesters follow and answer their requests on a small portal (sign-in by e-mailed link), public request forms per project
+- [x] Full migration from another tracker's XML site backup: people, projects, issues with their numbers, comments, time logs, attachments, links, watchers, components and versions, and the status history the reports replay (uploaded, checked and imported in the background from Administration → Import, or `taskcraft import-backup`; a second import skips what's there)
+- [x] Service desk portal: requesters follow and answer their requests on a small portal (sign-in by e-mailed link), public request forms per project
 - [ ] Chat notifications: post to Slack, Microsoft Teams, Mattermost or Matrix from automation rules and per project
 - [ ] Filter subscriptions: a saved filter's results e-mailed on a schedule
 - [ ] Personal data export (everything about one person) and retention rules for trash, audit log and mail logs

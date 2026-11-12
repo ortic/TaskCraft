@@ -1,0 +1,17 @@
+/* Project settings → Service desk */
+.portal-set-enable { margin: 2px 0 14px; }
+.portal-set-group { border: 0; padding: 0; margin: 0; min-width: 0; max-width: 760px; }
+.portal-set-group:disabled { opacity: .6; }
+.portal-set-url { gap: 4px; min-width: 0; max-width: 100%; }
+.portal-set-url code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; font-size: 12.5px; }
+.portal-set-slug { max-width: 280px; }
+.portal-set-row { margin: 2px 0 12px; }
+.portal-set-h { margin: 18px 0 4px; font-size: 14px; }
+.portal-set-p { margin: 0 0 10px; max-width: 75ch; }
+.portal-set-show { max-width: 320px; }
+.portal-set-types { border: 0; padding: 0; margin: 0 0 12px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.portal-set-types legend { padding: 0; margin-bottom: 6px; }
+.portal-set-fields { max-width: 520px; margin-bottom: 10px; }
+.portal-set-fields th.portal-set-field { font-weight: 500; text-align: start; }
+.portal-set-fields td, .portal-set-fields th { padding-block: 6px; }
+.portal-set-fields input { width: 16px; height: 16px; accent-color: var(--accent); }

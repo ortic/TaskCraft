@@ -6,7 +6,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Link2, Paperclip, Eye, EyeOff, Ellipsis, Heart, FolderInput, Pencil, Copy, Trash, ExternalLink, Plus, X, Ban, BookOpen, Clock, CornerDownRight, MessageSquare, Activity, Timer, FileText, Check,
-  Mail, MailCheck,
+  Mail, MailCheck, LifeBuoy, ClipboardList,
 } from 'lucide-react'
 import {
   api, ago, dateTime, duration, shortDate, type Comment, type HistoryEvent, type Issue, type IssueDetail, type Project, type WikiPage,
@@ -282,17 +282,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
         <SideField label={t('Reporter')}>
           <PersonPicker value={issue.reporter} disabled={!can} allowNone={false} label={t('Reporter')} onChange={(id) => set({ reporterId: id })} />
         </SideField>
-        {issue.requester && (
-          <SideField label={t('Requester')}>
-            <span className="requester" title={t('Wrote in by e-mail; has no account')}>
-              <Mail size={14} aria-hidden />
-              <span className="requester-text">
-                {issue.requester.name && <span>{issue.requester.name}</span>}
-                <a href={`mailto:${issue.requester.email}`} className="faint small">{issue.requester.email}</a>
-              </span>
-            </span>
-          </SideField>
-        )}
+        {issue.requester && <RequesterField requester={issue.requester} />}
         <SideField label={t('Priority')}>
           <PriorityPicker value={issue.priority} disabled={!can} onChange={(p) => set({ priority: p })} />
         </SideField>
@@ -390,6 +380,29 @@ function SideField({ label, children }: { label: string; children: React.ReactNo
       <span className="sf-label">{label}</span>
       <div className="sf-value">{children}</div>
     </div>
+  )
+}
+
+/** Who the issue was opened for (no account), and how it reached the project. */
+function RequesterField({ requester }: { requester: NonNullable<IssueDetail['requester']> }) {
+  const source = requester.source ?? 'email'
+  const how =
+    source === 'form'
+      ? { icon: ClipboardList, label: t('via the request form'), title: t('Sent the public request form; has no account') }
+      : source === 'portal'
+        ? { icon: LifeBuoy, label: t('via the portal'), title: t('Sent the request form while signed in to the portal; has no account') }
+        : { icon: Mail, label: t('by e-mail'), title: t('Wrote in by e-mail; has no account') }
+  return (
+    <SideField label={t('Requester')}>
+      <span className="requester" title={how.title}>
+        <how.icon size={14} aria-hidden />
+        <span className="requester-text">
+          {requester.name && <span>{requester.name}</span>}
+          <a href={`mailto:${requester.email}`} className="faint small">{requester.email}</a>
+          <span className="faint small">{how.label}</span>
+        </span>
+      </span>
+    </SideField>
   )
 }
 
@@ -799,9 +812,10 @@ function Comments({ issue, meId }: { issue: IssueDetail; meId?: string }) {
   const toast = useToast()
   const list = useQuery({ queryKey: ['comments', issue.key], queryFn: () => api.get<Comment[]>(`/issues/${issue.key}/comments`) })
   const [editing, setEditing] = useState<string | null>(null)
-  // replies to an issue's requester (someone who wrote in by e-mail) go out by e-mail when ticked
+  // comments for an issue's requester (someone without an account) show in their portal and go
+  // out by e-mail when ticked; the others stay internal
   const requester = issue.requester
-  const canMail = !!requester && issue.permissions.edit && requester.mail
+  const canReply = !!requester && issue.permissions.edit
   const [toRequester, setToRequester] = useState(false)
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['comments', issue.key] })
@@ -820,13 +834,21 @@ function Comments({ issue, meId }: { issue: IssueDetail; meId?: string }) {
               value={EMPTY_DOC}
               placeholder={t('Add a comment… @ to mention')}
               label={t('New comment')}
-              saveLabel={canMail && toRequester ? t('Send reply') : t('Comment')}
+              saveLabel={canReply && toRequester ? t('Send reply') : t('Comment')}
               onSave={async (doc) => {
                 if (isEmptyDoc(doc)) return
                 try {
-                  const send = canMail && toRequester
-                  const r = await api.post<{ id: string; emailed?: boolean }>(`/issues/${issue.key}/comments`, { body: doc, emailRequester: send })
-                  if (send) toast(r.emailed ? t('E-mailed to {email}', { email: requester.email }) : t('Saved, but the e-mail couldn’t be queued'))
+                  const send = canReply && toRequester
+                  const r = await api.post<{ id: string; emailed?: boolean }>(`/issues/${issue.key}/comments`, { body: doc, forRequester: send })
+                  if (send) {
+                    toast(
+                      r.emailed
+                        ? t('Visible to {email} in the portal, and e-mailed', { email: requester.email })
+                        : requester.mail
+                          ? t('Saved, but the e-mail couldn’t be queued')
+                          : t('Visible to {email} in the portal', { email: requester.email }),
+                    )
+                  }
                   setToRequester(false)
                   refresh()
                 } catch (e) {
@@ -835,18 +857,20 @@ function Comments({ issue, meId }: { issue: IssueDetail; meId?: string }) {
                 }
               }}
             />
-            {requester && issue.permissions.edit && (
+            {canReply && (
               <div className="comment-requester">
-                {requester.mail ? (
-                  <label className="row small">
-                    <input type="checkbox" checked={toRequester} onChange={(e) => setToRequester(e.target.checked)} />
-                    <Mail size={13} aria-hidden />
-                    {t('E-mail this comment to the requester ({email})', { email: requester.email })}
-                  </label>
-                ) : (
-                  <span className="faint small">{t('Comments can’t be e-mailed to the requester: outgoing e-mail isn’t set up.')}</span>
-                )}
-                {!toRequester && requester.mail && <span className="faint small">{t('Without it, the comment stays internal.')}</span>}
+                <label className="row small">
+                  <input type="checkbox" checked={toRequester} onChange={(e) => setToRequester(e.target.checked)} />
+                  <Eye size={13} aria-hidden />
+                  {t('Visible to the requester ({email})', { email: requester.email })}
+                </label>
+                <span className="faint small">
+                  {!requester.mail
+                    ? t('Outgoing e-mail isn’t set up: the requester gets no e-mails and can’t sign in to the portal.')
+                    : toRequester
+                      ? t('They see it in the portal and get it by e-mail.')
+                      : t('Without it, the comment stays internal.')}
+                </span>
               </div>
             )}
           </div>
@@ -863,10 +887,18 @@ function Comments({ issue, meId }: { issue: IssueDetail; meId?: string }) {
               <span className="faint" title={dateTime(c.createdAt)}>{ago(c.createdAt)}</span>
               {c.edited && <span className="faint small">({t('edited')})</span>}
               {c.viaEmail && <span className="badge" title={t('Came in by e-mail')}><Mail size={11} aria-hidden /> {t('by e-mail')}</span>}
-              {c.emailedAt && (
-                <span className="badge badge-accent" title={t('E-mailed to the requester {when}', { when: dateTime(c.emailedAt) })}>
+              {c.viaPortal && <span className="badge" title={t('Written in the portal')}><LifeBuoy size={11} aria-hidden /> {t('in the portal')}</span>}
+              {c.emailedAt ? (
+                <span className="badge badge-accent" title={t('Visible to the requester; e-mailed to them {when}', { when: dateTime(c.emailedAt) })}>
                   <MailCheck size={11} aria-hidden /> {t('sent to requester')}
                 </span>
+              ) : (
+                c.forRequester &&
+                !c.external && (
+                  <span className="badge badge-accent" title={t('The requester sees it in the portal')}>
+                    <Eye size={11} aria-hidden /> {t('visible to requester')}
+                  </span>
+                )
               )}
               <span className="spacer" />
               {c.author?.id === meId && editing !== c.id && (

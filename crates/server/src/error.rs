@@ -22,6 +22,9 @@ pub enum ApiError {
     Conflict(String),
     #[error("payload too large")]
     TooLarge,
+    /// a rate limit was reached (429), with what to do
+    #[error("{0}")]
+    TooMany(String),
     #[error("internal error")]
     Internal(#[from] anyhow::Error),
 }
@@ -64,6 +67,7 @@ impl IntoResponse for ApiError {
             ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
             ApiError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
             ApiError::TooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "too_large"),
+            ApiError::TooMany(_) => (StatusCode::TOO_MANY_REQUESTS, "too_many_requests"),
             ApiError::Internal(e) => {
                 tracing::error!(error = ?e, "internal error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal")

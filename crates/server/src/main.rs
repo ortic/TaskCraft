@@ -193,10 +193,12 @@ async fn main() -> anyhow::Result<()> {
             taskcraft::mail::spawn_worker(&state);
             taskcraft::mail_in::spawn(&state);
             taskcraft::site_backup::jobs::spawn_cleanup(&state);
+            taskcraft::portal::spawn(&state);
             let app = taskcraft::routes::router(state.clone());
             let listener = tokio::net::TcpListener::bind(bind).await?;
             tracing::info!("TaskCraft listening on http://{bind}; web app: {}", taskcraft::web_assets::source(&state.config.static_dir));
-            axum::serve(listener, app).with_graceful_shutdown(shutdown(state)).await?;
+            // the peer's address is known (rate limits of the public portal pages)
+            axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(shutdown(state)).await?;
         }
     }
     Ok(())

@@ -19,6 +19,7 @@ pub mod mcp;
 pub mod metrics;
 pub mod mfa;
 pub mod notify;
+pub mod portal;
 pub mod query;
 pub mod reports;
 pub mod routes;

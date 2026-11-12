@@ -424,7 +424,12 @@ impl TaskMcp {
             line("Reporter", r);
         }
         if let Some(e) = v["requester"]["email"].as_str() {
-            line("Requester (by e-mail)", v["requester"]["name"].as_str().map(|n| format!("{n} <{e}>")).unwrap_or_else(|| e.to_string()));
+            let how = match v["requester"]["source"].as_str() {
+                Some("form") => "request form",
+                Some("portal") => "portal",
+                _ => "by e-mail",
+            };
+            line(&format!("Requester ({how})"), v["requester"]["name"].as_str().map(|n| format!("{n} <{e}>")).unwrap_or_else(|| e.to_string()));
         }
         if v["parent"].is_object() {
             line("Parent", format!("{} {}", txt(&v["parent"]["key"]), txt(&v["parent"]["title"])));

@@ -274,7 +274,7 @@ async fn requesters_write_in_and_get_answers() {
     let key = r["issue"].as_str().unwrap().to_string();
     let issue = get(&owner, app.url(&format!("/issues/{key}"))).await;
     assert_eq!(issue["title"], "Invoice is wrong");
-    assert_eq!(issue["requester"], json!({"email": "jane@example.org", "name": "Jane Doe", "mail": true}));
+    assert_eq!(issue["requester"], json!({"email": "jane@example.org", "name": "Jane Doe", "mail": true, "source": "email"}));
     assert!(issue["reporter"].is_null());
     let history = get(&owner, app.url(&format!("/issues/{key}/history"))).await;
     assert!(history.as_array().unwrap().iter().any(|e| e["kind"] == "created" && e["new"]["by"] == "Jane Doe"), "{history}");
