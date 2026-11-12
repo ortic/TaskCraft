@@ -11,6 +11,7 @@ pub mod error;
 pub mod events;
 pub mod git;
 pub mod issues;
+pub mod mcp;
 pub mod notify;
 pub mod query;
 pub mod reports;

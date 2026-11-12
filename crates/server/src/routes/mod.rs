@@ -163,7 +163,11 @@ pub fn router(state: AppState) -> Router {
             axum::http::HeaderValue::from_static("max-age=31536000; includeSubDomains"),
         )
     });
+    // MCP server for AI assistants (authenticated per tool call with the caller's token / session)
+    let mcp = crate::mcp::service(state.clone());
     let app = Router::new()
+        .nest_service("/api/mcp", mcp.clone())
+        .nest_service("/api/v1/mcp", mcp)
         .nest("/api/v1", api.clone())
         .nest("/api", api)
         .fallback_service(spa)

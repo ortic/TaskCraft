@@ -85,6 +85,10 @@ small JSON format) appear on the issues whose keys they mention, with state badg
 its cards; rules move issues when a branch is pushed or a pull request is merged; a branch name
 helper on every issue. See [Git integration](#git-integration).
 
+**AI assistants**: a built-in [MCP](https://modelcontextprotocol.io) server — Claude & co. search
+(TQL), read, create and update issues, comment, log time and read sprints, boards and reports with
+the user's permissions. See [AI assistants (MCP)](#ai-assistants-mcp).
+
 **Administration**: workspace owner / admins / members / guests; project roles (viewer, member,
 admin) for people and teams, a default role per project; invitations and password-reset links;
 teams; personal API tokens (read-only or read/write); signed webhooks; audit log.
@@ -149,6 +153,54 @@ The generic format, every part optional:
 curl -X POST "$WEBHOOK" -H 'Content-Type: application/json' -H "X-TaskCraft-Token: $SECRET" \
   -d '{"commits": [{"sha": "3f2a9c1", "message": "WEB-12 Fix the login timeout"}]}'
 ```
+
+## AI assistants (MCP)
+
+TaskCraft has a built-in [MCP](https://modelcontextprotocol.io) server at `/api/mcp` (also
+`/api/v1/mcp`; streamable HTTP, stateless, so any replica answers). Create a personal API token
+(*Profile & settings → API tokens*) and point your MCP client at it:
+
+```bash
+claude mcp add --transport http taskcraft https://tasks.example.com/api/mcp --header "Authorization: Bearer tct_…"
+```
+
+or in a project's `.mcp.json` (shared with the team; each person sets `TASKCRAFT_TOKEN`):
+
+```json
+{
+  "mcpServers": {
+    "taskcraft": {
+      "type": "http",
+      "url": "https://tasks.example.com/api/mcp",
+      "headers": {"Authorization": "Bearer ${TASKCRAFT_TOKEN}"}
+    }
+  }
+}
+```
+
+Claude Desktop starts local (stdio) servers from `claude_desktop_config.json`; connect it through
+the `mcp-remote` bridge (needs Node.js):
+
+```json
+{
+  "mcpServers": {
+    "taskcraft": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://tasks.example.com/api/mcp", "--header", "Authorization:${AUTH}"],
+      "env": {"AUTH": "Bearer tct_…"}
+    }
+  }
+}
+```
+
+Tools: `search_issues` (TQL, explained in the tool's description), `get_issue` (fields, description
+as Markdown, sub-tasks, links, development links, comments), `create_issue` and `update_issue`
+(types, statuses, sprints and people by name; restricted workflows apply), `add_comment`
+(Markdown), `log_work`, `list_projects` (statuses, types, running sprint; one project's full setup),
+`get_sprint`, `get_board`, `run_report` (overview, burndown, velocity, cumulative flow, cycle time,
+created vs resolved, workload as JSON). Every call runs with the token owner's permissions; give an
+assistant that should only look a **read-only** token: the changing tools then refuse. The server
+only answers for its own host names (`TASKCRAFT_BASE_URL`, localhost), against DNS rebinding.
 
 ## Quick start (Docker)
 
@@ -231,6 +283,7 @@ on writes.
 | Sprints & boards | `GET /boards/{id}`, `POST /sprints/{id}/start`, `/complete`, `GET /sprints/{id}/burndown` |
 | WikiCraft | `GET /issues/{KEY}/wiki-pages`, `POST /issues/{KEY}/wiki-page`, `POST /sprints/{id}/wiki-page`, `POST /versions/{id}/wiki-page`, `GET /projects/{KEY}/wiki`, `GET /wiki-links?url=` (issues linking a page) |
 | Git | `GET/POST /projects/{KEY}/git` (connected repositories; the secret comes back once), `PUT /projects/{KEY}/git/rules`, `DELETE /git-integrations/{id}`, `POST /git-integrations/{id}/secret`, `GET /issues/{KEY}/development`, webhooks `POST /integrations/git/{github,gitlab,generic}/{key}` |
+| MCP | `POST /mcp` (streamable HTTP, see above) |
 | Live | `GET /events` (Server-Sent Events) |
 | Account & admin | `/me`, `/me/tokens`, `/notifications`, `/views`, `/timesheet`, `/people`, `/teams`, `/users`, `/admin/{workspace,stats,audit,webhooks}` |
 
@@ -248,7 +301,8 @@ with backoff for about eight hours.
 web/              React 19 + Vite, TanStack Query, Tiptap (rich text), hand-drawn SVG charts
 crates/tql        the query language: lexer, parser and syntax tree (no I/O)
 crates/server     axum 0.8 HTTP API, sqlx / PostgreSQL, TQL → SQL, history replay for reports,
-                  automation, webhooks, live updates (SSE + LISTEN/NOTIFY), WikiCraft client, Git webhooks → single binary
+                  automation, webhooks, live updates (SSE + LISTEN/NOTIFY), WikiCraft client, Git webhooks,
+                  MCP server → single binary
 ```
 
 Every change to an issue is written to `issue_events`; the activity stream, notifications,
