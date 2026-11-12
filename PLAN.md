@@ -49,4 +49,4 @@
 - [ ] Translations beyond English and German
 - [x] Accessibility audit (axe, WCAG 2.2 AA) in the e2e suite
 - [x] Browser (Playwright) journey tests in CI
-- [ ] Backup / restore command; Kubernetes manifests
+- [x] Backup / restore command (one .tar.gz with every table and the attachments; restores across versions and storage backends); Kubernetes manifests (replicas, S3, PDB, autoscaler, nightly backup job)

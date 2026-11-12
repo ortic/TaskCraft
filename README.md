@@ -287,7 +287,40 @@ taskcraft serve        # web server (default)
 taskcraft migrate      # apply migrations
 taskcraft demo         # add sample data to the workspace
 taskcraft healthcheck  # probe a running server (container HEALTHCHECK)
+taskcraft backup FILE  # database + attachments into one .tar.gz (`-` writes to standard output)
+taskcraft restore FILE # into an empty database (`--force` replaces an existing workspace)
 ```
+
+### Backup and restore
+
+`taskcraft backup taskcraft-2026-11-12.tar.gz` writes the whole workspace — every table, taken in
+one consistent snapshot while the server keeps running, and all attachments — into one file
+(`--no-files` leaves the attachments out when the S3 bucket is backed up on its own). With
+Docker: `docker compose exec taskcraft taskcraft backup - > taskcraft.tar.gz`.
+
+`taskcraft restore taskcraft.tar.gz` loads it into an empty database (stop the server first; a
+database that already holds a workspace is only replaced with `--force`). The schema is built up to
+the backup's version, the data loaded, then this version's newer migrations run — so a backup from
+an older TaskCraft restores into a newer one, while a backup from a newer one is refused before
+anything is touched. Attachments go into whatever storage is configured, which also moves them
+from the data directory into S3 or back.
+
+### Kubernetes
+
+[`deploy/kubernetes`](deploy/kubernetes) runs TaskCraft with several replicas (attachments in
+S3-compatible storage, PostgreSQL outside the cluster or from an operator), a disruption budget,
+an autoscaler, an ingress with the timeouts live updates need, and a nightly backup job that keeps
+14 days on a volume:
+
+```bash
+cp deploy/kubernetes/secret.example.yaml deploy/kubernetes/secret.yaml   # git-ignored
+$EDITOR deploy/kubernetes/{secret,configmap,ingress}.yaml               # database, bucket, host
+kubectl apply -k deploy/kubernetes
+```
+
+Replicas need no sticky sessions: live updates, scheduled automation, e-mail and webhook delivery
+coordinate through PostgreSQL. Build the image with `docker build -t <registry>/taskcraft .` and
+set it under `images:` in `kustomization.yaml`.
 
 ## Configuration
 

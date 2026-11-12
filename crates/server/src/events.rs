@@ -131,7 +131,10 @@ struct Conn {
 }
 
 /// `GET /api/events`: the caller's live updates (`text/event-stream`).
-pub async fn stream(State(state): State<AppState>, CurrentUser(user): CurrentUser) -> ApiResult<Sse<impl Stream<Item = Result<SseEvent, Infallible>>>> {
+pub async fn stream(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+) -> ApiResult<([(axum::http::HeaderName, &'static str); 1], Sse<impl Stream<Item = Result<SseEvent, Infallible>>>)> {
     let visible: HashSet<Uuid> = crate::access::visible_projects(&state, &user).await?.into_iter().collect();
     let conn = Conn { rx: state.hub.tx.subscribe(), state: state.clone(), user, visible, refreshed: Instant::now(), hello: true };
     let s = futures::stream::unfold(conn, |mut c| async move {
@@ -163,5 +166,6 @@ pub async fn stream(State(state): State<AppState>, CurrentUser(user): CurrentUse
             }
         }
     });
-    Ok(Sse::new(s).keep_alive(KeepAlive::new().interval(Duration::from_secs(20))))
+    // proxies (nginx and friends) must pass events on at once instead of buffering them
+    Ok(([(axum::http::HeaderName::from_static("x-accel-buffering"), "no")], Sse::new(s).keep_alive(KeepAlive::new().interval(Duration::from_secs(20)))))
 }

@@ -44,32 +44,10 @@ impl AppState {
         let mailer = crate::mail::Mailer::new(&config)?;
         std::fs::create_dir_all(&config.data_dir)?;
         std::fs::create_dir_all(config.upload_dir())?;
-        let db =
-            sqlx::postgres::PgPoolOptions::new().max_connections(20).acquire_timeout(std::time::Duration::from_secs(10)).connect(&config.database_url).await?;
+        let db = connect(&config).await?;
         // several replicas may start at once: the migrator serializes itself with an advisory lock
-        sqlx::migrate!("./migrations").run(&db).await?;
-        let blobs: Arc<dyn ObjectStore> = match &config.s3_bucket {
-            Some(bucket) => {
-                let mut b = object_store::aws::AmazonS3Builder::from_env().with_bucket_name(bucket);
-                if let Some(e) = &config.s3_endpoint {
-                    b = b.with_endpoint(e).with_allow_http(e.starts_with("http://")).with_virtual_hosted_style_request(false);
-                }
-                if let Some(r) = &config.s3_region {
-                    b = b.with_region(r);
-                }
-                if let Some(k) = &config.s3_access_key_id {
-                    b = b.with_access_key_id(k);
-                }
-                if let Some(s) = &config.s3_secret_access_key {
-                    b = b.with_secret_access_key(s);
-                }
-                Arc::new(b.build()?)
-            }
-            None => {
-                std::fs::create_dir_all(config.blob_dir())?;
-                Arc::new(object_store::local::LocalFileSystem::new_with_prefix(config.blob_dir())?)
-            }
-        };
+        migrator().run(&db).await?;
+        let blobs = blob_store(&config)?;
         let http = reqwest::Client::builder()
             .user_agent(concat!("TaskCraft/", env!("CARGO_PKG_VERSION")))
             .timeout(std::time::Duration::from_secs(15))
@@ -77,6 +55,42 @@ impl AppState {
             .build()?;
         Ok(AppState { inner: Arc::new(Inner { db, config, blobs, hub: Hub::new(), http, mailer, shutting_down: Default::default(), providers }) })
     }
+}
+
+/// The database pool (without running migrations).
+pub async fn connect(config: &Config) -> anyhow::Result<PgPool> {
+    Ok(sqlx::postgres::PgPoolOptions::new().max_connections(20).acquire_timeout(std::time::Duration::from_secs(10)).connect(&config.database_url).await?)
+}
+
+/// The schema migrations built into this binary.
+pub fn migrator() -> sqlx::migrate::Migrator {
+    sqlx::migrate!("./migrations")
+}
+
+/// Attachment storage: S3-compatible when a bucket is configured, else the data directory.
+pub fn blob_store(config: &Config) -> anyhow::Result<Arc<dyn ObjectStore>> {
+    Ok(match &config.s3_bucket {
+        Some(bucket) => {
+            let mut b = object_store::aws::AmazonS3Builder::from_env().with_bucket_name(bucket);
+            if let Some(e) = &config.s3_endpoint {
+                b = b.with_endpoint(e).with_allow_http(e.starts_with("http://")).with_virtual_hosted_style_request(false);
+            }
+            if let Some(r) = &config.s3_region {
+                b = b.with_region(r);
+            }
+            if let Some(k) = &config.s3_access_key_id {
+                b = b.with_access_key_id(k);
+            }
+            if let Some(s) = &config.s3_secret_access_key {
+                b = b.with_secret_access_key(s);
+            }
+            Arc::new(b.build()?)
+        }
+        None => {
+            std::fs::create_dir_all(config.blob_dir())?;
+            Arc::new(object_store::local::LocalFileSystem::new_with_prefix(config.blob_dir())?)
+        }
+    })
 }
 
 pub fn new_id() -> uuid::Uuid {

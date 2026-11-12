@@ -1,0 +1,21 @@
+# TaskCraft on Kubernetes: several replicas, attachments in S3-compatible storage, PostgreSQL
+# outside the cluster (or from an operator). Usage:
+#   cp secret.example.yaml secret.yaml && edit secret.yaml configmap.yaml ingress.yaml
+#   kubectl apply -k deploy/kubernetes
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: taskcraft
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - pdb.yaml
+  - hpa.yaml
+  - backup.yaml
+images:
+  - name: taskcraft
+    newName: ghcr.io/ortic/taskcraft
+    newTag: latest

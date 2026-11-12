@@ -1,0 +1,72 @@
+# Nightly backups (database and attachments, `taskcraft backup`) onto a volume, keeping 14 days.
+# Restore one with:  kubectl -n taskcraft scale deploy/taskcraft --replicas=0
+#   kubectl -n taskcraft run restore --rm -i --image=ghcr.io/ortic/taskcraft:latest \
+#     --overrides='{"spec":{"containers":[{"name":"restore","image":"ghcr.io/ortic/taskcraft:latest","args":["restore","-","--force"],"stdin":true,"envFrom":[{"configMapRef":{"name":"taskcraft"}},{"secretRef":{"name":"taskcraft"}}]}]}}' \
+#     < taskcraft-2026-11-12.tar.gz
+# then scale back up. Copy a backup off the volume with `kubectl cp` from a pod that mounts it,
+# or stream one directly:  kubectl -n taskcraft exec deploy/taskcraft -- taskcraft backup - > backup.tar.gz
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: taskcraft-backups
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: { storage: 20Gi }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: taskcraft-backup
+spec:
+  schedule: "30 2 * * *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels: { app.kubernetes.io/name: taskcraft-backup }
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            fsGroup: 10001
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: backup
+              image: taskcraft
+              command: ["/bin/sh", "-c"]
+              # `--no-files` leaves the attachments out when the bucket is backed up on its own
+              args:
+                - >-
+                  set -e;
+                  f="/backups/taskcraft-$(date -u +%Y-%m-%d).tar.gz";
+                  taskcraft backup "$f";
+                  find /backups -name 'taskcraft-*.tar.gz' -mtime +14 -delete;
+                  ls -l /backups
+              envFrom:
+                - configMapRef: { name: taskcraft }
+                - secretRef: { name: taskcraft }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { memory: 1Gi }
+              volumeMounts:
+                - { name: backups, mountPath: /backups }
+                - { name: data, mountPath: /data }
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: backups
+              persistentVolumeClaim: { claimName: taskcraft-backups }
+            - name: data
+              emptyDir: { sizeLimit: 1Gi }
+            - name: tmp
+              emptyDir: { sizeLimit: 1Gi }

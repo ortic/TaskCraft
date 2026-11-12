@@ -31,6 +31,16 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render and validate the Kubernetes manifests
+        run: |
+          cp deploy/kubernetes/secret.example.yaml deploy/kubernetes/secret.yaml
+          kubectl kustomize deploy/kubernetes > "$RUNNER_TEMP/k8s.yaml"
+          docker run --rm -i ghcr.io/yannh/kubeconform:v0.8.0 -strict -summary -kubernetes-version 1.33.0 - < "$RUNNER_TEMP/k8s.yaml"
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

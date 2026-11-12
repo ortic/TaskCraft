@@ -4,6 +4,7 @@ pub mod access;
 pub mod app;
 pub mod auth;
 pub mod automation;
+pub mod backup;
 pub mod config;
 pub mod demo;
 pub mod doc;

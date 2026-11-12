@@ -1,0 +1,26 @@
+# ingress-nginx example. Live updates (/api/events) are a long-lived event stream: long timeouts,
+# no buffering (the server also sends X-Accel-Buffering: no). No sticky sessions are needed —
+# replicas relay changes through PostgreSQL.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: taskcraft
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "256m"   # match TASKCRAFT_MAX_UPLOAD_MB
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    # cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [tasks.example.com]
+      secretName: taskcraft-tls
+  rules:
+    - host: tasks.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: taskcraft, port: { name: http } }

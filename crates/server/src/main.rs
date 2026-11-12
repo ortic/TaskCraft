@@ -20,6 +20,21 @@ enum Command {
     Migrate,
     /// Add sample projects, people and history to the workspace (as its owner).
     Demo,
+    /// Write a backup of the database and the attachments to FILE (`-`: standard output).
+    Backup {
+        /// e.g. `taskcraft-2026-11-12.tar.gz`, or `-`
+        file: std::path::PathBuf,
+        /// leave the attachments out (when the S3 bucket is backed up on its own)
+        #[arg(long)]
+        no_files: bool,
+    },
+    /// Restore a backup from FILE (`-`: standard input) into an empty database.
+    Restore {
+        file: std::path::PathBuf,
+        /// replace everything in a database that already holds a workspace
+        #[arg(long)]
+        force: bool,
+    },
     /// Probe the running server's `/api/health` (for container HEALTHCHECKs); exits non-zero when unhealthy.
     Healthcheck,
 }
@@ -48,16 +63,34 @@ async fn main() -> anyhow::Result<()> {
         return healthcheck(cli.config.bind);
     }
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,tower_http=info,sqlx=warn"));
+    // backups may stream to standard output: log to standard error
     if cli.config.log_format.eq_ignore_ascii_case("json") {
-        tracing_subscriber::fmt().json().flatten_event(true).with_current_span(true).with_span_list(false).with_env_filter(filter).init();
+        tracing_subscriber::fmt()
+            .json()
+            .flatten_event(true)
+            .with_current_span(true)
+            .with_span_list(false)
+            .with_env_filter(filter)
+            .with_writer(std::io::stderr)
+            .init();
     } else {
-        tracing_subscriber::fmt().with_env_filter(filter).init();
+        tracing_subscriber::fmt().with_env_filter(filter).with_writer(std::io::stderr).init();
     }
     match cli.command.unwrap_or(Command::Serve) {
         Command::Healthcheck => unreachable!(),
         Command::Migrate => {
             AppState::new(cli.config).await?;
             println!("migrations applied");
+        }
+        Command::Backup { file, no_files } => {
+            let db = taskcraft::app::connect(&cli.config).await?;
+            let blobs = taskcraft::app::blob_store(&cli.config)?;
+            let summary = taskcraft::backup::backup(&db, blobs.as_ref(), &file, !no_files).await?;
+            eprintln!("backup written: {summary}");
+        }
+        Command::Restore { file, force } => {
+            let summary = taskcraft::backup::restore(&cli.config, &file, force).await?;
+            eprintln!("backup restored: {summary}");
         }
         Command::Demo => {
             let state = AppState::new(cli.config).await?;

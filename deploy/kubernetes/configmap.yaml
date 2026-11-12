@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskcraft
+data:
+  TASKCRAFT_BIND: "0.0.0.0:8788"
+  TASKCRAFT_BASE_URL: "https://tasks.example.com"
+  TASKCRAFT_SECURE_COOKIES: "true"
+  # replicas share nothing on disk: attachments live in the bucket
+  TASKCRAFT_S3_BUCKET: "taskcraft"
+  TASKCRAFT_S3_ENDPOINT: ""              # empty for AWS S3; e.g. https://s3.example.com for MinIO / Ceph / R2
+  TASKCRAFT_S3_REGION: "eu-central-1"
+  TASKCRAFT_MAX_UPLOAD_MB: "256"
+  # observability
+  TASKCRAFT_LOG_FORMAT: "json"
+  RUST_LOG: "info,tower_http=info,sqlx=warn"
+  # e-mail (the SMTP URL with its password goes into the secret)
+  TASKCRAFT_MAIL_FROM: "TaskCraft <tasks@example.com>"
+  # documentation next to the work (optional; the token goes into the secret)
+  # TASKCRAFT_WIKICRAFT_URL: "https://wiki.example.com"
+  # single sign-on (optional, see README "Sign-in"); client secrets go into the secret
+  # TASKCRAFT_OIDC_ISSUER: "https://sso.example.com/realms/acme"
+  # TASKCRAFT_OIDC_CLIENT_ID: "taskcraft"
+  # TASKCRAFT_DISABLE_PASSWORD_LOGIN: "true"
