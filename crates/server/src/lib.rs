@@ -9,6 +9,7 @@ pub mod demo;
 pub mod doc;
 pub mod error;
 pub mod events;
+pub mod git;
 pub mod issues;
 pub mod notify;
 pub mod query;

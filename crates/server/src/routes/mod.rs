@@ -3,6 +3,7 @@ pub mod attachments;
 pub mod auth;
 pub mod boards;
 pub mod comments;
+pub mod git;
 pub mod integrations;
 pub mod issues;
 pub mod projects;
@@ -136,6 +137,13 @@ pub fn api() -> Router<AppState> {
         .route("/integrations/wikicraft/search", get(integrations::search))
         .route("/integrations/wikicraft/spaces", get(integrations::spaces))
         .route("/wiki-links", get(integrations::linked_issues))
+        // Git: webhook receivers, connected repositories, development links
+        .route("/integrations/git/{provider}/{secret}", post(git::receive))
+        .route("/projects/{key}/git", get(git::settings).post(git::create))
+        .route("/projects/{key}/git/rules", put(git::put_rules))
+        .route("/git-integrations/{id}", delete(git::delete))
+        .route("/git-integrations/{id}/secret", post(git::rotate))
+        .route("/issues/{key}/development", get(git::development))
         // administration
         .route("/admin/workspace", put(admin::put_workspace))
         .route("/admin/audit", get(admin::audit_log))

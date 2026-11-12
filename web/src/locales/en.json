@@ -35,6 +35,10 @@
   "one": "{count} point",
   "other": "{count} points"
  },
+ "{count} pull requests": {
+  "one": "{count} pull request",
+  "other": "{count} pull requests"
+ },
  "{days} days in this status": {
   "one": "{days} day in this status",
   "other": "{days} days in this status"
@@ -87,6 +91,10 @@
   "one": "Issues finished in {count} day",
   "other": "Issues finished in {count} days"
  },
+ "linked {count} commits": {
+  "one": "linked {count} commit",
+  "other": "linked {count} commits"
+ },
  "Move the {count} unfinished issues to": {
   "one": "Move the {count} unfinished issue to",
   "other": "Move the {count} unfinished issues to"
@@ -102,6 +110,10 @@
  "Running difference of created and resolved issues: {value} after {count} days.": {
   "one": "Running difference of created and resolved issues: {value} after {count} day.",
   "other": "Running difference of created and resolved issues: {value} after {count} days."
+ },
+ "Show all {count} commits": {
+  "one": "Show {count} commit",
+  "other": "Show all {count} commits"
  },
  "Sprint completed; {n} issues moved": {
   "one": "Sprint completed; {n} issue moved",

@@ -4,6 +4,7 @@ import type { Issue } from '../api'
 import { Avatar, Unassigned } from '../ui'
 import { PriorityIcon, TypeIcon } from '../icons'
 import { DueText } from './fields'
+import { PrIcon } from './Development'
 
 /** Days in the current status, as dots: more dots and warmer colours the longer it sits. */
 export function Aging({ since, done }: { since: string; done: boolean }) {
@@ -82,6 +83,7 @@ export default function IssueCard({
         {issue.commentCount > 0 && has('comments') && (
           <span className="ic-sub"><MessageSquare size={11} />{issue.commentCount}</span>
         )}
+        {issue.pullRequest && <PrIcon state={issue.pullRequest} size={13} withTitle />}
         <Aging since={issue.statusChangedAt} done={done} />
         <span className="spacer" />
         {has('points') && issue.storyPoints != null && <span className="ic-points" title={t('Story points')}>{issue.storyPoints}</span>}

@@ -17,6 +17,7 @@ import { Avatar, Choices, Confirm, Empty, ErrorBox, Loading, Lozenge, Modal, Pop
 import { PROJECT_COLORS, PROJECT_ICONS, ProjectIcon, TYPE_ICONS, TypeIcon, priorityLabel } from '../icons'
 import { OptionChip, PersonPicker } from '../components/fields'
 import { useOpenIssue } from '../components/Layout'
+import GitSettings from './GitSettings'
 import './ProjectSettings.css'
 
 // ---- local types (server shapes) ----
@@ -241,6 +242,7 @@ export default function ProjectSettings() {
             {active.id === 'boards' && <BoardsSection boardId={sub} />}
             {active.id === 'automation' && <AutomationSection />}
             {active.id === 'integrations' && <IntegrationsSection />}
+            {active.id === 'integrations' && <GitSettings project={p} />}
             {active.id === 'trash' && <TrashSection />}
           </div>
         </div>

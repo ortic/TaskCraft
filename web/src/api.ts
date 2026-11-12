@@ -133,6 +133,8 @@ export interface Issue {
   childCount: number
   childDone: number
   commentCount: number
+  /** its pull request's state (Git integration), when one is linked */
+  pullRequest?: 'open' | 'merged' | 'closed'
   blocked: boolean
   url: string
 }

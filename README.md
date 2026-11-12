@@ -80,6 +80,11 @@ through Postgres so it works with several replicas).
 **Interface**: English and German (more languages are a JSON catalog away, see below), light, dark
 and high-contrast themes, phone layout, checked with axe against WCAG 2.2 AA in the browser tests.
 
+**Git**: commits, branches and pull / merge requests from GitHub, GitLab (or any server, through a
+small JSON format) appear on the issues whose keys they mention, with state badges on the issue and
+its cards; rules move issues when a branch is pushed or a pull request is merged; a branch name
+helper on every issue. See [Git integration](#git-integration).
+
 **Administration**: workspace owner / admins / members / guests; project roles (viewer, member,
 admin) for people and teams, a default role per project; invitations and password-reset links;
 teams; personal API tokens (read-only or read/write); signed webhooks; audit log.
@@ -102,6 +107,48 @@ Connect TaskCraft to WikiCraft with `TASKCRAFT_WIKICRAFT_URL` and a WikiCraft AP
 (`TASKCRAFT_WIKICRAFT_TOKEN`, used for everyone), or let people connect their own token under
 *Profile & settings* so page lookups respect their own wiki permissions. For the other direction,
 create a read-only TaskCraft token (*Profile & settings → API tokens*) for WikiCraft.
+
+## Git integration
+
+Connect repositories in *Project settings → Integrations → Git*: pick GitHub, GitLab or *Other*,
+give the repository's web address, and TaskCraft shows the webhook address and a secret — the
+secret only once (make a new one there if it gets lost), with the setup steps:
+
+| Provider | Webhook address | Authenticity | Events |
+|---|---|---|---|
+| GitHub (also Gitea, Forgejo) | `POST /api/integrations/git/github/{key}` | `X-Hub-Signature-256` (HMAC-SHA256 of the body with the secret) | `push`, `pull_request` (content type `application/json`) |
+| GitLab | `POST /api/integrations/git/gitlab/{key}` | `X-Gitlab-Token: <secret>` | Push events, Merge request events |
+| Other | `POST /api/integrations/git/generic/{key}` | `X-TaskCraft-Token: <secret>` or `X-Hub-Signature-256` | the JSON below |
+
+Issue keys (`WEB-12`, any case, at word boundaries — also under a project's former keys) are
+found in commit messages, branch names and pull request titles, descriptions and source branches.
+Each one becomes a *development link* on the issue (one per address: commits, branches, pull
+requests with their state open / merged / closed, author and time), shown in the issue's
+*Development* section, with a history entry. Only issues of the repository's own project are
+linked. Optional rules per project: *when a branch is pushed or a pull request opened* and *when a
+pull request is merged*, move the linked issues to a status — as Automation, only forward in the
+workflow and, in restricted workflows, only along allowed transitions. *Branch name* on an issue
+copies `web-12-short-title` (or `git checkout -b …`).
+
+The generic format, every part optional:
+
+```json
+{
+  "commits": [{"sha": "3f2a9c1", "message": "WEB-12 Fix the login timeout", "url": "https://git.example.com/shop/commit/3f2a9c1",
+               "author": "Max", "timestamp": "2026-11-12T10:00:00Z"}],
+  "branch": {"name": "web-12-login-timeout", "url": "https://git.example.com/shop/tree/web-12-login-timeout", "author": "Max"},
+  "pullRequest": {"number": 7, "title": "Fix the login timeout", "body": "Closes WEB-12", "url": "https://git.example.com/shop/pulls/7",
+                  "state": "open", "author": "Max", "branch": "web-12-login-timeout"}
+}
+```
+
+`state` is `open`, `merged` or `closed`; commit and branch addresses default to
+`<repository>/commit/<sha>` and `<repository>/tree/<branch>`.
+
+```bash
+curl -X POST "$WEBHOOK" -H 'Content-Type: application/json' -H "X-TaskCraft-Token: $SECRET" \
+  -d '{"commits": [{"sha": "3f2a9c1", "message": "WEB-12 Fix the login timeout"}]}'
+```
 
 ## Quick start (Docker)
 
@@ -183,6 +230,7 @@ on writes.
 | Projects | `GET/POST /projects`, `GET/PATCH/DELETE /projects/{KEY}`, members, statuses, transitions, types, versions, components, fields, automation, boards, `GET /projects/{KEY}/backlog`, `/sprints`, `/trash`, `/reports/{overview,velocity,cumulative-flow,cycle-time,created-resolved,workload}` |
 | Sprints & boards | `GET /boards/{id}`, `POST /sprints/{id}/start`, `/complete`, `GET /sprints/{id}/burndown` |
 | WikiCraft | `GET /issues/{KEY}/wiki-pages`, `POST /issues/{KEY}/wiki-page`, `POST /sprints/{id}/wiki-page`, `POST /versions/{id}/wiki-page`, `GET /projects/{KEY}/wiki`, `GET /wiki-links?url=` (issues linking a page) |
+| Git | `GET/POST /projects/{KEY}/git` (connected repositories; the secret comes back once), `PUT /projects/{KEY}/git/rules`, `DELETE /git-integrations/{id}`, `POST /git-integrations/{id}/secret`, `GET /issues/{KEY}/development`, webhooks `POST /integrations/git/{github,gitlab,generic}/{key}` |
 | Live | `GET /events` (Server-Sent Events) |
 | Account & admin | `/me`, `/me/tokens`, `/notifications`, `/views`, `/timesheet`, `/people`, `/teams`, `/users`, `/admin/{workspace,stats,audit,webhooks}` |
 
@@ -200,7 +248,7 @@ with backoff for about eight hours.
 web/              React 19 + Vite, TanStack Query, Tiptap (rich text), hand-drawn SVG charts
 crates/tql        the query language: lexer, parser and syntax tree (no I/O)
 crates/server     axum 0.8 HTTP API, sqlx / PostgreSQL, TQL → SQL, history replay for reports,
-                  automation, webhooks, live updates (SSE + LISTEN/NOTIFY), WikiCraft client → single binary
+                  automation, webhooks, live updates (SSE + LISTEN/NOTIFY), WikiCraft client, Git webhooks → single binary
 ```
 
 Every change to an issue is written to `issue_events`; the activity stream, notifications,

@@ -13,6 +13,7 @@ import {
 import { Avatar, BotAvatar, Confirm, Empty, Lozenge, Loading, ErrorBox, Modal, PopButton, Tabs, useMe, useProject, useToast } from '../ui'
 import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
 import { RichText, RichView, EMPTY_DOC, isEmptyDoc } from './Editor'
+import Development, { describeDevEvent } from './Development'
 import {
   ComponentPicker, CustomFieldValue, DateValue, LabelsEditor, NumberValue, ParentPicker, PersonPicker, PriorityPicker, SprintPicker, StatusPicker, TypePicker, VersionPicker,
 } from './fields'
@@ -211,6 +212,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
           </div>
         )}
 
+        <Development issue={issue} />
         <div className="section">
           <Tabs
             value={tab}
@@ -884,6 +886,8 @@ export function describeEvent(e: HistoryEvent): React.ReactNode {
       return t('logged {time}', { time: duration(e.new?.minutes) })
     case 'attachment':
       return e.new ? t('attached {name}', { name: e.new.name }) : t('removed the attachment {name}', { name: e.old?.name })
+    case 'dev':
+      return describeDevEvent(e)
     case 'link':
       return e.field === 'webLink' ? t('linked {title}', { title: e.new?.title ?? e.new?.url }) : <>{t('linked')} <span className="faint">{linkLabel(String(e.new?.kind ?? ''))}</span> <span className="issue-key">{e.new?.key}</span></>
   }
