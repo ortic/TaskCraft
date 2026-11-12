@@ -128,6 +128,8 @@ const BUILTIN: &[&str] = &[
     "version",
     "fixversion",
     "release",
+    "affects",
+    "affectedversion",
     "component",
     "parent",
     "epic",
@@ -521,8 +523,9 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
                 qb.push("))");
             });
         }
-        "version" | "fixversion" | "release" => {
+        "version" | "fixversion" | "release" | "affects" | "affectedversion" | "affectsversion" => {
             let neg = only_eq(field, op)?;
+            let kind = if matches!(field, "affects" | "affectedversion" | "affectsversion") { "affects" } else { "fix" };
             let mut states = Vec::new();
             let mut names = Vec::new();
             for v in values {
@@ -539,27 +542,27 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
                 }
             }
             let visible = ctx.visible.clone();
-            member_of(qb, "i.version_id", neg, |qb| {
-                qb.push("SELECT id FROM versions WHERE project_id = ANY(");
-                qb.push_bind(visible);
-                qb.push(") AND (status = ANY(");
-                qb.push_bind(states);
-                qb.push(") OR lower(name) = ANY(");
-                qb.push_bind(names);
-                qb.push("))");
-            });
+            // has one of them (not: has none of them)
+            qb.push(if neg { "NOT EXISTS" } else { "EXISTS" });
+            qb.push(format!(" (SELECT 1 FROM issue_versions iv WHERE iv.issue_id = i.id AND iv.kind = '{kind}' AND iv.version_id IN ("));
+            qb.push("SELECT id FROM versions WHERE project_id = ANY(");
+            qb.push_bind(visible);
+            qb.push(") AND (status = ANY(");
+            qb.push_bind(states);
+            qb.push(") OR lower(name) = ANY(");
+            qb.push_bind(names);
+            qb.push("))))");
         }
         "component" => {
             let neg = only_eq(field, op)?;
             let names: Vec<String> = texts(field, values)?.into_iter().map(|s| s.to_lowercase()).collect();
             let visible = ctx.visible.clone();
-            member_of(qb, "i.component_id", neg, |qb| {
-                qb.push("SELECT id FROM components WHERE project_id = ANY(");
-                qb.push_bind(visible);
-                qb.push(") AND lower(name) = ANY(");
-                qb.push_bind(names);
-                qb.push(")");
-            });
+            qb.push(if neg { "NOT EXISTS" } else { "EXISTS" });
+            qb.push(" (SELECT 1 FROM issue_components ic WHERE ic.issue_id = i.id AND ic.component_id IN (SELECT id FROM components WHERE project_id = ANY(");
+            qb.push_bind(visible);
+            qb.push(") AND lower(name) = ANY(");
+            qb.push_bind(names);
+            qb.push(")))");
         }
         "parent" | "epic" => {
             let neg = only_eq(field, op)?;
@@ -917,8 +920,21 @@ fn empty(qb: &mut Qb, ctx: &Ctx, field: &str, negated: bool) -> ApiResult<()> {
         "assignee" => "i.assignee_id",
         "reporter" => "i.reporter_id",
         "sprint" => "i.sprint_id",
-        "version" | "fixversion" | "release" => "i.version_id",
-        "component" => "i.component_id",
+        "version" | "fixversion" | "release" => {
+            qb.push(if negated { "EXISTS" } else { "NOT EXISTS" });
+            qb.push(" (SELECT 1 FROM issue_versions iv WHERE iv.issue_id = i.id AND iv.kind = 'fix')");
+            return Ok(());
+        }
+        "affects" | "affectedversion" | "affectsversion" => {
+            qb.push(if negated { "EXISTS" } else { "NOT EXISTS" });
+            qb.push(" (SELECT 1 FROM issue_versions iv WHERE iv.issue_id = i.id AND iv.kind = 'affects')");
+            return Ok(());
+        }
+        "component" => {
+            qb.push(if negated { "EXISTS" } else { "NOT EXISTS" });
+            qb.push(" (SELECT 1 FROM issue_components ic WHERE ic.issue_id = i.id)");
+            return Ok(());
+        }
         "parent" | "epic" => "i.parent_id",
         "points" | "storypoints" => "i.story_points",
         "estimate" => "i.estimate_minutes",

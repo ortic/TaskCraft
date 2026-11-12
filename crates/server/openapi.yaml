@@ -24,10 +24,10 @@ info:
     \ fields sent change.\n\n## TQL, the query language\n\nSearch (`GET /search?q=`), CSV export, saved filters, dashboards\
     \ and automation conditions take TQL, e.g.\n`project = WEB and sprint in openSprints() and assignee = me() order by rank`\
     \ or\n`type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status\n\
-    category priority assignee reporter creator labels sprint version component parent/epic points estimate spent created\n\
-    updated resolved resolution security due start remaining watcher blocked` and custom fields by name (quoted when they\
-    \ contain spaces). Operators\n`= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses;\
-    \ `order by`. Functions\n`me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`,\
+    category priority assignee reporter creator labels sprint version affects component parent/epic points estimate spent\
+    \ created\nupdated resolved resolution security due start remaining watcher blocked` and custom fields by name (quoted\
+    \ when they contain spaces). Operators\n`= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`,\
+    \ parentheses; `order by`. Functions\n`me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`,\
     \ `openSprints()`,\n`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates\
     \ like `-7d`, `+2w`,\n`-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n\
     `POST /query/validate` checks a query and `GET /query/suggest` completes field names and values.\n\n## Pagination\n\n\
@@ -9031,15 +9031,21 @@ components:
           anyOf:
           - $ref: '#/components/schemas/SprintRef'
           - type: 'null'
-        version:
-          anyOf:
-          - $ref: '#/components/schemas/Named'
-          - type: 'null'
-          description: fix version (release)
-        component:
-          anyOf:
-          - $ref: '#/components/schemas/Named'
-          - type: 'null'
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Named'
+          description: the releases it's fixed in, in release order
+        affectedVersions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Named'
+          description: the releases it was found in
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/Named'
+          description: by name
         storyPoints:
           type:
           - number
@@ -9431,17 +9437,36 @@ components:
           - 'null'
           format: uuid
           description: a future or active sprint of the project; null = the backlog
+        versionIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: the releases it's fixed in (the project's own); replaces the list
+        affectedVersionIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: the releases it was found in; replaces the list
+        componentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: its components; replaces the list
         versionId:
           type:
           - string
           - 'null'
           format: uuid
-          description: fix version
+          description: 'one release (or null): replaces the list of releases it''s fixed in'
         componentId:
           type:
           - string
           - 'null'
           format: uuid
+          description: 'one component (or null): replaces the list of components'
         securityLevelId:
           type:
           - string
@@ -11117,6 +11142,21 @@ components:
             versionId:
               type: string
               format: uuid
+            componentIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+            versionIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+            affectedVersionIds:
+              type: array
+              items:
+                type: string
+                format: uuid
             dueInDays:
               type: integer
               description: due this many days after the issue is created (0–3650)
@@ -11207,6 +11247,21 @@ components:
             versionId:
               type: string
               format: uuid
+            componentIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+            versionIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+            affectedVersionIds:
+              type: array
+              items:
+                type: string
+                format: uuid
             dueInDays:
               type: integer
               description: due this many days after the issue is created (0–3650)

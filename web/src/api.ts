@@ -118,8 +118,11 @@ export interface Issue {
   reporter: Named | null
   parent: { id: string; key: string; title: string; color: string | null } | null
   sprint: { id: string; name: string; state: string } | null
-  version: Named | null
-  component: Named | null
+  /** the releases it's fixed in */
+  versions: Named[]
+  /** the releases it was found in */
+  affectedVersions: Named[]
+  components: Named[]
   storyPoints: number | null
   /** the original estimate */
   estimateMinutes: number | null

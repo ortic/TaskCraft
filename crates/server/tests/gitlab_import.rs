@@ -209,7 +209,7 @@ async fn gitlab_issues_come_over_with_notes_time_and_history() {
     assert_eq!(login["reporter"]["id"], alice_id.as_str());
     assert_eq!(login["assignee"]["name"], "Bob Builder");
     assert_eq!(login["labels"], json!(["bug", "priority::high"]), "scoped labels stay labels");
-    assert_eq!(login["version"]["name"], "1.0");
+    assert_eq!(login["versions"][0]["name"], "1.0");
     assert_eq!(login["storyPoints"], 3.0, "the weight");
     assert_eq!(login["estimateMinutes"], 120);
     assert_eq!(login["spentMinutes"], 150, "the notes' 2 hours and what they don't explain");

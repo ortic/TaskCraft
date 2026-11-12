@@ -242,8 +242,9 @@ pub async fn portfolio(State(state): State<AppState>, CurrentUser(user): Current
     type Ver = (Uuid, Uuid, String, String, Option<chrono::NaiveDate>, Option<chrono::NaiveDate>, i64, i64);
     let versions: Vec<Ver> = sqlx::query_as(
         "SELECT v.id, v.project_id, v.name, v.status, v.start_date, v.release_date,
-                (SELECT count(*) FROM issues i WHERE i.version_id = v.id AND i.deleted_at IS NULL),
-                (SELECT count(*) FROM issues i JOIN statuses s ON s.id = i.status_id WHERE i.version_id = v.id AND i.deleted_at IS NULL AND s.category = 'done')
+                (SELECT count(*) FROM issue_versions iv JOIN issues i ON i.id = iv.issue_id WHERE iv.version_id = v.id AND iv.kind = 'fix' AND i.deleted_at IS NULL),
+                (SELECT count(*) FROM issue_versions iv JOIN issues i ON i.id = iv.issue_id JOIN statuses s ON s.id = i.status_id
+                  WHERE iv.version_id = v.id AND iv.kind = 'fix' AND i.deleted_at IS NULL AND s.category = 'done')
            FROM versions v WHERE v.project_id = ANY($1) AND (v.status = 'unreleased' OR v.released_at > now() - interval '60 days')
           ORDER BY v.release_date NULLS LAST",
     )

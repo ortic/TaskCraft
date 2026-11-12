@@ -263,7 +263,7 @@ async fn github_issues_come_over_with_history_and_files() {
     let watchers: Vec<&str> = pay["watchers"].as_array().unwrap().iter().map(|w| w["name"].as_str().unwrap()).collect();
     assert_eq!(watchers, vec!["carol"], "the other assignees watch");
     assert_eq!(pay["labels"], json!(["bug", "good-first-issue"]));
-    assert_eq!(pay["version"]["name"], "v1.0");
+    assert_eq!(pay["versions"][0]["name"], "v1.0");
     assert_eq!(pay["children"][0]["key"], "SHOP-5", "sub-issues become children");
     let resolved: DateTime<Utc> = pay["resolvedAt"].as_str().unwrap().parse().unwrap();
     assert!((resolved - (m.t0 + Duration::hours(100))).num_seconds().abs() < 2, "{resolved}");

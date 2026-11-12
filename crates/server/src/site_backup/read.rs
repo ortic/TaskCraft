@@ -437,7 +437,8 @@ pub struct Backup {
     pub issue_components: Vec<(String, String)>,
     /// issue → fix version
     pub fix_versions: Vec<(String, String)>,
-    pub affects_versions: usize,
+    /// issue → version it was found in
+    pub affects_versions: Vec<(String, String)>,
     /// issue → user key
     pub watchers: Vec<(String, String)>,
     pub groups: HashMap<String, Group>,
@@ -678,7 +679,7 @@ impl Backup {
                     match r.get("associationType") {
                         Some("IssueComponent") => b.issue_components.push(pair),
                         Some("IssueFixVersion") => b.fix_versions.push(pair),
-                        Some("IssueVersion") => b.affects_versions += 1,
+                        Some("IssueVersion") => b.affects_versions.push(pair),
                         _ => {}
                     }
                 }

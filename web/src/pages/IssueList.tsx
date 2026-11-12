@@ -27,7 +27,9 @@ const BASE_COLUMNS: { id: ColId; label: () => string; sort?: string }[] = [
   { id: 'project', label: () => t('Project'), sort: 'project' },
   { id: 'parent', label: () => t('Epic / parent') },
   { id: 'sprint', label: () => t('Sprint') },
-  { id: 'version', label: () => t('Release') },
+  { id: 'version', label: () => t('Releases') },
+  { id: 'affects', label: () => t('Found in') },
+  { id: 'components', label: () => t('Components') },
   { id: 'labels', label: () => t('Labels') },
   { id: 'security', label: () => t('Security') },
   { id: 'points', label: () => t('Points'), sort: 'points' },
@@ -426,7 +428,11 @@ function Cell({ col, issue: i, fields, onOpen }: { col: string; issue: Issue; fi
     case 'sprint':
       return <td>{i.sprint?.name ?? ''}</td>
     case 'version':
-      return <td>{i.version?.name ?? ''}</td>
+      return <td>{(i.versions ?? []).map((v) => v.name).join(', ')}</td>
+    case 'affects':
+      return <td>{(i.affectedVersions ?? []).map((v) => v.name).join(', ')}</td>
+    case 'components':
+      return <td>{(i.components ?? []).map((c) => c.name).join(', ')}</td>
     case 'labels':
       return <td><span className="row" style={{ gap: 4 }}>{i.labels.map((l) => <span key={l} className="label-chip">{l}</span>)}</span></td>
     case 'points':

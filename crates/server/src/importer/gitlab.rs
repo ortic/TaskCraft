@@ -606,6 +606,7 @@ async fn read_issue(
         sprints: vec![],
         components: vec![],
         versions,
+        affects: vec![],
         labels,
         watchers: assignees.iter().skip(1).cloned().collect(),
         custom: vec![],

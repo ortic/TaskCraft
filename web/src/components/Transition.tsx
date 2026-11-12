@@ -6,7 +6,7 @@ import { t } from '../i18n'
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
 import type { Issue, Named, Project, Status, StatusRules } from '../api'
 import { Modal, usePeople } from '../ui'
-import { ComponentPicker, CustomFieldValue, DateValue, NumberValue, PersonPicker, VersionPicker } from './fields'
+import { ComponentsPicker, CustomFieldValue, DateValue, NumberValue, PersonPicker, VersionsPicker } from './fields'
 
 export type { StatusRules }
 
@@ -72,9 +72,9 @@ function missing(issue: Issue | null, rules: StatusRules): string[] {
       case 'assignee':
         return !issue.assignee
       case 'version':
-        return !issue.version
+        return !(issue.versions ?? []).length
       case 'component':
-        return !issue.component
+        return !(issue.components ?? []).length
       case 'dueDate':
         return !issue.dueDate
       case 'startDate':
@@ -159,8 +159,8 @@ function TransitionForm({ issue, project, status, rules, fields, onDone }: Pendi
       const v = values[k]
       if (k.startsWith('custom:')) custom[k.slice(7)] = v
       else if (k === 'assignee') out.assigneeId = v
-      else if (k === 'version') out.versionId = v
-      else if (k === 'component') out.componentId = v
+      else if (k === 'version') out.versionIds = v
+      else if (k === 'component') out.componentIds = v
       else if (k === 'estimate') out.estimateMinutes = Math.round(Number(v) * 60)
       else out[k] = v
     }
@@ -197,8 +197,8 @@ function TransitionForm({ issue, project, status, rules, fields, onDone }: Pendi
             <div className="field" key={k}>
               <span className="field-label">{label} <span className="tr-req">{t('required')}</span></span>
               {k === 'assignee' && <PersonPicker value={shown[k] ?? null} label={label} onChange={(id) => set(k, id, id ? people.find((p) => p.id === id) ?? null : null)} allowNone={false} />}
-              {k === 'version' && <VersionPicker project={project} value={shown[k] ?? null} onChange={(id) => set(k, id, id ? project.versions.find((v) => v.id === id) ?? null : null)} />}
-              {k === 'component' && <ComponentPicker project={project} value={shown[k] ?? null} onChange={(id) => set(k, id, id ? project.components.find((c) => c.id === id) ?? null : null)} />}
+              {k === 'version' && <VersionsPicker project={project} value={project.versions.filter((v) => ((values[k] as string[]) ?? []).includes(v.id))} onChange={(ids) => set(k, ids)} />}
+              {k === 'component' && <ComponentsPicker project={project} value={project.components.filter((c) => ((values[k] as string[]) ?? []).includes(c.id))} onChange={(ids) => set(k, ids)} />}
               {(k === 'dueDate' || k === 'startDate') && <DateValue value={(values[k] as string) ?? null} onChange={(d) => set(k, d)} />}
               {k === 'estimate' && <NumberValue value={(values[k] as number) ?? null} onChange={(n) => set(k, n)} suffix={t('hours')} />}
               {k === 'storyPoints' && <NumberValue value={(values[k] as number) ?? null} onChange={(n) => set(k, n)} />}

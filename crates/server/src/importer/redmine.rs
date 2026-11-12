@@ -662,6 +662,7 @@ fn read_issue(
         sprints: vec![],
         components: id(&it["category"]["id"]).map(|c| format!("{pid}:{c}")).into_iter().collect(),
         versions: fixed.into_iter().collect(),
+        affects: vec![],
         labels: vec![],
         watchers,
         custom,

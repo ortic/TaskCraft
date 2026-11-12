@@ -306,10 +306,12 @@ pub struct Issue {
     pub points: Option<f64>,
     /// the sprints it was in (the latest one is where it is)
     pub sprints: Vec<String>,
-    /// the first one counts
     pub components: Vec<String>,
-    /// fix versions; the first one counts
+    /// fix versions
     pub versions: Vec<String>,
+    /// the versions it was found in
+    #[serde(default)]
+    pub affects: Vec<String>,
     pub labels: Vec<String>,
     /// person keys
     pub watchers: Vec<String>,

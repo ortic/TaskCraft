@@ -18,7 +18,7 @@ import Development, { describeDevEvent } from './Development'
 import { SlaList } from './SlaBadges'
 import { resolutionLabel, resolutionsOf, useTransition } from './Transition'
 import {
-  ComponentPicker, CustomFieldValue, DateValue, LabelsEditor, NumberValue, ParentPicker, PersonPicker, PriorityPicker, SecurityPicker, SprintPicker, StatusPicker, TypePicker, VersionPicker,
+  ComponentsPicker, CustomFieldValue, DateValue, LabelsEditor, NumberValue, ParentPicker, PersonPicker, PriorityPicker, SecurityPicker, SprintPicker, StatusPicker, TypePicker, VersionsPicker,
 } from './fields'
 
 export function useIssue(key: string) {
@@ -325,13 +325,18 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
           </SideField>
         )}
         {project.versions.length > 0 && (
-          <SideField label={t('Release')}>
-            <VersionPicker project={project} value={issue.version} disabled={!can} onChange={(id) => set({ versionId: id })} />
+          <SideField label={t('Releases')}>
+            <VersionsPicker project={project} value={issue.versions ?? []} disabled={!can} onChange={(ids) => set({ versionIds: ids })} />
+          </SideField>
+        )}
+        {(project.versions.length > 0 || (issue.affectedVersions ?? []).length > 0) && (
+          <SideField label={t('Found in')}>
+            <VersionsPicker kind="affects" project={project} value={issue.affectedVersions ?? []} disabled={!can} onChange={(ids) => set({ affectedVersionIds: ids })} />
           </SideField>
         )}
         {project.components.length > 0 && (
-          <SideField label={t('Component')}>
-            <ComponentPicker project={project} value={issue.component} disabled={!can} onChange={(id) => set({ componentId: id })} />
+          <SideField label={t('Components')}>
+            <ComponentsPicker project={project} value={issue.components ?? []} disabled={!can} onChange={(ids) => set({ componentIds: ids })} />
           </SideField>
         )}
         {((project.securityLevels?.length ?? 0) > 0 || issue.security) && (
@@ -592,6 +597,9 @@ const FIELD_LABELS: Record<string, () => string> = {
   sprint: () => t('the sprint'),
   version: () => t('the release'),
   component: () => t('the component'),
+  versions: () => t('the releases'),
+  affects: () => t('“found in”'),
+  components: () => t('the components'),
   points: () => t('the story points'),
 }
 
@@ -1039,7 +1047,8 @@ function Comments({ issue, meId }: { issue: IssueDetail; meId?: string }) {
 
 /** One history entry as a sentence. */
 export function describeEvent(e: HistoryEvent): React.ReactNode {
-  const name = (v: any) => (v == null ? t('none') : typeof v === 'object' ? (v.name ?? v.key ?? v.value ?? JSON.stringify(v)) : String(v))
+  const name = (v: any): string =>
+    v == null ? t('none') : Array.isArray(v) ? (v.length ? v.map(name).join(', ') : t('none')) : typeof v === 'object' ? (v.name ?? v.key ?? v.value ?? JSON.stringify(v)) : String(v)
   switch (e.kind) {
     case 'created':
       return t('created the issue')

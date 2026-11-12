@@ -373,6 +373,8 @@ pub async fn search_csv(State(state): State<AppState>, CurrentUser(user): Curren
         "Reporter",
         "Sprint",
         "Version",
+        "Affects version",
+        "Component",
         "Parent",
         "Points",
         "Estimate (h)",
@@ -388,6 +390,8 @@ pub async fn search_csv(State(state): State<AppState>, CurrentUser(user): Curren
         "Security",
     ]);
     let h = |m: Option<i32>| m.map(|m| format!("{:.1}", m as f64 / 60.0)).unwrap_or_default();
+    // several in one cell, comma separated (the import splits them again)
+    let names = |l: &[issues::Named]| l.iter().map(|x| x.name.as_str()).collect::<Vec<_>>().join(", ");
     for s in r.issues {
         // a leading = + - @ would make spreadsheets evaluate the cell
         let safe = |t: &str| if t.starts_with(['=', '+', '-', '@']) { format!("'{t}") } else { t.to_string() };
@@ -400,7 +404,9 @@ pub async fn search_csv(State(state): State<AppState>, CurrentUser(user): Curren
             s.assignee.as_ref().map(|a| a.name.clone()).unwrap_or_default(),
             s.reporter.as_ref().map(|a| a.name.clone()).unwrap_or_default(),
             s.sprint.as_ref().map(|a| a.name.clone()).unwrap_or_default(),
-            s.version.as_ref().map(|a| a.name.clone()).unwrap_or_default(),
+            names(&s.versions),
+            names(&s.affected_versions),
+            names(&s.components),
             s.parent.as_ref().map(|a| a.key.clone()).unwrap_or_default(),
             s.story_points.map(|p| p.to_string()).unwrap_or_default(),
             h(s.estimate_minutes),
@@ -741,9 +747,9 @@ pub async fn clone_issue(State(state): State<AppState>, CurrentUser(user): Curre
     if let Some(p) = &src.parent {
         fields.insert("parentId".into(), json!(p.id));
     }
-    if let Some(v) = &src.version {
-        fields.insert("versionId".into(), json!(v.id));
-    }
+    fields.insert("versionIds".into(), json!(src.versions.iter().map(|v| v.id).collect::<Vec<_>>()));
+    fields.insert("affectedVersionIds".into(), json!(src.affected_versions.iter().map(|v| v.id).collect::<Vec<_>>()));
+    fields.insert("componentIds".into(), json!(src.components.iter().map(|c| c.id).collect::<Vec<_>>()));
     // a copy of a private issue is just as private
     fields.insert("securityLevelId".into(), json!(src.security.as_ref().map(|l| l.id)));
     if src.custom.as_object().is_some_and(|o| !o.is_empty()) {

@@ -57,7 +57,18 @@ fn triggered(t: &Value, changes: &[Change], created: bool, commented: bool) -> b
             _ => false,
         },
         "assigned" => find("assignee").is_some_and(|c| !c.new.is_null()),
-        "field" => !created && t["field"].as_str().is_some_and(|f| find(f).is_some()),
+        // rules from when an issue had one release and one component name them so
+        "field" => {
+            !created
+                && t["field"]
+                    .as_str()
+                    .map(|f| match f {
+                        "version" => "versions",
+                        "component" => "components",
+                        f => f,
+                    })
+                    .is_some_and(|f| find(f).is_some())
+        }
         _ => false,
     }
 }

@@ -233,8 +233,8 @@ async fn redmine_projects_come_over_with_journals_time_and_fields() {
     assert_eq!((one["status"]["name"].as_str(), one["status"]["category"].as_str(), one["resolution"].as_str()), (Some("Closed"), Some("done"), Some("Done")));
     assert_eq!(one["priority"], "high");
     assert_eq!(one["assignee"]["name"], "Max Muster");
-    assert_eq!(one["component"]["name"], "Frontend");
-    assert_eq!(one["version"]["name"], "1.0");
+    assert_eq!(one["components"][0]["name"], "Frontend");
+    assert_eq!(one["versions"][0]["name"], "1.0");
     assert_eq!(one["estimateMinutes"], 180);
     assert_eq!(one["spentMinutes"], 90);
     assert_eq!(one["dueDate"], m.day(240));
@@ -291,7 +291,7 @@ async fn redmine_projects_come_over_with_journals_time_and_fields() {
     let three = get(&c, app.url("/issues/SHOPAPI-3")).await;
     assert_eq!((three["status"]["name"].as_str(), three["status"]["category"].as_str()), (Some("Resolved"), Some("in_progress")));
     assert_eq!(three["priority"], "urgent", "Immediate, the most urgent by its place");
-    assert_eq!(three["version"]["name"], "1.0", "a shared version");
+    assert_eq!(three["versions"][0]["name"], "1.0", "a shared version");
     let mut links: Vec<String> =
         one["links"].as_array().unwrap().iter().map(|l| format!("{} {}", l["label"].as_str().unwrap(), l["issue"]["key"].as_str().unwrap())).collect();
     links.sort();

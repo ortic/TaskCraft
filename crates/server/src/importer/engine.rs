@@ -1254,14 +1254,19 @@ impl<'a> Run<'a> {
             resolved: i.resolved,
             original: i.original_estimate.is_some_and(|s| s > 0.0),
         };
-        if i.components.len() > 1 {
-            self.w.add("several-components", "issues with several components keep the first one (an issue has one component here)", &[]);
-        }
-        let component = i.components.iter().find_map(|c| p.components.get(c)).map(|c| c.0);
-        if i.versions.len() > 1 {
-            self.w.add("several-versions", "issues with several fix versions keep the first one (an issue has one release here)", &[]);
-        }
-        let version = i.versions.iter().find_map(|v| p.versions.get(v)).map(|v| v.0);
+        // all of them: releases it's fixed in and found in, components
+        let ids = |list: &[String], of: &HashMap<String, (Uuid, String)>| {
+            let mut out: Vec<Uuid> = Vec::new();
+            for x in list.iter().filter_map(|x| of.get(x)).map(|x| x.0) {
+                if !out.contains(&x) {
+                    out.push(x);
+                }
+            }
+            out
+        };
+        let fix_versions = ids(&i.versions, &p.versions);
+        let affected = ids(&i.affects, &p.versions);
+        let components = ids(&i.components, &p.components);
         // attachments first: descriptions and comments link to them
         let mut atts: Vec<&model::Attachment> = i.attachments.iter().collect();
         atts.sort_by_key(|a| a.created);
@@ -1324,9 +1329,9 @@ impl<'a> Run<'a> {
         let custom = self.custom_values(p, i);
         sqlx::query(
             "INSERT INTO issues (id, workspace_id, project_id, number, title, description, description_text, type_id, status_id, priority, assignee_id, reporter_id,
-                                 sprint_id, version_id, component_id, story_points, estimate_minutes, start_date, due_date, rank, resolved_at, status_changed_at,
+                                 sprint_id, story_points, estimate_minutes, start_date, due_date, rank, resolved_at, status_changed_at,
                                  created_by, created_at, updated_at, resolution, custom, remaining_minutes, security_level_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)",
         )
         .bind(id)
         .bind(self.user.workspace_id)
@@ -1341,8 +1346,6 @@ impl<'a> Run<'a> {
         .bind(cur.assignee)
         .bind(self.person(i.reporter.as_deref()))
         .bind(sprint.as_ref().map(|s| s.0))
-        .bind(version)
-        .bind(component)
         .bind(points)
         .bind(estimate)
         .bind(i.start)
@@ -1370,6 +1373,23 @@ impl<'a> Run<'a> {
         .execute(&mut **tx)
         .await
         .with_context(|| format!("issue {}", t.key))?;
+        for (kind, list) in [("fix", &fix_versions), ("affects", &affected)] {
+            if !list.is_empty() {
+                sqlx::query("INSERT INTO issue_versions (issue_id, version_id, kind) SELECT $1, unnest($2::uuid[]), $3")
+                    .bind(id)
+                    .bind(list)
+                    .bind(kind)
+                    .execute(&mut **tx)
+                    .await?;
+            }
+        }
+        if !components.is_empty() {
+            sqlx::query("INSERT INTO issue_components (issue_id, component_id) SELECT $1, unnest($2::uuid[])")
+                .bind(id)
+                .bind(&components)
+                .execute(&mut **tx)
+                .await?;
+        }
         // labels and watchers
         let mut labels: Vec<String> = i.labels.iter().map(|l| normalize_label(l)).filter(|l| !l.is_empty()).collect();
         labels.sort();

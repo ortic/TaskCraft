@@ -79,6 +79,7 @@ export function PersonPicker({ value, onChange, disabled, allowNone = true, labe
       {(close) => (
         <Choices
           items={items}
+          label={label ?? t('Assignee')}
           placeholder={t('Search people…')}
           selected={(p) => (p?.id ?? null) === (value?.id ?? null)}
           filterText={(p) => p?.name ?? none ?? t('Unassigned')}
@@ -175,6 +176,7 @@ function SimplePicker<T extends { id: string; name: string }>({ items, value, on
     <PopButton disabled={disabled} className="value-btn" title={title} width={240} label={value ? <span>{value.name}</span> : <span className="placeholder">{none}</span>}>
       {(close) => (
         <Choices
+          label={title}
           items={[null, ...items] as (T | null)[]}
           selected={(x) => (x?.id ?? null) === (value?.id ?? null)}
           filterText={(x) => x?.name ?? none}
@@ -192,6 +194,49 @@ function SimplePicker<T extends { id: string; name: string }>({ items, value, on
 export function SprintPicker({ project, value, onChange, disabled }: { project: Project; value: Issue['sprint']; onChange: (id: string | null) => void; disabled?: boolean }) {
   const items = project.sprints.map((s) => ({ id: s.id, name: s.state === 'active' ? `${s.name} · ${t('active')}` : s.name }))
   return <SimplePicker items={items} value={value} onChange={onChange} disabled={disabled} title={t('Sprint')} none={t('Backlog')} />
+}
+
+/** Several of a list (releases, components): picking one adds or removes it; the list stays open. */
+function MultiPicker<T extends { id: string; name: string }>({ items, value, onChange, disabled, title, none }: { items: T[]; value: Named[]; onChange: (ids: string[]) => void; disabled?: boolean; title: string; none: string }) {
+  const ids = value.map((v) => v.id)
+  // what it has, also when that's no longer offered (an archived release)
+  const all = [...items, ...value.filter((v) => !items.some((i) => i.id === v.id)).map((v) => ({ ...v }) as unknown as T)]
+  return (
+    <PopButton
+      disabled={disabled}
+      className="value-btn"
+      title={title}
+      width={260}
+      label={value.length ? <span className="row-wrap" style={{ gap: 4 }}>{value.map((v) => <span key={v.id} className="label-chip">{v.name}</span>)}</span> : <span className="placeholder">{none}</span>}
+    >
+      {() => (
+        <Choices
+          items={all}
+          label={title}
+          multiple
+          selected={(x) => ids.includes(x.id)}
+          filterText={(x) => x.name}
+          render={(x) => (
+            <>
+              <span className="multi-check" aria-hidden>{ids.includes(x.id) && <Check size={13} />}</span>
+              {x.name}
+            </>
+          )}
+          onPick={(x) => onChange(ids.includes(x.id) ? ids.filter((i) => i !== x.id) : all.filter((i) => i.id === x.id || ids.includes(i.id)).map((i) => i.id))}
+        />
+      )}
+    </PopButton>
+  )
+}
+
+/** The releases an issue is fixed in (`kind` fix) or was found in (affects). */
+export function VersionsPicker({ project, value, onChange, disabled, kind = 'fix' }: { project: Project; value: Named[]; onChange: (ids: string[]) => void; disabled?: boolean; kind?: 'fix' | 'affects' }) {
+  const items = project.versions.filter((v) => v.status !== 'archived').map((v) => ({ id: v.id, name: v.status === 'released' ? `${v.name} · ${t('released')}` : v.name }))
+  return <MultiPicker items={items} value={value} onChange={onChange} disabled={disabled} title={kind === 'fix' ? t('Releases') : t('Found in')} none={t('None')} />
+}
+
+export function ComponentsPicker({ project, value, onChange, disabled }: { project: Project; value: Named[]; onChange: (ids: string[]) => void; disabled?: boolean }) {
+  return <MultiPicker items={project.components} value={value} onChange={onChange} disabled={disabled} title={t('Components')} none={t('None')} />
 }
 
 export function VersionPicker({ project, value, onChange, disabled }: { project: Project; value: Named | null; onChange: (id: string | null) => void; disabled?: boolean }) {

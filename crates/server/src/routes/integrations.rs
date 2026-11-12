@@ -252,7 +252,12 @@ pub async fn version_page(
     access::require(&state, &user, project, Role::Member).await?;
     let (p, _) = by_key(&state, &user, &project.to_string(), Role::Viewer).await?;
     let c = wikicraft::require(&state, &user).await?;
-    let ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM issues WHERE version_id = $1 AND deleted_at IS NULL").bind(id).fetch_all(&state.db).await?;
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT i.id FROM issue_versions iv JOIN issues i ON i.id = iv.issue_id WHERE iv.version_id = $1 AND iv.kind = 'fix' AND i.deleted_at IS NULL",
+    )
+    .bind(id)
+    .fetch_all(&state.db)
+    .await?;
     let mut list = issues::load_many(&state, &ids).await?;
     list.retain(|s| s.security.is_none());
     list.sort_by(|a, b| a.kind.name.cmp(&b.kind.name).then(a.number.cmp(&b.number)));

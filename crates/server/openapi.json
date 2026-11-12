@@ -4,7 +4,7 @@
   "title": "TaskCraft API",
   "version": "0.1.0",
   "summary": "Self-hosted issue and project management",
-  "description": "Everything the TaskCraft web app does, as a REST API with JSON bodies.\n\n## Base paths\n\n`/api/v1` is the versioned base path for integrations; the web app calls the same API under `/api`. The paths in this\ndocument are relative to either, e.g. `GET /api/v1/issues/WEB-12`. The MCP server for AI assistants lives at `/api/mcp`\n(streamable HTTP, not described here).\n\n## Authentication\n\n- **API token**: `Authorization: Bearer tct_…`, a personal token (*Profile & settings → API tokens*) that acts with its\n  owner's permissions. Read-only tokens may only read (GET, plus `POST /query/validate`); anything else answers 403.\n  API tokens, the password, sessions, two-factor and passkey changes, the two-factor policy and the backup import are\n  managed in the browser only and refuse tokens (403).\n- **Browser session**: the `tc_session` cookie that signing in sets. Requests that change something must also send the\n  header `x-taskcraft: 1` (CSRF protection), else 400.\n- **Public operations** have an empty security requirement (`{}`): health and readiness, first-run setup, the sign-in\n  flows, the service desk portal and request forms (the portal has a session cookie of its own, `tc_portal`), the Git\n  and e-mail-in receivers (they check secrets of their own), metrics (a bearer token of its own) and this document.\n- When the workspace requires two-factor authentication, browser sessions of people without a second factor get 403\n  on everything but setting one up.\n\nResults are always limited to what the caller may see; things they may not see answer 404.\n\n## Issues and rich text\n\nIssues are addressed by key (`WEB-12`; keys an issue had before a move or a project rename keep working) or by id;\nprojects by key or id. Descriptions are ProseMirror / Tiptap JSON (`PmNode`, a document is\n`{\"type\": \"doc\", \"content\": [...]}`); where noted, Markdown (`descriptionMarkdown`, comments' `markdown`) or plain text\nis accepted instead. Writing an issue takes the fields of `IssueFields`; only the fields sent change.\n\n## TQL, the query language\n\nSearch (`GET /search?q=`), CSV export, saved filters, dashboards and automation conditions take TQL, e.g.\n`project = WEB and sprint in openSprints() and assignee = me() order by rank` or\n`type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status\ncategory priority assignee reporter creator labels sprint version component parent/epic points estimate spent created\nupdated resolved resolution security due start remaining watcher blocked` and custom fields by name (quoted when they contain spaces). Operators\n`= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions\n`me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,\n`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates like `-7d`, `+2w`,\n`-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n`POST /query/validate` checks a query and `GET /query/suggest` completes field names and values.\n\n## Pagination\n\n`GET /search` pages with `limit` (default 100, at most 1,000) and `offset` and answers `{total, issues}`; other\noperations that take `limit` / `offset` say so. Everything else answers a bounded list (e.g. the latest 60 activity\nentries, the latest 200 trashed issues), as each operation describes.\n\n## Errors\n\nErrors answer with a status code and `{\"error\": \"<code>\", \"message\": \"<text>\"}` (schema `Error`): 400 `bad_request`\n(invalid input; the message says what), 401 `unauthorized`, 403 `forbidden`, 404 `not_found`, 409 `conflict`, 413\n`too_large` (uploads above `TASKCRAFT_MAX_UPLOAD_MB`), 429 `too_many_requests`, 503 `unavailable`, 500 `internal`.\nRequests the framework refuses before they reach the API answer plain text instead: a body that isn't valid JSON (400),\na JSON body without `Content-Type: application/json` (415), a typed body with a missing or mistyped field (422), a\nmalformed id in the path (400) and a body above the server's overall size limit (413).\n\n## Rate limits\n\nFailed sign-ins are limited to 10 per e-mail address in 15 minutes and wrong two-factor codes to 5 per sign-in; both\nanswer 400 with a message. The service desk portal answers 429 for sign-in links (10 requests per IP address per\nquarter hour; at most 3 links go out per address, silently), messages from requesters (30 per hour) and request forms\n(20 per IP address and 5 per e-mail address per hour).\n\n## Webhooks\n\nAdmins register endpoints under `/admin/webhooks` for `issue.created`, `issue.updated`, `issue.deleted`,\n`comment.created`, `sprint.started`, `sprint.completed` and `version.released` (all projects or one). Each delivery is\na JSON `POST` with the `WebhookEvent` body and the headers `X-TaskCraft-Event: <event>` and\n`X-TaskCraft-Signature: sha256=<hex>`, the HMAC-SHA256 of the raw body with the webhook's secret (shown once, when the\nwebhook is created); compare it in constant time. A delivery counts when the endpoint answers 2xx within 10 seconds;\nothers are retried up to 7 times with growing pauses (30 seconds, 2 minutes, 8 minutes, … at most 4 hours; about 11 hours in all).\n\n## Live updates\n\n`GET /events` is a Server-Sent Events stream of changes in the caller's projects (`LiveEvent`); refetch what an event\ntouches.",
+  "description": "Everything the TaskCraft web app does, as a REST API with JSON bodies.\n\n## Base paths\n\n`/api/v1` is the versioned base path for integrations; the web app calls the same API under `/api`. The paths in this\ndocument are relative to either, e.g. `GET /api/v1/issues/WEB-12`. The MCP server for AI assistants lives at `/api/mcp`\n(streamable HTTP, not described here).\n\n## Authentication\n\n- **API token**: `Authorization: Bearer tct_…`, a personal token (*Profile & settings → API tokens*) that acts with its\n  owner's permissions. Read-only tokens may only read (GET, plus `POST /query/validate`); anything else answers 403.\n  API tokens, the password, sessions, two-factor and passkey changes, the two-factor policy and the backup import are\n  managed in the browser only and refuse tokens (403).\n- **Browser session**: the `tc_session` cookie that signing in sets. Requests that change something must also send the\n  header `x-taskcraft: 1` (CSRF protection), else 400.\n- **Public operations** have an empty security requirement (`{}`): health and readiness, first-run setup, the sign-in\n  flows, the service desk portal and request forms (the portal has a session cookie of its own, `tc_portal`), the Git\n  and e-mail-in receivers (they check secrets of their own), metrics (a bearer token of its own) and this document.\n- When the workspace requires two-factor authentication, browser sessions of people without a second factor get 403\n  on everything but setting one up.\n\nResults are always limited to what the caller may see; things they may not see answer 404.\n\n## Issues and rich text\n\nIssues are addressed by key (`WEB-12`; keys an issue had before a move or a project rename keep working) or by id;\nprojects by key or id. Descriptions are ProseMirror / Tiptap JSON (`PmNode`, a document is\n`{\"type\": \"doc\", \"content\": [...]}`); where noted, Markdown (`descriptionMarkdown`, comments' `markdown`) or plain text\nis accepted instead. Writing an issue takes the fields of `IssueFields`; only the fields sent change.\n\n## TQL, the query language\n\nSearch (`GET /search?q=`), CSV export, saved filters, dashboards and automation conditions take TQL, e.g.\n`project = WEB and sprint in openSprints() and assignee = me() order by rank` or\n`type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status\ncategory priority assignee reporter creator labels sprint version affects component parent/epic points estimate spent created\nupdated resolved resolution security due start remaining watcher blocked` and custom fields by name (quoted when they contain spaces). Operators\n`= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions\n`me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,\n`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates like `-7d`, `+2w`,\n`-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n`POST /query/validate` checks a query and `GET /query/suggest` completes field names and values.\n\n## Pagination\n\n`GET /search` pages with `limit` (default 100, at most 1,000) and `offset` and answers `{total, issues}`; other\noperations that take `limit` / `offset` say so. Everything else answers a bounded list (e.g. the latest 60 activity\nentries, the latest 200 trashed issues), as each operation describes.\n\n## Errors\n\nErrors answer with a status code and `{\"error\": \"<code>\", \"message\": \"<text>\"}` (schema `Error`): 400 `bad_request`\n(invalid input; the message says what), 401 `unauthorized`, 403 `forbidden`, 404 `not_found`, 409 `conflict`, 413\n`too_large` (uploads above `TASKCRAFT_MAX_UPLOAD_MB`), 429 `too_many_requests`, 503 `unavailable`, 500 `internal`.\nRequests the framework refuses before they reach the API answer plain text instead: a body that isn't valid JSON (400),\na JSON body without `Content-Type: application/json` (415), a typed body with a missing or mistyped field (422), a\nmalformed id in the path (400) and a body above the server's overall size limit (413).\n\n## Rate limits\n\nFailed sign-ins are limited to 10 per e-mail address in 15 minutes and wrong two-factor codes to 5 per sign-in; both\nanswer 400 with a message. The service desk portal answers 429 for sign-in links (10 requests per IP address per\nquarter hour; at most 3 links go out per address, silently), messages from requesters (30 per hour) and request forms\n(20 per IP address and 5 per e-mail address per hour).\n\n## Webhooks\n\nAdmins register endpoints under `/admin/webhooks` for `issue.created`, `issue.updated`, `issue.deleted`,\n`comment.created`, `sprint.started`, `sprint.completed` and `version.released` (all projects or one). Each delivery is\na JSON `POST` with the `WebhookEvent` body and the headers `X-TaskCraft-Event: <event>` and\n`X-TaskCraft-Signature: sha256=<hex>`, the HMAC-SHA256 of the raw body with the webhook's secret (shown once, when the\nwebhook is created); compare it in constant time. A delivery counts when the endpoint answers 2xx within 10 seconds;\nothers are retried up to 7 times with growing pauses (30 seconds, 2 minutes, 8 minutes, … at most 4 hours; about 11 hours in all).\n\n## Live updates\n\n`GET /events` is a Server-Sent Events stream of changes in the caller's projects (`LiveEvent`); refetch what an event\ntouches.",
   "license": {
    "name": "MIT OR Apache-2.0",
    "identifier": "MIT OR Apache-2.0"
@@ -13474,26 +13474,26 @@
        }
       ]
      },
-     "version": {
-      "anyOf": [
-       {
-        "$ref": "#/components/schemas/Named"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "description": "fix version (release)"
+     "versions": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Named"
+      },
+      "description": "the releases it's fixed in, in release order"
      },
-     "component": {
-      "anyOf": [
-       {
-        "$ref": "#/components/schemas/Named"
-       },
-       {
-        "type": "null"
-       }
-      ]
+     "affectedVersions": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Named"
+      },
+      "description": "the releases it was found in"
+     },
+     "components": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Named"
+      },
+      "description": "by name"
      },
      "storyPoints": {
       "type": [
@@ -14041,20 +14041,45 @@
       "format": "uuid",
       "description": "a future or active sprint of the project; null = the backlog"
      },
+     "versionIds": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "format": "uuid"
+      },
+      "description": "the releases it's fixed in (the project's own); replaces the list"
+     },
+     "affectedVersionIds": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "format": "uuid"
+      },
+      "description": "the releases it was found in; replaces the list"
+     },
+     "componentIds": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "format": "uuid"
+      },
+      "description": "its components; replaces the list"
+     },
      "versionId": {
       "type": [
        "string",
        "null"
       ],
       "format": "uuid",
-      "description": "fix version"
+      "description": "one release (or null): replaces the list of releases it's fixed in"
      },
      "componentId": {
       "type": [
        "string",
        "null"
       ],
-      "format": "uuid"
+      "format": "uuid",
+      "description": "one component (or null): replaces the list of components"
      },
      "securityLevelId": {
       "type": [
@@ -16352,6 +16377,27 @@
         "type": "string",
         "format": "uuid"
        },
+       "componentIds": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "format": "uuid"
+        }
+       },
+       "versionIds": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "format": "uuid"
+        }
+       },
+       "affectedVersionIds": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "format": "uuid"
+        }
+       },
        "dueInDays": {
         "type": "integer",
         "description": "due this many days after the issue is created (0–3650)"
@@ -16484,6 +16530,27 @@
        "versionId": {
         "type": "string",
         "format": "uuid"
+       },
+       "componentIds": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "format": "uuid"
+        }
+       },
+       "versionIds": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "format": "uuid"
+        }
+       },
+       "affectedVersionIds": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "format": "uuid"
+        }
        },
        "dueInDays": {
         "type": "integer",

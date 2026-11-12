@@ -38,6 +38,7 @@ const FIELDS: &[&str] = &[
     "labels",
     "sprint",
     "version",
+    "affects",
     "component",
     "parent",
     "points",
@@ -71,6 +72,7 @@ pub fn suggest(header: &str) -> Option<&'static str> {
         "sprint" | "iteration" => "sprint",
         "version" | "fixversion" | "fixversions" | "release" | "milestone" | "targetversion" => "version",
         "component" | "components" | "category" | "area" => "component",
+        "affects" | "affectsversion" | "affectsversions" | "affectedversion" | "affectedversions" | "foundin" | "foundinversion" => "affects",
         "parent" | "parentkey" | "parentid" | "epic" | "epiclink" | "parenttask" => "parent",
         "points" | "storypoints" | "storypointestimate" | "estimatepoints" => "points",
         "estimate" | "estimateh" | "estimatedhours" | "originalestimate" | "estimatedtime" => "estimate",
@@ -196,7 +198,7 @@ pub(crate) async fn create_status_in(tx: &mut sqlx::PgConnection, project: Uuid,
 }
 
 /// Fields one row may fill from several columns (exports repeat a column per value).
-const MULTI: &[&str] = &["labels", "component", "version", "sprint"];
+const MULTI: &[&str] = &["labels", "component", "version", "affects", "sprint"];
 
 /// Whether a time column holds seconds rather than hours: whole numbers, all minutes, and at
 /// least one of them an hour or more (no issue takes 3600 hours).
@@ -565,15 +567,31 @@ pub async fn run(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
         {
             fields.insert("sprintId".into(), json!(id));
         }
-        if let Some(v) = one("version")
-            && let Some(id) = ensure(&state, "versions", p.id, &mut lookup.versions, &v, req.create_missing, dry).await?
+        // several: in repeated columns or comma separated in one
+        let several = |f: &str| -> Vec<String> {
+            let mut out: Vec<String> = Vec::new();
+            for v in col(row, f).iter().flat_map(|v| v.split(',').map(|x| x.trim().to_string()).collect::<Vec<_>>()) {
+                if !v.is_empty() && !out.iter().any(|o| o.eq_ignore_ascii_case(&v)) {
+                    out.push(v);
+                }
+            }
+            out
+        };
+        for (f, key, table) in
+            [("version", "versionIds", "versions"), ("affects", "affectedVersionIds", "versions"), ("component", "componentIds", "components")]
         {
-            fields.insert("versionId".into(), json!(id));
-        }
-        if let Some(v) = one("component")
-            && let Some(id) = ensure(&state, "components", p.id, &mut lookup.components, &v, req.create_missing, dry).await?
-        {
-            fields.insert("componentId".into(), json!(id));
+            let names = several(f);
+            if names.is_empty() {
+                continue;
+            }
+            let mut ids: Vec<Uuid> = Vec::new();
+            for v in &names {
+                let known = if table == "versions" { &mut lookup.versions } else { &mut lookup.components };
+                if let Some(id) = ensure(&state, table, p.id, known, v, req.create_missing, dry).await? {
+                    ids.push(id);
+                }
+            }
+            fields.insert(key.into(), json!(ids));
         }
         if let Some(v) = one("points") {
             match number(&v) {

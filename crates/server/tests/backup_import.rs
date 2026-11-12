@@ -253,7 +253,6 @@ async fn backup_import_brings_everything_over() {
     assert!(warned(&r, "whose file isn't in the backup"), "{text}");
     assert!(warned(&r, "only a group or role could see"), "{text}");
     assert!(warned(&r, "“Causes”"), "{text}");
-    assert!(warned(&r, "affected versions"), "{text}");
     assert!(warned(&r, "other custom fields"), "{text}");
 
     // people: invited and deactivated accounts, nobody e-mailed or notified
@@ -275,8 +274,9 @@ async fn backup_import_brings_everything_over() {
     assert_eq!(pay["assignee"]["name"], "Bob Builder");
     assert_eq!(pay["reporter"]["id"], alice_id.as_str());
     assert_eq!(pay["labels"], json!(["checkout", "payments"]));
-    assert_eq!(pay["component"]["name"], "Frontend");
-    assert_eq!(pay["version"]["name"], "1.0");
+    assert_eq!(pay["components"][0]["name"], "Frontend");
+    assert_eq!(pay["versions"][0]["name"], "1.0");
+    assert_eq!(pay["affectedVersions"][0]["name"], "1.0", "affected versions come along");
     assert_eq!(pay["sprint"]["name"], "Sprint 1");
     assert_eq!(pay["sprint"]["state"], "closed");
     assert_eq!(pay["storyPoints"], 5.0);

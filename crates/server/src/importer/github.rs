@@ -474,6 +474,7 @@ async fn read_issue(
         sprints: vec![],
         components: vec![],
         versions: text(&it["milestone"]["title"]).and_then(|t| milestones.get(&t).cloned()).into_iter().collect(),
+        affects: vec![],
         labels,
         watchers: assignees.iter().skip(1).cloned().collect(),
         custom: vec![],

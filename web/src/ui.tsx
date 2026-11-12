@@ -174,6 +174,8 @@ export function Choices<T>({
   placeholder,
   selected,
   empty,
+  label,
+  multiple,
 }: {
   items: T[]
   render: (item: T) => ReactNode
@@ -182,6 +184,10 @@ export function Choices<T>({
   placeholder?: string
   selected?: (item: T) => boolean
   empty?: string
+  /** what the list is for (screen readers) */
+  label?: string
+  /** several may be chosen */
+  multiple?: boolean
 }) {
   const [q, setQ] = useState('')
   const [active, setActive] = useState(0)
@@ -210,7 +216,7 @@ export function Choices<T>({
           }}
         />
       )}
-      <div className="choices-list" role="listbox">
+      <div className="choices-list" role="listbox" aria-label={label ?? placeholder ?? t('Choices')} aria-multiselectable={multiple || undefined}>
         {list.map((item, i) => (
           <button
             type="button"

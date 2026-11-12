@@ -1022,17 +1022,23 @@ pub async fn release_version(
 ) -> ApiResult<Json<Value>> {
     let project = member_of(&state, &user, id, "versions").await?;
     let move_to = req["moveTo"].as_str().and_then(|s| s.parse::<Uuid>().ok());
-    let unfinished: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT i.id FROM issues i JOIN statuses s ON s.id = i.status_id WHERE i.version_id = $1 AND i.deleted_at IS NULL AND s.category <> 'done'",
+    // unfinished issues and their other releases
+    let unfinished: Vec<(Uuid, Vec<Uuid>)> = sqlx::query_as(
+        "SELECT i.id, ARRAY(SELECT o.version_id FROM issue_versions o WHERE o.issue_id = i.id AND o.kind = 'fix' AND o.version_id <> $1)
+           FROM issue_versions iv JOIN issues i ON i.id = iv.issue_id JOIN statuses s ON s.id = i.status_id
+          WHERE iv.version_id = $1 AND iv.kind = 'fix' AND i.deleted_at IS NULL AND s.category <> 'done'",
     )
     .bind(id)
     .fetch_all(&state.db)
     .await?;
     let actor = crate::issues::Actor::of(&user);
-    for issue in &unfinished {
+    for (issue, mut others) in unfinished.iter().cloned() {
+        if let Some(m) = move_to.filter(|m| !others.contains(m)) {
+            others.push(m);
+        }
         let mut patch = Map::new();
-        patch.insert("versionId".into(), json!(move_to));
-        crate::issues::update(&state, &actor, *issue, &patch).await?;
+        patch.insert("versionIds".into(), json!(others));
+        crate::issues::update(&state, &actor, issue, &patch).await?;
     }
     sqlx::query("UPDATE versions SET status = 'released', released_at = now(), release_date = COALESCE(release_date, current_date) WHERE id = $1")
         .bind(id)

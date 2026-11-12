@@ -149,8 +149,8 @@ pub async fn enforce(tx: &mut Transaction<'_, Postgres>, user: Uuid, issue: Uuid
         struct Now {
             assignee_id: Option<Uuid>,
             resolution: Option<String>,
-            version_id: Option<Uuid>,
-            component_id: Option<Uuid>,
+            has_version: bool,
+            has_component: bool,
             due_date: Option<chrono::NaiveDate>,
             start_date: Option<chrono::NaiveDate>,
             estimate_minutes: Option<i32>,
@@ -158,7 +158,9 @@ pub async fn enforce(tx: &mut Transaction<'_, Postgres>, user: Uuid, issue: Uuid
             custom: Value,
         }
         let now: Now = sqlx::query_as(
-            "SELECT assignee_id, resolution, version_id, component_id, due_date, start_date, estimate_minutes, story_points, custom FROM issues WHERE id = $1",
+            "SELECT assignee_id, resolution, EXISTS (SELECT 1 FROM issue_versions v WHERE v.issue_id = i.id AND v.kind = 'fix') AS has_version,
+                    EXISTS (SELECT 1 FROM issue_components c WHERE c.issue_id = i.id) AS has_component,
+                    due_date, start_date, estimate_minutes, story_points, custom FROM issues i WHERE id = $1",
         )
         .bind(issue)
         .fetch_one(&mut **tx)
@@ -167,8 +169,8 @@ pub async fn enforce(tx: &mut Transaction<'_, Postgres>, user: Uuid, issue: Uuid
             let set = match *f {
                 "assignee" => now.assignee_id.is_some(),
                 "resolution" => now.resolution.is_some(),
-                "version" => now.version_id.is_some(),
-                "component" => now.component_id.is_some(),
+                "version" => now.has_version,
+                "component" => now.has_component,
                 "dueDate" => now.due_date.is_some(),
                 "startDate" => now.start_date.is_some(),
                 "estimate" => now.estimate_minutes.is_some(),

@@ -181,8 +181,8 @@ async fn move_one(
     let rank = issues::bottom_rank(tx, target).await?;
     let level = target_level(tx, id, target).await?;
     sqlx::query(
-        "UPDATE issues SET project_id = $2, number = $3, type_id = $4, status_id = $5, custom = $6, rank = $7, sprint_id = NULL, version_id = NULL,
-                component_id = NULL, updated_at = now(), security_level_id = $9,
+        "UPDATE issues SET project_id = $2, number = $3, type_id = $4, status_id = $5, custom = $6, rank = $7, sprint_id = NULL,
+                updated_at = now(), security_level_id = $9,
                 status_changed_at = CASE WHEN status_id <> $5 THEN now() ELSE status_changed_at END,
                 resolved_at = CASE WHEN $8 = 'done' THEN COALESCE(resolved_at, now()) ELSE NULL END
           WHERE id = $1",
@@ -198,6 +198,9 @@ async fn move_one(
     .bind(level)
     .execute(&mut **tx)
     .await?;
+    // releases and components belong to the project it leaves
+    sqlx::query("DELETE FROM issue_versions WHERE issue_id = $1").bind(id).execute(&mut **tx).await?;
+    sqlx::query("DELETE FROM issue_components WHERE issue_id = $1").bind(id).execute(&mut **tx).await?;
     sqlx::query("INSERT INTO issue_key_aliases (workspace_id, project_key, number, issue_id) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING")
         .bind(actor.workspace_id)
         .bind(&m.project_key)
@@ -263,7 +266,10 @@ pub async fn preview(
         None => None,
     };
     let cleared: (bool, bool, bool) =
-        sqlx::query_as("SELECT sprint_id IS NOT NULL, version_id IS NOT NULL, component_id IS NOT NULL FROM issues WHERE id = $1")
+        sqlx::query_as(
+            "SELECT sprint_id IS NOT NULL, EXISTS (SELECT 1 FROM issue_versions WHERE issue_id = i.id), EXISTS (SELECT 1 FROM issue_components WHERE issue_id = i.id)
+               FROM issues i WHERE id = $1",
+        )
             .bind(id)
             .fetch_one(&mut *tx)
             .await?;

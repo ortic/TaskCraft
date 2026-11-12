@@ -10,7 +10,8 @@ The first release.
 
 - **Work**: projects from scrum, kanban, issue-tracker and work-plan templates; issues with rich
   text, sub-tasks, links, attachments, comments, watchers, time logs and history; custom fields,
-  components, releases; templates and recurring issues; moving issues between projects.
+  components and releases (several per issue: fixed in and found in); templates and recurring
+  issues; moving issues between projects.
 - **Workflows**: free or restricted transitions; rules per status (who may move there, required
   fields, a comment) with a form that asks for what's missing; resolutions.
 - **Time tracking**: original and remaining estimates, time logs with categories and a billable

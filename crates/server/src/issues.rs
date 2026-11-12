@@ -22,8 +22,13 @@ pub const SELECT: &str = "SELECT i.id, i.number, i.project_id, p.key AS project_
        s.id AS status_id, s.name AS status_name, s.category AS status_category, s.color AS status_color,
        i.priority, i.assignee_id, a.name AS assignee_name, i.reporter_id, r.name AS reporter_name,
        i.parent_id, (pp.key || '-' || par.number) AS parent_key, par.title AS parent_title, pt.color AS parent_color,
-       i.sprint_id, sp.name AS sprint_name, sp.state AS sprint_state, i.version_id, v.name AS version_name,
-       i.component_id, c.name AS component_name,
+       i.sprint_id, sp.name AS sprint_name, sp.state AS sprint_state,
+       COALESCE((SELECT json_agg(json_build_object('id', v.id, 'name', v.name) ORDER BY v.position, v.created_at)
+                   FROM issue_versions iv JOIN versions v ON v.id = iv.version_id WHERE iv.issue_id = i.id AND iv.kind = 'fix'), '[]') AS versions,
+       COALESCE((SELECT json_agg(json_build_object('id', v.id, 'name', v.name) ORDER BY v.position, v.created_at)
+                   FROM issue_versions iv JOIN versions v ON v.id = iv.version_id WHERE iv.issue_id = i.id AND iv.kind = 'affects'), '[]') AS affected_versions,
+       COALESCE((SELECT json_agg(json_build_object('id', c.id, 'name', c.name) ORDER BY lower(c.name))
+                   FROM issue_components ic JOIN components c ON c.id = ic.component_id WHERE ic.issue_id = i.id), '[]') AS components,
        i.story_points, i.estimate_minutes, i.spent_minutes, i.start_date, i.due_date, i.rank, i.custom,
        COALESCE(i.remaining_minutes, GREATEST(i.estimate_minutes - i.spent_minutes, 0)) AS remaining_minutes, i.remaining_minutes IS NOT NULL AS remaining_set,
        i.resolved_at, i.resolution, i.status_changed_at, i.created_at, i.updated_at,
@@ -45,8 +50,6 @@ pub const SELECT: &str = "SELECT i.id, i.number, i.project_id, p.key AS project_
   LEFT JOIN projects pp ON pp.id = par.project_id
   LEFT JOIN issue_types pt ON pt.id = par.type_id
   LEFT JOIN sprints sp ON sp.id = i.sprint_id
-  LEFT JOIN versions v ON v.id = i.version_id
-  LEFT JOIN components c ON c.id = i.component_id
   LEFT JOIN security_levels sl ON sl.id = i.security_level_id";
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -78,10 +81,9 @@ pub struct Row {
     pub sprint_id: Option<Uuid>,
     pub sprint_name: Option<String>,
     pub sprint_state: Option<String>,
-    pub version_id: Option<Uuid>,
-    pub version_name: Option<String>,
-    pub component_id: Option<Uuid>,
-    pub component_name: Option<String>,
+    pub versions: sqlx::types::Json<Vec<Named>>,
+    pub affected_versions: sqlx::types::Json<Vec<Named>>,
+    pub components: sqlx::types::Json<Vec<Named>>,
     pub story_points: Option<f64>,
     pub estimate_minutes: Option<i32>,
     pub spent_minutes: i32,
@@ -114,7 +116,7 @@ impl Row {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq)]
 pub struct Named {
     pub id: Uuid,
     pub name: String,
@@ -175,8 +177,11 @@ pub struct Summary {
     pub reporter: Option<Named>,
     pub parent: Option<ParentRef>,
     pub sprint: Option<SprintRef>,
-    pub version: Option<Named>,
-    pub component: Option<Named>,
+    /// the releases it's fixed in
+    pub versions: Vec<Named>,
+    /// the releases it was found in
+    pub affected_versions: Vec<Named>,
+    pub components: Vec<Named>,
     pub story_points: Option<f64>,
     /// the original estimate
     pub estimate_minutes: Option<i32>,
@@ -228,8 +233,9 @@ pub fn summary(state: &AppState, r: Row) -> Summary {
         reporter: r.reporter_id.map(|id| Named { id, name: r.reporter_name.unwrap_or_default() }),
         parent: r.parent_id.map(|id| ParentRef { id, key: r.parent_key.unwrap_or_default(), title: r.parent_title.unwrap_or_default(), color: r.parent_color }),
         sprint: r.sprint_id.map(|id| SprintRef { id, name: r.sprint_name.unwrap_or_default(), state: r.sprint_state.unwrap_or_default() }),
-        version: r.version_id.map(|id| Named { id, name: r.version_name.unwrap_or_default() }),
-        component: r.component_id.map(|id| Named { id, name: r.component_name.unwrap_or_default() }),
+        versions: r.versions.0,
+        affected_versions: r.affected_versions.0,
+        components: r.components.0,
         story_points: r.story_points,
         estimate_minutes: r.estimate_minutes,
         remaining_minutes: r.remaining_minutes,
@@ -649,6 +655,66 @@ async fn check_security(state: &AppState, tx: &mut Transaction<'_, Postgres>, us
     Ok(())
 }
 
+/// Sets an issue's releases of a `kind` (fix | affects) — or, without one, its components — to
+/// `ids` (of the project), recording the change.
+async fn set_list(
+    tx: &mut Transaction<'_, Postgres>,
+    issue: Uuid,
+    project: Uuid,
+    kind: Option<&str>,
+    field: &'static str,
+    ids: &[Uuid],
+    changes: &mut Vec<Change>,
+) -> ApiResult<()> {
+    let (table, what) = if kind.is_some() { ("versions", "release") } else { ("components", "component") };
+    let known: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT count(*) FROM {table} WHERE id = ANY($1) AND project_id = $2")))
+        .bind(ids)
+        .bind(project)
+        .fetch_one(&mut **tx)
+        .await?;
+    if known != ids.len() as i64 {
+        return Err(ApiError::bad(format!("unknown {what} for this project")));
+    }
+    let list = |ids: &[Uuid]| {
+        let sql = format!("SELECT id, name FROM {table} WHERE id = ANY($1) ORDER BY {}", if kind.is_some() { "position, created_at" } else { "lower(name)" });
+        let ids = ids.to_vec();
+        async move { sqlx::query_as::<_, (Uuid, String)>(sqlx::AssertSqlSafe(sql)).bind(ids) }
+    };
+    let old: Vec<Uuid> = match kind {
+        Some(k) => {
+            sqlx::query_scalar("SELECT version_id FROM issue_versions WHERE issue_id = $1 AND kind = $2").bind(issue).bind(k).fetch_all(&mut **tx).await?
+        }
+        None => sqlx::query_scalar("SELECT component_id FROM issue_components WHERE issue_id = $1").bind(issue).fetch_all(&mut **tx).await?,
+    };
+    let mut a = old.clone();
+    let mut b = ids.to_vec();
+    a.sort();
+    b.sort();
+    if a == b {
+        return Ok(());
+    }
+    let names = |rows: Vec<(Uuid, String)>| json!(rows.into_iter().map(|(id, name)| json!({"id": id, "name": name})).collect::<Vec<_>>());
+    let before = names(list(&old).await.fetch_all(&mut **tx).await?);
+    match kind {
+        Some(k) => {
+            sqlx::query("DELETE FROM issue_versions WHERE issue_id = $1 AND kind = $2").bind(issue).bind(k).execute(&mut **tx).await?;
+            sqlx::query("INSERT INTO issue_versions (issue_id, version_id, kind) SELECT $1, unnest($2::uuid[]), $3")
+                .bind(issue)
+                .bind(ids)
+                .bind(k)
+                .execute(&mut **tx)
+                .await?;
+        }
+        None => {
+            sqlx::query("DELETE FROM issue_components WHERE issue_id = $1").bind(issue).execute(&mut **tx).await?;
+            sqlx::query("INSERT INTO issue_components (issue_id, component_id) SELECT $1, unnest($2::uuid[])").bind(issue).bind(ids).execute(&mut **tx).await?;
+        }
+    }
+    let after = names(list(ids).await.fetch_all(&mut **tx).await?);
+    changes.push(Change { field, old: before, new: after });
+    Ok(())
+}
+
 /// Applies a change (`{"statusId": …, "assigneeId": …}`) inside a transaction and records
 /// it (unless `quiet`, used while creating). Returns what actually changed.
 pub async fn apply(
@@ -670,8 +736,7 @@ pub async fn apply(
         reporter_id: Option<Uuid>,
         parent_id: Option<Uuid>,
         sprint_id: Option<Uuid>,
-        version_id: Option<Uuid>,
-        component_id: Option<Uuid>,
+
         story_points: Option<f64>,
         estimate_minutes: Option<i32>,
         start_date: Option<NaiveDate>,
@@ -683,7 +748,7 @@ pub async fn apply(
         remaining_minutes: Option<i32>,
     }
     let cur: Cur = sqlx::query_as(
-        "SELECT title, type_id, status_id, priority, assignee_id, reporter_id, parent_id, sprint_id, version_id, component_id, story_points,
+        "SELECT title, type_id, status_id, priority, assignee_id, reporter_id, parent_id, sprint_id, story_points,
                 estimate_minutes, start_date, due_date, custom, workspace_id, resolution, security_level_id, remaining_minutes FROM issues WHERE id = $1 FOR UPDATE",
     )
     .bind(id)
@@ -886,28 +951,29 @@ pub async fn apply(
                     sets.push(("sprint_id", SqlVal::Uuid(s)));
                 }
             }
-            "versionId" | "componentId" => {
-                let x = opt_uuid(v, k)?;
-                let (old, table, col, field) = if k == "versionId" {
-                    (cur.version_id, "versions", "version_id", "version")
-                } else {
-                    (cur.component_id, "components", "component_id", "component")
-                };
-                if x != old {
-                    if let Some(x) = x {
-                        let ok: bool =
-                            sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT EXISTS (SELECT 1 FROM {table} WHERE id = $1 AND project_id = $2)")))
-                                .bind(x)
-                                .bind(project)
-                                .fetch_one(&mut **tx)
-                                .await?;
-                        if !ok {
-                            return Err(ApiError::bad(format!("unknown {field} for this project")));
+            // releases (fixed in, found in) and components: lists; one id (or null) replaces the
+            // list, as before issues had several
+            "versionIds" | "affectedVersionIds" | "componentIds" | "versionId" | "componentId" => {
+                let ids: Vec<Uuid> = match v {
+                    Value::Array(a) => {
+                        let mut out: Vec<Uuid> = Vec::new();
+                        for x in a {
+                            let x = opt_uuid(x, k)?.ok_or_else(|| ApiError::bad(format!("{k} must be a list of ids")))?;
+                            if !out.contains(&x) {
+                                out.push(x);
+                            }
                         }
+                        out
                     }
-                    changes.push(Change { field, old: named(tx, table, old).await?, new: named(tx, table, x).await? });
-                    sets.push((col, SqlVal::Uuid(x)));
-                }
+                    _ if k.ends_with("Ids") => return Err(ApiError::bad(format!("{k} must be a list of ids"))),
+                    single => opt_uuid(single, k)?.into_iter().collect(),
+                };
+                let (kind, field) = match k.as_str() {
+                    "affectedVersionIds" => (Some("affects"), "affects"),
+                    "componentIds" | "componentId" => (None, "components"),
+                    _ => (Some("fix"), "versions"),
+                };
+                set_list(tx, id, project, kind, field, &ids, &mut changes).await?;
             }
             "storyPoints" => {
                 let p = opt_f64(v, k)?;

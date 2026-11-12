@@ -256,8 +256,9 @@ schemas = {
             "reporter": null(S("Named")),
             "parent": null(S("ParentRef"), "parent issue or epic"),
             "sprint": null(S("SprintRef")),
-            "version": null(S("Named"), "fix version (release)"),
-            "component": null(S("Named")),
+            "versions": arr(S("Named"), "the releases it's fixed in, in release order"),
+            "affectedVersions": arr(S("Named"), "the releases it was found in"),
+            "components": arr(S("Named"), "by name"),
             "storyPoints": null(number),
             "estimateMinutes": null(num, "the original estimate"),
             "remainingMinutes": null(num, "what's left: set by someone, else the original estimate minus the time logged (null without either)"),
@@ -357,8 +358,11 @@ schemas = {
             "parentId": nuuid("parent issue or epic"),
             "parentKey": ntxt("parent by key instead of id (\"\" or null clears)"),
             "sprintId": nuuid("a future or active sprint of the project; null = the backlog"),
-            "versionId": nuuid("fix version"),
-            "componentId": nuuid(),
+            "versionIds": arr(uuid, "the releases it's fixed in (the project's own); replaces the list"),
+            "affectedVersionIds": arr(uuid, "the releases it was found in; replaces the list"),
+            "componentIds": arr(uuid, "its components; replaces the list"),
+            "versionId": nuuid("one release (or null): replaces the list of releases it's fixed in"),
+            "componentId": nuuid("one component (or null): replaces the list of components"),
             "securityLevelId": nuuid("make the issue private with one of the project's security levels, or null to make it public. Creating an issue, any level of the project (the default level applies when left out); changing it later, as the project's `setSecurity` permission allows and only to a level you belong to (project admins: any)"),
             "storyPoints": null(number),
             "estimateMinutes": null(number, "the original estimate, rounded to whole minutes"),
@@ -1130,6 +1134,9 @@ B_TEMPLATE_FIELDS = obj(
         "parentId": uuid,
         "componentId": uuid,
         "versionId": uuid,
+        "componentIds": arr(uuid),
+        "versionIds": arr(uuid),
+        "affectedVersionIds": arr(uuid),
         "dueInDays": d(num, "due this many days after the issue is created (0–3650)"),
         "sprint": d(enum("active"), "put it into the running sprint (if there is one)"),
         "custom": d(anyobj, "custom field values by field id"),
@@ -3169,7 +3176,7 @@ is accepted instead. Writing an issue takes the fields of `IssueFields`; only th
 Search (`GET /search?q=`), CSV export, saved filters, dashboards and automation conditions take TQL, e.g.
 `project = WEB and sprint in openSprints() and assignee = me() order by rank` or
 `type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status
-category priority assignee reporter creator labels sprint version component parent/epic points estimate spent created
+category priority assignee reporter creator labels sprint version affects component parent/epic points estimate spent created
 updated resolved resolution security due start remaining watcher blocked` and custom fields by name (quoted when they contain spaces). Operators
 `= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,

@@ -131,6 +131,7 @@ pub fn to_model(b: &Backup) -> Model {
     let watchers = group_by(b.watchers.iter().map(|(i, u)| (i.as_str(), u.as_str())));
     let components = group_by(b.issue_components.iter().map(|(i, c)| (i.as_str(), c.as_str())));
     let fix_versions = group_by(b.fix_versions.iter().map(|(i, v)| (i.as_str(), v.as_str())));
+    let affects_versions = group_by(b.affects_versions.iter().map(|(i, v)| (i.as_str(), v.as_str())));
     let issue_sprints = group_by(b.issue_sprints.iter().map(|(i, s)| (i.as_str(), s.as_str())));
     let mut groups = group_by(b.groups.iter().map(|(id, g)| (g.issue.as_str(), (id.as_str(), g))));
     for gs in groups.values_mut() {
@@ -230,6 +231,8 @@ pub fn to_model(b: &Backup) -> Model {
         comps.sort_by(|a, b| id_order(a, b));
         let mut fixes: Vec<String> = fix_versions.get(iid).into_iter().flatten().map(|v| v.to_string()).collect();
         fixes.sort_by(|a, b| id_order(a, b));
+        let mut affects: Vec<String> = affects_versions.get(iid).into_iter().flatten().map(|v| v.to_string()).collect();
+        affects.sort_by(|a, b| id_order(a, b));
         let mut cs: Vec<&read::Comment> = comments.get(iid).cloned().unwrap_or_default();
         cs.sort_by(|a, b| a.created.cmp(&b.created).then_with(|| id_order(&a.id, &b.id)));
         let mut ws: Vec<&read::Worklog> = worklogs.get(iid).cloned().unwrap_or_default();
@@ -319,6 +322,7 @@ pub fn to_model(b: &Backup) -> Model {
             sprints,
             components: comps,
             versions: fixes,
+            affects,
             labels: labels.get(iid).into_iter().flatten().map(|l| l.to_string()).collect(),
             watchers: watchers.get(iid).into_iter().flatten().filter_map(|u| canon(Some(u))).collect(),
             custom: vec![],
@@ -405,11 +409,6 @@ pub fn to_model(b: &Backup) -> Model {
     epic_links.extend(by_value.into_iter().map(|(c, p)| (c.to_string(), p)));
     m.parents.extend(epic_links);
 
-    if b.affects_versions > 0 {
-        m.warnings.push(
-            Warning::new("affects-versions", "affected versions aren't kept (an issue has one release here: its fix version)").times(b.affects_versions as u64),
-        );
-    }
     if other_values > 0 {
         m.warnings.push(Warning::new("other-fields", "values of other custom fields aren't imported").times(other_values));
     }

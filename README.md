@@ -63,7 +63,7 @@ login timeout                               (bare words search titles and descri
 ```
 
 Fields: `project key title text description comment type status category priority assignee
-reporter creator labels sprint version component parent/epic points estimate spent created
+reporter creator labels sprint version affects component parent/epic points estimate spent created
 updated resolved resolution security due start remaining watcher blocked` and custom fields. Operators `= != ~ !~ > >= < <=`,
 `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions:
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`,
@@ -407,7 +407,8 @@ How it maps: people are matched by e-mail address, then name; issue numbers stay
 in the target project, and every former key (renamed projects, issues moved in the other tracker,
 another key here) keeps working as a link; types, statuses and priorities are matched by name
 (missing statuses and types are created and put on the boards); an issue with a resolution is
-done, resolved at its resolution date; one component and one fix version per issue (the first);
+done, resolved at its resolution date; components, fix versions and affected versions (in repeated
+columns or comma separated in one);
 values of other custom fields are reported, not imported.
 
 #### From an API: GitHub, GitLab, Redmine
