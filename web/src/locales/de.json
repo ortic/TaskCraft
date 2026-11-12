@@ -1,4 +1,5 @@
 {
+  "— ignore —": "— ignorieren —",
   "(can’t be changed after creation)": "(kann nach dem Anlegen nicht geändert werden)",
   "(title chosen when creating)": "(Titel wird beim Erstellen gewählt)",
   "{a} blocks {b}": "{a} blockiert {b}",
@@ -26,6 +27,14 @@
     "one": "{count} Vorgang ist für diesen Sprint geplant.",
     "other": "{count} Vorgänge sind für diesen Sprint geplant."
   },
+  "{count} issues imported": {
+    "one": "{count} Vorgang importiert",
+    "other": "{count} Vorgänge importiert"
+  },
+  "{count} issues imported.": {
+    "one": "{count} Vorgang importiert.",
+    "other": "{count} Vorgänge importiert."
+  },
   "{count} members": {
     "one": "{count} Mitglied",
     "other": "{count} Mitglieder"
@@ -46,6 +55,10 @@
     "other": "{count} Punkte"
   },
   "{count} released": "{count} veröffentlicht",
+  "{count} rows found. Match the columns:": {
+    "one": "{count} Zeile gefunden. Spalten zuordnen:",
+    "other": "{count} Zeilen gefunden. Spalten zuordnen:"
+  },
   "{count} sub-tasks": {
     "one": "{count} Unteraufgabe",
     "other": "{count} Unteraufgaben"
@@ -93,6 +106,7 @@
     "one": "{n} Woche",
     "other": "{n} Wochen"
   },
+  "{name} · choose another file": "{name} · andere Datei wählen",
   "{name} (release {date})": "{name} (Release am {date})",
   "{name} archived": "{name} archiviert",
   "{name} can sign in now": "{name} kann sich jetzt anmelden",
@@ -279,6 +293,7 @@
   "Board name": "Board-Name",
   "Boards": "Boards",
   "Bold": "Fett",
+  "Bring issues in from a CSV file (most tools export one). Columns are matched to fields by their names; check the matching, test the import, then run it. Statuses, types and people are matched by name; keys from the other tool keep working as links. Nobody gets notified.": "Vorgänge aus einer CSV-Datei übernehmen (die meisten Werkzeuge exportieren eine). Spalten werden über ihre Namen Feldern zugeordnet; Zuordnung prüfen, Import testen, dann ausführen. Status, Typen und Personen werden über den Namen gefunden; Schlüssel aus dem anderen Werkzeug funktionieren weiterhin als Links. Niemand wird benachrichtigt.",
   "Bugs, requests and questions with severity and environment fields.": "Fehler, Anfragen und Fragen mit Feldern für Schweregrad und Umgebung.",
   "Bullet list": "Aufzählung",
   "Burndown": "Burndown",
@@ -318,8 +333,11 @@
   "Changing your password signs you out everywhere else.": "Wenn Sie Ihr Passwort ändern, werden Sie überall sonst abgemeldet.",
   "Chart": "Diagramm",
   "Charts appear here once the project has issues.": "Diagramme erscheinen hier, sobald das Projekt Vorgänge hat.",
+  "Check": "Prüfen",
+  "Check: {count} of {rows} rows can be imported.": "Prüfung: {count} von {rows} Zeilen können importiert werden.",
   "Checkbox": "Kontrollkästchen",
   "Checklist": "Checkliste",
+  "Choose a CSV file": "CSV-Datei wählen",
   "Choose a new password": "Neues Passwort wählen",
   "Choose a project…": "Projekt wählen…",
   "Choose a space…": "Bereich auswählen…",
@@ -402,6 +420,7 @@
   "Create project": "Projekt erstellen",
   "Create rule": "Regel erstellen",
   "Create sprint": "Sprint erstellen",
+  "Create sprints, releases and components that don’t exist yet": "Sprints, Releases und Komponenten anlegen, die es noch nicht gibt",
   "Create team": "Team erstellen",
   "Create token": "Token erstellen",
   "Create version": "Release erstellen",
@@ -560,6 +579,7 @@
   "Epic / parent": "Epic / übergeordnet",
   "Epics": "Epics",
   "Estimate": "Schätzung",
+  "Estimate (hours)": "Schätzung (Stunden)",
   "Estimation": "Schätzung",
   "Events": "Ereignisse",
   "every {weekday} at {time}": "jeden {weekday} um {time}",
@@ -588,6 +608,7 @@
   "Field": "Feld",
   "Field {name} added": "Feld {name} hinzugefügt",
   "Field {name} deleted": "Feld {name} gelöscht",
+  "Field for column {name}": "Feld für die Spalte {name}",
   "Field saved": "Feld gespeichert",
   "Fields & components": "Felder & Komponenten",
   "Filter (optional, TQL)": "Filter (optional, TQL)",
@@ -654,6 +675,11 @@
   "How you appear to others in {workspace}.": "So sehen andere Sie in {workspace}.",
   "Icon": "Symbol",
   "Ideal": "Ideal",
+  "Import": "Import",
+  "Import {count} issues": {
+    "one": "{count} Vorgang importieren",
+    "other": "{count} Vorgänge importieren"
+  },
   "important bugs, newest first": "wichtige Fehler, neueste zuerst",
   "in {count} days": {
     "one": "in {count} Tag",
@@ -733,6 +759,7 @@
   "Kanban project": "Kanban-Projekt",
   "Keep done issues for (days)": "Erledigte Vorgänge behalten für (Tage)",
   "Key": "Schlüssel",
+  "Key (from the other tool)": "Schlüssel (aus dem anderen Werkzeug)",
   "Keyboard shortcuts": "Tastenkürzel",
   "Kind": "Art",
   "label": "Label",
@@ -781,6 +808,7 @@
   "Low": "Niedrig",
   "Mark all read": "Alle als gelesen markieren",
   "Mark as unreleased": "Als unveröffentlicht markieren",
+  "Match one column to the title.": "Eine Spalte dem Titel zuordnen.",
   "Matching issues": "Passende Vorgänge",
   "me": "ich",
   "Measure": "Messgröße",
@@ -992,6 +1020,7 @@
   "Page titles, searches and links use your own WikiCraft token, so you only see pages your wiki permissions allow.": "Seitentitel, Suchen und Links verwenden Ihr eigenes WikiCraft-Token, sodass Sie nur Seiten sehen, die Ihre Wiki-Berechtigungen erlauben.",
   "Pages written in the {space} space show up here, newest first.": "Seiten aus dem Bereich {space} erscheinen hier, die neuesten zuerst.",
   "Parent": "Übergeordnet",
+  "Parent (key)": "Übergeordnet (Schlüssel)",
   "Parent page for new pages (optional)": "Übergeordnete Seite für neue Seiten (optional)",
   "Parts of the product (like Checkout or API) to sort issues by. A component lead is a contact person, nothing more.": "Teile des Produkts (etwa Checkout oder API), nach denen sich Vorgänge sortieren lassen. Die Komponentenleitung ist nur eine Ansprechperson, sonst nichts.",
   "Password": "Passwort",
@@ -1108,6 +1137,7 @@
   "Role": "Rolle",
   "Role of {name}": "Rolle von {name}",
   "Roles": "Rollen",
+  "Row {row}": "Zeile {row}",
   "Rule {name} is on": "Regel {name} ist aktiv",
   "Rule created": "Regel erstellt",
   "Rule deleted": "Regel gelöscht",
@@ -1340,6 +1370,7 @@
   "Time logged this week": "Diese Woche erfasste Zeit",
   "Time range": "Zeitraum",
   "Time spent": "Aufgewendete Zeit",
+  "Time spent (hours)": "Aufgewendete Zeit (Stunden)",
   "Time zone": "Zeitzone",
   "Timeline": "Zeitachse",
   "Timesheet": "Stundenzettel",

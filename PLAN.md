@@ -38,7 +38,7 @@
 - [ ] Single sign-on: OpenID Connect, SAML, LDAP (reuse WikiCraft's providers)
 - [ ] Two-factor authentication and passkeys
 - [x] Move issues between projects: new key (the old one keeps working), type / status mapped by name or category, custom fields by name and kind, sub-tasks along; editing time logs
-- [ ] CSV import with field mapping; imports from common trackers' exports
+- [x] CSV import with field mapping (suggested from header names, values matched by name, dry run, source keys kept as aliases, parents from the file); TaskCraft's own CSV export imports back
 - [x] Scheduled automation ("every weekday at 08:00, issues due tomorrow → notify the assignee", local time zones), a notify action; service-level goals (first response, resolution) per priority with a queue and alerts
 - [ ] Dashboards people compose from report widgets and saved filters
 - [ ] Portfolio view across projects (epics and releases on one timeline), capacity per team

@@ -130,5 +130,21 @@
   "Its {count} sub-tasks are created too.": {
     "one": "Its {count} sub-task is created too.",
     "other": "Its {count} sub-tasks are created too."
+  },
+  "{count} issues imported": {
+    "one": "{count} issue imported",
+    "other": "{count} issues imported"
+  },
+  "{count} issues imported.": {
+    "one": "{count} issue imported.",
+    "other": "{count} issues imported."
+  },
+  "{count} rows found. Match the columns:": {
+    "one": "{count} row found. Match the columns:",
+    "other": "{count} rows found. Match the columns:"
+  },
+  "Import {count} issues": {
+    "one": "Import {count} issue",
+    "other": "Import {count} issues"
   }
 }

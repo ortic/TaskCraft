@@ -3,6 +3,7 @@ pub mod attachments;
 pub mod auth;
 pub mod boards;
 pub mod comments;
+pub mod import;
 pub mod integrations;
 pub mod issues;
 pub mod moves;
@@ -85,6 +86,8 @@ pub fn api() -> Router<AppState> {
         .route("/projects/{key}/wiki", get(integrations::project_wiki))
         .route("/projects/{key}/templates", get(templates::list).post(templates::create))
         .route("/projects/{key}/sla", get(templates::sla_queue))
+        .route("/projects/{key}/import/preview", post(import::preview))
+        .route("/projects/{key}/import", post(import::run))
         .route("/templates/{id}", patch(templates::update).delete(templates::delete))
         .route("/templates/{id}/create", post(templates::instantiate))
         .route("/statuses/{id}", patch(projects::update_status).delete(projects::delete_status))

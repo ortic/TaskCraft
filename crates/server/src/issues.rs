@@ -305,9 +305,22 @@ pub struct Actor {
     pub depth: u8,
 }
 
+/// Depth of a quiet actor: imports change issues without notifications, webhooks, automation
+/// or live events per issue.
+pub const QUIET: u8 = 200;
+
 impl Actor {
     pub fn of(u: &User) -> Self {
         Actor { user: Some(u.id), workspace: u.workspace_id, depth: 0 }
+    }
+
+    /// Changes in `u`'s name that tell nobody (imports).
+    pub fn quiet(u: &User) -> Self {
+        Actor { user: Some(u.id), workspace: u.workspace_id, depth: QUIET }
+    }
+
+    pub fn is_quiet(&self) -> bool {
+        self.depth >= QUIET
     }
 }
 
@@ -500,7 +513,7 @@ pub async fn create(state: &AppState, actor: &Actor, mut n: NewIssue) -> ApiResu
     let row = load(state, id).await?;
     let s = summary(state, row);
     after_change(state, actor, &s, &changes, true).await;
-    if let Some(d) = &description {
+    if let Some(d) = description.as_ref().filter(|_| !actor.is_quiet()) {
         crate::notify::mentions(state, actor, &s, d, None).await;
     }
     Ok(s)
@@ -998,7 +1011,7 @@ pub async fn update(state: &AppState, actor: &Actor, id: Uuid, patch: &Map<Strin
     let s = summary(state, load(state, id).await?);
     if !changes.is_empty() {
         after_change(state, actor, &s, &changes, false).await;
-        if patch.contains_key("description") || patch.contains_key("descriptionMarkdown") {
+        if !actor.is_quiet() && (patch.contains_key("description") || patch.contains_key("descriptionMarkdown")) {
             let d: Option<Value> = sqlx::query_scalar("SELECT description FROM issues WHERE id = $1").bind(id).fetch_one(&state.db).await?;
             if let Some(d) = d {
                 crate::notify::mentions(state, actor, &s, &d, None).await;
@@ -1010,6 +1023,9 @@ pub async fn update(state: &AppState, actor: &Actor, id: Uuid, patch: &Map<Strin
 
 /// Notifications, live update, webhooks and automation after an issue changed.
 pub async fn after_change(state: &AppState, actor: &Actor, s: &Summary, changes: &[Change], created: bool) {
+    if actor.is_quiet() {
+        return;
+    }
     crate::notify::changes(state, actor, s, changes, created).await;
     let mut e = Event::new(actor.workspace, "issue").project(s.project_id).issue(s.id, &s.key);
     e.actor_id = actor.user;
