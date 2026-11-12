@@ -5,8 +5,10 @@ pub mod boards;
 pub mod comments;
 pub mod integrations;
 pub mod issues;
+pub mod passkeys;
 pub mod projects;
 pub mod reports;
+pub mod security;
 pub mod users;
 pub mod views;
 
@@ -143,6 +145,8 @@ pub fn api() -> Router<AppState> {
         .route("/admin/webhooks", get(admin::webhooks).post(admin::create_webhook))
         .route("/admin/webhooks/{id}", patch(admin::update_webhook).delete(admin::delete_webhook))
         .route("/admin/webhooks/{id}/test", post(admin::test_webhook))
+        // two-factor authentication, passkeys, sessions
+        .merge(security::routes())
 }
 
 pub fn router(state: AppState) -> Router {

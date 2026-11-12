@@ -1,9 +1,10 @@
 import { t, AVAILABLE, LANGUAGES, chooseLanguage, locale, rememberLanguage } from '../i18n'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, BookOpen, Check, Contrast, Copy, ExternalLink, KeyRound, Lock, Monitor, Moon, Palette, Sun, Trash, User } from 'lucide-react'
+import { Bell, BookOpen, Check, Contrast, Copy, ExternalLink, KeyRound, Lock, Monitor, Moon, Palette, ShieldCheck, Sun, Trash, User } from 'lucide-react'
 import { api, ago, shortDate, type Me } from '../api'
 import { Avatar, Confirm, ErrorBox, Loading, useMe, useToast } from '../ui'
+import { SecuritySettings } from '../components/Security'
 import './Settings.css'
 
 // ---- small shared pieces (Admin uses them too) ----
@@ -65,6 +66,7 @@ function Section({ id, icon, title, desc, children, footer }: { id: string; icon
 const SECTIONS = [
   { id: 'profile', icon: <User size={15} />, label: () => t('Profile') },
   { id: 'password', icon: <Lock size={15} />, label: () => t('Password') },
+  { id: 'security', icon: <ShieldCheck size={15} />, label: () => t('Security') },
   { id: 'appearance', icon: <Palette size={15} />, label: () => t('Appearance') },
   { id: 'notifications', icon: <Bell size={15} />, label: () => t('Notifications') },
   { id: 'tokens', icon: <KeyRound size={15} />, label: () => t('API tokens') },
@@ -98,6 +100,9 @@ export default function Settings() {
         <div className="st-sections">
           <ProfileSection me={data} />
           <PasswordSection />
+          <Section id="security" icon={<ShieldCheck size={16} />} title={t('Security')} desc={t('Two-factor authentication, passkeys and where you’re signed in.')}>
+            <SecuritySettings />
+          </Section>
           <AppearanceSection />
           <NotificationsSection me={data} />
           <TokensSection me={data} preset={preset} />

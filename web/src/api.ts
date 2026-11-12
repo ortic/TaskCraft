@@ -72,6 +72,8 @@ export interface Me {
   workspace: { id: string; name: string; accentColor?: string | null; defaultLanguage?: string | null; weekStart?: string | null } | null
   wikicraft?: { url: string | null; connected: boolean; personal: boolean }
   baseUrl?: string
+  /** the workspace requires two-factor authentication and this person hasn't set it up */
+  mustSetUpTwoFactor?: boolean
 }
 
 export interface Named {

@@ -36,7 +36,7 @@
 
 - [ ] E-mail: invitations, password reset, notification digests (SMTP)
 - [ ] Single sign-on: OpenID Connect, SAML, LDAP (reuse WikiCraft's providers)
-- [ ] Two-factor authentication and passkeys
+- [x] Two-factor authentication (authenticator app, recovery codes) and passkeys; sessions list; "require two-factor" per workspace
 - [ ] Move issues between projects (key change with redirect, field mapping)
 - [ ] CSV import with field mapping; imports from common trackers' exports
 - [ ] Scheduled automation ("every morning, issues due tomorrow → notify assignee"), SLA timers for trackers

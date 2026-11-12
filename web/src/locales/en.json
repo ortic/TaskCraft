@@ -23,6 +23,10 @@
   "one": "{count} member",
   "other": "{count} members"
  },
+ "{count} passkeys": {
+  "one": "{count} passkey",
+  "other": "{count} passkeys"
+ },
  "{count} people": {
   "one": "{count} person",
   "other": "{count} people"
@@ -34,6 +38,10 @@
  "{count} points": {
   "one": "{count} point",
   "other": "{count} points"
+ },
+ "{count} recovery codes left.": {
+  "one": "{count} recovery code left.",
+  "other": "{count} recovery codes left."
  },
  "{days} days in this status": {
   "one": "{days} day in this status",
@@ -102,6 +110,10 @@
  "Running difference of created and resolved issues: {value} after {count} days.": {
   "one": "Running difference of created and resolved issues: {value} after {count} day.",
   "other": "Running difference of created and resolved issues: {value} after {count} days."
+ },
+ "Signed out of {count} other sessions": {
+  "one": "Signed out of {count} other session",
+  "other": "Signed out of {count} other sessions"
  },
  "Sprint completed; {n} issues moved": {
   "one": "Sprint completed; {n} issue moved",

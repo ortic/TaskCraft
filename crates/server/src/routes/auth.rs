@@ -113,6 +113,10 @@ pub async fn login(State(state): State<AppState>, headers: HeaderMap, Json(req):
     match (ok, user) {
         (true, Some((id, ws))) => {
             crate::auth::clear_login_failures(&state, &email).await;
+            // two-factor authentication: no session yet, the second step first
+            if let Some(step) = crate::mfa::second_step(&state, id).await? {
+                return Ok(Json(step).into_response());
+            }
             let cookie = create_session(&state, id, &headers).await?;
             audit(&state, ws, Some(id), "auth.login", None, json!({})).await;
             Ok(([(header::SET_COOKIE, cookie)], Json(json!({ "ok": true }))).into_response())
@@ -131,7 +135,11 @@ pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
     Ok(([(header::SET_COOKIE, session_cookie("", 0, state.config.secure_cookies))], StatusCode::NO_CONTENT).into_response())
 }
 
-pub async fn me(State(state): State<AppState>, MaybeUser(user): MaybeUser) -> ApiResult<Json<Value>> {
+pub async fn me(
+    State(state): State<AppState>,
+    MaybeUser(user): MaybeUser,
+    enroll: Option<axum::Extension<crate::mfa::MustEnrollTwoFactor>>,
+) -> ApiResult<Json<Value>> {
     let Some(user) = user else {
         return Ok(Json(json!({ "user": null, "workspace": null })));
     };
@@ -159,6 +167,8 @@ pub async fn me(State(state): State<AppState>, MaybeUser(user): MaybeUser) -> Ap
             "personal": personal_wiki,
         },
         "baseUrl": state.config.base(),
+        // the workspace requires two-factor authentication and this person hasn't set it up
+        "mustSetUpTwoFactor": enroll.is_some(),
     })))
 }
 
@@ -364,6 +374,10 @@ pub async fn link_accept(State(state): State<AppState>, headers: HeaderMap, Json
         .await?;
     sqlx::query("DELETE FROM sessions WHERE user_id = $1").bind(uid).execute(&state.db).await?;
     audit(&state, ws, Some(uid), "auth.link_used", None, json!({})).await;
+    // a reset link alone doesn't get past two-factor authentication: the second step follows on /login?mfa=1
+    if let Some(step) = crate::mfa::second_step_cookie(&state, uid, None).await? {
+        return Ok(([(header::SET_COOKIE, step)], Json(json!({ "mfaRequired": true }))).into_response());
+    }
     let cookie = create_session(&state, uid, &headers).await?;
     Ok(([(header::SET_COOKIE, cookie)], Json(json!({ "ok": true }))).into_response())
 }

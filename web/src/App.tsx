@@ -9,6 +9,7 @@ import { useLiveUpdates } from './live'
 import { applyAccent } from './look'
 import Layout from './components/Layout'
 import { Login, Setup, Welcome } from './pages/Auth'
+import { TwoFactorGate, useTwoFactorGate } from './components/Security'
 import Home from './pages/Home'
 import Projects from './pages/Projects'
 import Board from './pages/Board'
@@ -32,7 +33,9 @@ export default function App() {
   const me = useMe()
   const loc = useLocation()
   const user = me.data?.user
-  useLiveUpdates(!!user)
+  // the workspace requires two-factor authentication and this person hasn't set it up yet
+  const gate = useTwoFactorGate(!!user && !!me.data?.mustSetUpTwoFactor)
+  useLiveUpdates(!!user && !gate.show)
   if (setup.isLoading || me.isLoading) return <Loading />
   if (setup.data?.needsSetup) return <Setup />
   const lang = chooseLanguage(me.data?.profile?.locale, me.data?.workspace?.defaultLanguage)
@@ -47,6 +50,7 @@ export default function App() {
     if (loc.pathname === '/login') return <Login />
     return <Navigate to={`/login?next=${encodeURIComponent(loc.pathname + loc.search)}`} replace />
   }
+  if (gate.show) return <ToastProvider><TwoFactorGate me={me.data!} onDone={gate.done} /></ToastProvider>
   return (
     <ToastProvider>
       <Suspense fallback={<Loading />}>

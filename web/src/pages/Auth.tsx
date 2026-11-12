@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 import { Logo } from '../ui'
+import { PasskeySignIn, SecondStep } from '../components/SignInSteps'
 
 function go(next?: string | null) {
   location.href = next && next.startsWith('/') && !next.startsWith('//') ? next : '/'
@@ -54,6 +55,9 @@ export function Login() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const next = new URLSearchParams(location.search).get('next')
+  // two-factor authentication: the second step (`?mfa=1`: a reset link or single sign-on left it in a cookie)
+  const [step, setStep] = useState<{ token: string; methods: string[] | null } | null>(() => (new URLSearchParams(location.search).get('mfa') ? { token: '', methods: null } : null))
+  if (step) return <SecondStep token={step.token} methods={step.methods} next={next} onCancel={() => setStep(null)} />
   return (
     <div className="auth">
       <form
@@ -64,7 +68,12 @@ export function Login() {
           setBusy(true)
           setErr('')
           try {
-            await api.post('/auth/login', { email: fd.get('email'), password: fd.get('password') })
+            const r = await api.post<{ mfaRequired?: boolean; mfaToken?: string; methods?: string[] }>('/auth/login', { email: fd.get('email'), password: fd.get('password') })
+            if (r?.mfaRequired) {
+              setStep({ token: r.mfaToken ?? '', methods: r.methods ?? null })
+              setBusy(false)
+              return
+            }
             go(next)
           } catch (e) {
             setErr((e as Error).message)
@@ -78,6 +87,7 @@ export function Login() {
         <div className="field"><label htmlFor="pw">{t('Password')}</label><input id="pw" name="password" type="password" className="input" required autoComplete="current-password" /></div>
         {err && <p className="error-text">{err}</p>}
         <button className="btn btn-primary" style={{ width: '100%' }} disabled={busy}>{t('Log in')}</button>
+        <PasskeySignIn next={next} onError={setErr} />
         <p className="faint small" style={{ marginBottom: 0 }}>{t('Forgot your password? Ask an administrator for a reset link.')}</p>
       </form>
     </div>
@@ -100,8 +110,9 @@ export function Welcome() {
           setBusy(true)
           setErr('')
           try {
-            await api.post('/auth/link', { token, password: fd.get('password'), name: fd.get('name') })
-            go('/')
+            const r = await api.post<{ mfaRequired?: boolean }>('/auth/link', { token, password: fd.get('password'), name: fd.get('name') })
+            // two-factor authentication: the second step follows on the login page
+            go(r?.mfaRequired ? '/login?mfa=1' : '/')
           } catch (e) {
             setErr((e as Error).message)
             setBusy(false)
