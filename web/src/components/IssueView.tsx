@@ -6,7 +6,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Link2, Paperclip, Eye, EyeOff, Ellipsis, Heart, FolderInput, Pencil, Copy, Trash, ExternalLink, Plus, X, Ban, BookOpen, Clock, CornerDownRight, MessageSquare, Activity, Timer, FileText, Check,
-  Mail, MailCheck, LifeBuoy, ClipboardList, Lock,
+  Mail, MailCheck, LifeBuoy, ClipboardList, Lock, ThumbsUp, Printer,
 } from 'lucide-react'
 import {
   api, ago, dateTime, duration, may, shortDate, type Comment, type HistoryEvent, type Issue, type IssueDetail, type Named, type Project, type TimeCategory, type WikiPage, type Worklog,
@@ -168,7 +168,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
           }}
         />
         {can && (
-          <div className="row-wrap" style={{ marginBottom: 14 }}>
+          <div className="row-wrap no-print" style={{ marginBottom: 14 }}>
             <button className="btn btn-sm" onClick={() => fileRef.current?.click()}>
               <Paperclip size={14} /> {t('Attach')}
             </button>
@@ -272,10 +272,24 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
               {issue.watching ? <Eye size={16} /> : <EyeOff size={16} />}
             </button>
             <span className="faint small">{issue.watchers.length}</span>
+            <button
+              className={`icon-btn ${issue.voted ? 'voted' : ''}`}
+              aria-pressed={!!issue.voted}
+              title={(issue.voters ?? []).length ? t('Votes: {names}', { names: (issue.voters ?? []).map((v) => v.name).join(', ') }) : t('Vote for this issue')}
+              aria-label={issue.voted ? t('Take back your vote') : t('Vote for this issue')}
+              onClick={async () => {
+                await api.put(`/issues/${issue.key}/vote`, { voted: !issue.voted })
+                qc.invalidateQueries({ queryKey: ['issue', issue.key] })
+              }}
+            >
+              <ThumbsUp size={16} />
+            </button>
+            <span className="faint small">{issue.votes ?? 0}</span>
             <PopButton className="icon-btn" title={t('More')} label={<Ellipsis size={16} />} align="end" width={230}>
               {(close) => (
                 <div>
                   <button className="menu-item" onClick={() => { close(); copyLink() }}><Copy size={14} /> {t('Copy link')}</button>
+                  <button className="menu-item" onClick={() => { close(); window.open(`/issues/${issue.key}?print=1`, '_blank', 'noopener') }}><Printer size={14} /> {t('Print or save as PDF')}</button>
                   {can && (
                     <button
                       className="menu-item"
@@ -912,7 +926,7 @@ function Comments({ issue, meId }: { issue: IssueDetail; meId?: string }) {
   return (
     <div className="col" style={{ gap: 12 }}>
       {issue.permissions.comment && (
-        <div className="row" style={{ alignItems: 'flex-start', gap: 10 }}>
+        <div className="row no-print" style={{ alignItems: 'flex-start', gap: 10 }}>
           <Avatar name={useMe().data?.user?.name ?? ''} id={meId} size={28} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <RichText

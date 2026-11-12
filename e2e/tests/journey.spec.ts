@@ -436,6 +436,21 @@ test('time categories, remaining estimate and the time report', async ({ page })
   await a11y(page)
 })
 
+test('voting and the list as Excel', async ({ page }) => {
+  await login(page)
+  const key = await page.evaluate(async () => (await (await fetch('/api/search?q=' + encodeURIComponent('project = WEB order by key'))).json()).issues[2].key as string)
+  await page.goto(`/issues/${key}`)
+  const vote = page.getByRole('button', { name: 'Vote for this issue' })
+  await vote.click()
+  await expect(page.getByRole('button', { name: 'Take back your vote' })).toHaveAttribute('aria-pressed', 'true')
+  await a11y(page)
+  await page.goto('/projects/WEB/list')
+  await expect(page.getByRole('link', { name: 'Excel' })).toHaveAttribute('href', /search\.xlsx/)
+  const download = page.waitForEvent('download')
+  await page.getByRole('link', { name: 'Excel' }).click()
+  expect((await download).suggestedFilename()).toBe('issues.xlsx')
+})
+
 test('command palette finds issues', async ({ page }) => {
   await login(page)
   await page.keyboard.press('Control+k')

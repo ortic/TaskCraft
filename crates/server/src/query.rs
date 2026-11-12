@@ -149,6 +149,8 @@ const BUILTIN: &[&str] = &[
     "startdate",
     "watcher",
     "watchers",
+    "voter",
+    "votes",
     "blocked",
     "rank",
 ];
@@ -461,11 +463,12 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
                 qb.push("))");
             });
         }
-        "watcher" | "watchers" => {
+        "watcher" | "watchers" | "voter" | "voters" => {
             let neg = only_eq(field, op)?;
             let (ids, names) = people(ctx, field, values)?;
+            let table = if field.starts_with("voter") { "issue_votes" } else { "issue_watchers" };
             qb.push(if neg { "NOT " } else { "" });
-            qb.push("EXISTS (SELECT 1 FROM issue_watchers w JOIN users u ON u.id = w.user_id WHERE w.issue_id = i.id AND (u.id = ANY(");
+            qb.push(format!("EXISTS (SELECT 1 FROM {table} w JOIN users u ON u.id = w.user_id WHERE w.issue_id = i.id AND (u.id = ANY("));
             qb.push_bind(ids);
             qb.push(") OR lower(u.name) = ANY(");
             qb.push_bind(names.clone());
@@ -581,8 +584,9 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
                 qb.push("::int[]) AS want(k, n) ON upper(pp.key) = want.k AND pi.number = want.n");
             });
         }
-        "points" | "storypoints" | "estimate" | "spent" | "remaining" => {
+        "points" | "storypoints" | "estimate" | "spent" | "remaining" | "votes" => {
             let (col, scale) = match field {
+                "votes" => ("(SELECT count(*) FROM issue_votes vt WHERE vt.issue_id = i.id)", 1.0),
                 "estimate" => ("i.estimate_minutes", 60.0),
                 "remaining" => ("COALESCE(i.remaining_minutes, GREATEST(i.estimate_minutes - i.spent_minutes, 0))", 60.0),
                 "spent" => ("i.spent_minutes", 60.0),
@@ -1003,6 +1007,7 @@ pub fn push_order(qb: &mut Qb, ctx: &Ctx, order: &[Order], default: &str) -> Api
             "estimate" => "i.estimate_minutes",
             "remaining" => "COALESCE(i.remaining_minutes, GREATEST(i.estimate_minutes - i.spent_minutes, 0))",
             "spent" => "i.spent_minutes",
+            "votes" => "(SELECT count(*) FROM issue_votes vt WHERE vt.issue_id = i.id)",
             "project" => "p.key",
             other => {
                 let def = custom_def(ctx, other)?.clone();

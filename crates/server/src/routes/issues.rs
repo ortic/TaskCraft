@@ -91,6 +91,11 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
             .bind(id)
             .fetch_all(&state.db)
             .await?;
+    let voters: Vec<(Uuid, String)> =
+        sqlx::query_as("SELECT u.id, u.name FROM issue_votes v JOIN users u ON u.id = v.user_id WHERE v.issue_id = $1 ORDER BY v.created_at")
+            .bind(id)
+            .fetch_all(&state.db)
+            .await?;
     let links: Vec<(Uuid, String, Uuid, Uuid)> =
         sqlx::query_as("SELECT id, kind, source_id, target_id FROM issue_links WHERE source_id = $1 OR target_id = $1 ORDER BY created_at")
             .bind(id)
@@ -128,6 +133,8 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
     v["description"] = description.unwrap_or(Value::Null);
     v["watchers"] = json!(watchers.iter().map(|(id, n)| json!({"id": id, "name": n})).collect::<Vec<_>>());
     v["watching"] = json!(watchers.iter().any(|(w, _)| *w == user.id));
+    v["voters"] = json!(voters.iter().map(|(id, n)| json!({"id": id, "name": n})).collect::<Vec<_>>());
+    v["voted"] = json!(voters.iter().any(|(w, _)| *w == user.id));
     v["links"] = json!(links);
     v["webLinks"] = json!(web.iter().map(|(id, u, t, k, at)| json!({"id": id, "url": u, "title": t, "kind": k, "createdAt": at})).collect::<Vec<_>>());
     v["attachments"] = json!(
@@ -360,70 +367,137 @@ pub async fn search(State(state): State<AppState>, CurrentUser(user): CurrentUse
 }
 
 /// The same search as CSV (spreadsheet export).
+/// The columns of an export (CSV, Excel) and each issue's values; numbers stay numbers.
+enum Cell {
+    Text(String),
+    Num(Option<f64>),
+}
+
+const EXPORT_COLUMNS: [&str; 25] = [
+    "Key",
+    "Title",
+    "Type",
+    "Status",
+    "Priority",
+    "Assignee",
+    "Reporter",
+    "Sprint",
+    "Version",
+    "Affects version",
+    "Component",
+    "Parent",
+    "Points",
+    "Estimate (h)",
+    "Remaining (h)",
+    "Spent (h)",
+    "Labels",
+    "Start",
+    "Due",
+    "Created",
+    "Updated",
+    "Resolved",
+    "Resolution",
+    "Security",
+    "Votes",
+];
+
+fn export_row(s: &Summary) -> Vec<Cell> {
+    use Cell::{Num, Text};
+    let h = |m: Option<i32>| Num(m.map(|m| (m as f64 / 60.0 * 10.0).round() / 10.0));
+    // several in one cell, comma separated (the import splits them again)
+    let names = |l: &[issues::Named]| Text(l.iter().map(|x| x.name.as_str()).collect::<Vec<_>>().join(", "));
+    let named = |n: Option<&issues::Named>| Text(n.map(|a| a.name.clone()).unwrap_or_default());
+    let when = |d: Option<chrono::DateTime<chrono::Utc>>| Text(d.map(|d| d.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default());
+    vec![
+        Text(s.key.clone()),
+        Text(s.title.clone()),
+        Text(s.kind.name.clone()),
+        Text(s.status.name.clone()),
+        Text(s.priority.to_string()),
+        named(s.assignee.as_ref()),
+        named(s.reporter.as_ref()),
+        Text(s.sprint.as_ref().map(|a| a.name.clone()).unwrap_or_default()),
+        names(&s.versions),
+        names(&s.affected_versions),
+        names(&s.components),
+        Text(s.parent.as_ref().map(|a| a.key.clone()).unwrap_or_default()),
+        Num(s.story_points),
+        h(s.estimate_minutes),
+        h(s.remaining_minutes),
+        h(Some(s.spent_minutes)),
+        Text(s.labels.join(" ")),
+        Text(s.start_date.map(|d| d.to_string()).unwrap_or_default()),
+        Text(s.due_date.map(|d| d.to_string()).unwrap_or_default()),
+        when(Some(s.created_at)),
+        when(Some(s.updated_at)),
+        when(s.resolved_at),
+        Text(s.resolution.clone().unwrap_or_default()),
+        named(s.security.as_ref()),
+        Num(Some(s.votes as f64)),
+    ]
+}
+
 pub async fn search_csv(State(state): State<AppState>, CurrentUser(user): CurrentUser, Query(q): Query<SearchQuery>) -> ApiResult<Response> {
     let r = run_search(&state, &user, &q.q, q.project.as_deref(), 1000, 0, default_order(q.order.as_deref())).await?;
     let mut w = csv::Writer::from_writer(Vec::new());
-    let _ = w.write_record([
-        "Key",
-        "Title",
-        "Type",
-        "Status",
-        "Priority",
-        "Assignee",
-        "Reporter",
-        "Sprint",
-        "Version",
-        "Affects version",
-        "Component",
-        "Parent",
-        "Points",
-        "Estimate (h)",
-        "Remaining (h)",
-        "Spent (h)",
-        "Labels",
-        "Start",
-        "Due",
-        "Created",
-        "Updated",
-        "Resolved",
-        "Resolution",
-        "Security",
-    ]);
-    let h = |m: Option<i32>| m.map(|m| format!("{:.1}", m as f64 / 60.0)).unwrap_or_default();
-    // several in one cell, comma separated (the import splits them again)
-    let names = |l: &[issues::Named]| l.iter().map(|x| x.name.as_str()).collect::<Vec<_>>().join(", ");
-    for s in r.issues {
-        // a leading = + - @ would make spreadsheets evaluate the cell
-        let safe = |t: &str| if t.starts_with(['=', '+', '-', '@']) { format!("'{t}") } else { t.to_string() };
-        let _ = w.write_record([
-            s.key.clone(),
-            safe(&s.title),
-            s.kind.name.clone(),
-            s.status.name.clone(),
-            s.priority.to_string(),
-            s.assignee.as_ref().map(|a| a.name.clone()).unwrap_or_default(),
-            s.reporter.as_ref().map(|a| a.name.clone()).unwrap_or_default(),
-            s.sprint.as_ref().map(|a| a.name.clone()).unwrap_or_default(),
-            names(&s.versions),
-            names(&s.affected_versions),
-            names(&s.components),
-            s.parent.as_ref().map(|a| a.key.clone()).unwrap_or_default(),
-            s.story_points.map(|p| p.to_string()).unwrap_or_default(),
-            h(s.estimate_minutes),
-            h(s.remaining_minutes),
-            h(Some(s.spent_minutes)),
-            s.labels.join(" "),
-            s.start_date.map(|d| d.to_string()).unwrap_or_default(),
-            s.due_date.map(|d| d.to_string()).unwrap_or_default(),
-            s.created_at.format("%Y-%m-%d %H:%M").to_string(),
-            s.updated_at.format("%Y-%m-%d %H:%M").to_string(),
-            s.resolved_at.map(|d| d.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default(),
-            s.resolution.clone().unwrap_or_default(),
-            s.security.as_ref().map(|l| l.name.clone()).unwrap_or_default(),
-        ]);
+    let _ = w.write_record(EXPORT_COLUMNS);
+    // a leading = + - @ would make spreadsheets evaluate the cell
+    let safe = |t: &str| if t.starts_with(['=', '+', '-', '@']) { format!("'{t}") } else { t.to_string() };
+    for s in &r.issues {
+        let row: Vec<String> = export_row(s)
+            .into_iter()
+            .map(|c| match c {
+                Cell::Text(t) => safe(&t),
+                Cell::Num(n) => n.map(|n| n.to_string()).unwrap_or_default(),
+            })
+            .collect();
+        let _ = w.write_record(row);
     }
     let body = w.into_inner().map_err(|e| ApiError::Internal(anyhow::anyhow!("csv: {e}")))?;
     Ok(([(header::CONTENT_TYPE, "text/csv; charset=utf-8"), (header::CONTENT_DISPOSITION, "attachment; filename=\"issues.csv\"")], body).into_response())
+}
+
+/// The same as an Excel workbook: a bold, frozen header row, numbers as numbers, an autofilter.
+pub async fn search_xlsx(State(state): State<AppState>, CurrentUser(user): CurrentUser, Query(q): Query<SearchQuery>) -> ApiResult<Response> {
+    use rust_xlsxwriter::{Format, Workbook};
+    let r = run_search(&state, &user, &q.q, q.project.as_deref(), 1000, 0, default_order(q.order.as_deref())).await?;
+    let x = |e: rust_xlsxwriter::XlsxError| ApiError::Internal(anyhow::anyhow!("xlsx: {e}"));
+    let mut book = Workbook::new();
+    let sheet = book.add_worksheet();
+    sheet.set_name("Issues").map_err(x)?;
+    let bold = Format::new().set_bold();
+    for (c, h) in EXPORT_COLUMNS.iter().enumerate() {
+        sheet.write_string_with_format(0, c as u16, *h, &bold).map_err(x)?;
+    }
+    for (n, s) in r.issues.iter().enumerate() {
+        let row = n as u32 + 1;
+        for (c, cell) in export_row(s).into_iter().enumerate() {
+            match cell {
+                // text stays text: a formula can't sneak in
+                Cell::Text(t) if !t.is_empty() => {
+                    sheet.write_string(row, c as u16, t).map_err(x)?;
+                }
+                Cell::Num(Some(v)) => {
+                    sheet.write_number(row, c as u16, v).map_err(x)?;
+                }
+                _ => {}
+            }
+        }
+    }
+    sheet.set_freeze_panes(1, 0).map_err(x)?;
+    if !r.issues.is_empty() {
+        sheet.autofilter(0, 0, r.issues.len() as u32, EXPORT_COLUMNS.len() as u16 - 1).map_err(x)?;
+    }
+    sheet.set_column_width(1, 48).map_err(x)?;
+    let body = book.save_to_buffer().map_err(x)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            (header::CONTENT_DISPOSITION, "attachment; filename=\"issues.xlsx\""),
+        ],
+        body,
+    )
+        .into_response())
 }
 
 /// Checks a query: `{"ok": true}` or the error message.
@@ -594,6 +668,18 @@ pub async fn history(State(state): State<AppState>, CurrentUser(user): CurrentUs
             }))
             .collect::<Vec<_>>()
     )))
+}
+
+/// Votes for an issue (`{"voted": true}`) or takes the vote back: anyone who sees it, once.
+pub async fn vote(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Json(req): Json<Value>) -> ApiResult<StatusCode> {
+    let (id, project, _) = issue_for(&state, &user, &key, Role::Viewer).await?;
+    if req["voted"].as_bool().unwrap_or(true) {
+        sqlx::query("INSERT INTO issue_votes (issue_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING").bind(id).bind(user.id).execute(&state.db).await?;
+    } else {
+        sqlx::query("DELETE FROM issue_votes WHERE issue_id = $1 AND user_id = $2").bind(id).bind(user.id).execute(&state.db).await?;
+    }
+    events::publish(&state, Event::new(user.workspace_id, "issue").project(project).issue(id, &key.to_uppercase()).actor(user.id)).await;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn watch(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Json(req): Json<Value>) -> ApiResult<StatusCode> {

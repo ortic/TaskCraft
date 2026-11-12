@@ -5,7 +5,7 @@ import { t } from '../i18n'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, CircleCheck, FileText, Paperclip } from 'lucide-react'
+import { ArrowLeft, BookOpen, CircleCheck, ExternalLink, FileText, Paperclip } from 'lucide-react'
 import { api, ApiError, ago, dateTime, shortDate } from '../api'
 import { applyAccent } from '../look'
 import { Spinner } from '../ui'
@@ -77,6 +77,47 @@ interface FormDef {
   fields: Field[]
   stamp: string
   minSeconds: number
+  /** articles that might answer the question are suggested while the summary is typed */
+  suggest?: boolean
+}
+
+interface Article {
+  title: string
+  url: string
+  excerpt: string | null
+}
+
+/** Articles matching what the requester types (after a pause), from the form's wiki space. */
+function Suggestions({ path, text }: { path: string; text: string }) {
+  const [q, setQ] = useState('')
+  useEffect(() => {
+    const id = window.setTimeout(() => setQ(text.trim()), 450)
+    return () => window.clearTimeout(id)
+  }, [text])
+  const found = useQuery({
+    queryKey: ['portal-suggest', path, q],
+    queryFn: () => api.get<Article[]>(`/portal/forms/${encodeURIComponent(path)}/suggest?q=${encodeURIComponent(q)}`),
+    enabled: q.length >= 3,
+    staleTime: 60_000,
+  })
+  const list = q.length >= 3 ? found.data ?? [] : []
+  return (
+    <div className="portal-suggest" aria-live="polite">
+      {list.length > 0 && (
+        <>
+          <p className="portal-suggest-h"><BookOpen size={15} aria-hidden /> {t('These articles might already answer it:')}</p>
+          <ul>
+            {list.map((a) => (
+              <li key={a.url}>
+                <a href={a.url} target="_blank" rel="noopener noreferrer">{a.title} <ExternalLink size={12} aria-label={t('(opens in a new tab)')} /></a>
+                {a.excerpt && <span className="portal-suggest-x">{a.excerpt}</span>}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  )
 }
 
 const useInfo = () => useQuery({ queryKey: ['portal'], queryFn: () => api.get<Info>('/portal') })
@@ -723,6 +764,7 @@ function RequestForm({ f, info, openedAt, onSent }: { f: FormDef; info: Info; op
         <label htmlFor="rf-summary">{t('Summary')}</label>
         <input id="rf-summary" className="input" required maxLength={200} value={summary} aria-describedby="rf-summary-hint" onChange={(e) => setSummary(e.target.value)} />
         <span className="field-hint" id="rf-summary-hint">{t('In a few words: what is it about?')}</span>
+        {f.suggest && <Suggestions path={f.path} text={summary} />}
       </div>
       {f.types.length > 1 && (
         <div className="field">

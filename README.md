@@ -20,7 +20,8 @@ One binary, PostgreSQL, optional S3. Built with the same stack as WikiCraft.
   everywhere — plus web links, wiki pages and attachments (drag & drop)
 - **Comments** with mentions and reactions, **watchers**, in-app **notifications** (also by
   e-mail: bundled a couple of minutes after, or as a daily digest at 08:00 local time), a
-  full **history** of every change, **time logs** and a weekly **timesheet**
+  full **history** of every change, **votes**, **time logs** and a weekly **timesheet**; lists
+  as CSV or **Excel**, issues and lists printed or saved as PDF (a print view)
 - **Time tracking**: an original and a remaining estimate (following the time logged, or set by
   hand — logging time can reduce it, keep it or set it anew); **time categories** (Development,
   Meetings, …) with a billable default; a **time report** grouped by person, project, issue,
@@ -65,7 +66,7 @@ login timeout                               (bare words search titles and descri
 
 Fields: `project key title text description comment type status category priority assignee
 reporter creator labels sprint version affects component parent/epic points estimate spent created
-updated resolved resolution security due start remaining watcher blocked` and custom fields. Operators `= != ~ !~ > >= < <=`,
+updated resolved resolution security due start remaining watcher voter votes blocked` and custom fields. Operators `= != ~ !~ > >= < <=`,
 `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions:
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`,
 `openSprints()`, `futureSprints()`, `closedSprints()`, `releasedVersions()`,
@@ -731,7 +732,8 @@ their requests at `/portal` (it needs outgoing e-mail, `TASKCRAFT_SMTP_URL`):
 **Request forms**: *Project settings → Service desk* publishes a project's form at
 `/portal/forms/<key>` (or a short name of its own, like `/portal/forms/it-help`), listed on the
 portal's start page unless switched off. The admin sets the title, an introduction, the message
-after sending and the fields: a summary and the e-mail address always, the description and name
+after sending, a WikiCraft space whose matching pages are suggested while the requester types the
+summary (perhaps one already answers it), and the fields: a summary and the e-mail address always, the description and name
 not asked / optional / required, a choice of issue types, a priority (low to urgent) and the
 project's custom fields (except people fields), each optional or required. A submission becomes an
 issue with the sender as requester (requesters signed in to the portal send it under their

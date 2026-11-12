@@ -469,7 +469,50 @@ pub async fn form(State(state): State<AppState>, Path(path): Path<String>) -> Ap
         })).collect::<Vec<_>>(),
         "stamp": stamp,
         "minSeconds": portal::MIN_FILL_SECS,
+        "suggest": form.suggest_space.is_some() && state.config.wikicraft_url.is_some() && state.config.wikicraft_token.is_some(),
     })))
+}
+
+#[derive(Deserialize)]
+pub struct SuggestQuery {
+    #[serde(default)]
+    q: String,
+}
+
+/// Pages of the form's WikiCraft space matching what a requester types (at most five), read with
+/// the installation's WikiCraft token. Nothing when the form suggests nothing, the text is short
+/// or someone asks too often.
+pub async fn suggest(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    Path(path): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<SuggestQuery>,
+) -> ApiResult<Json<Value>> {
+    let (_, form) = form_project(&state, &path).await?;
+    let text: String = q.q.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(200).collect();
+    let (Some(space), Some(base), Some(token)) = (form.suggest_space, crate::wikicraft::base_url(&state), state.config.wikicraft_token.clone()) else {
+        return Ok(Json(json!([])));
+    };
+    if text.chars().count() < 3 || !portal::attempt(&state, "suggest", &ip, 60, 60).await? {
+        return Ok(Json(json!([])));
+    }
+    let c = crate::wikicraft::Conn { base, token, personal: false };
+    let pages = match crate::wikicraft::search(&state, &c, &text, Some(&space)).await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(error = %e, "portal suggestions from WikiCraft failed");
+            Vec::new()
+        }
+    };
+    Ok(Json(json!(
+        pages
+            .into_iter()
+            // that space only, whatever the search returns
+            .filter(|p| p.space_key.eq_ignore_ascii_case(&space))
+            .take(5)
+            .map(|p| json!({"title": p.title, "url": p.url, "excerpt": p.excerpt}))
+            .collect::<Vec<_>>()
+    )))
 }
 
 #[derive(Deserialize, Default)]
@@ -659,6 +702,7 @@ pub async fn put_settings(
     s.form.title = clip(&s.form.title, 200, "title")?;
     s.form.intro = clip(&s.form.intro, 5000, "introduction")?;
     s.form.success = clip(&s.form.success, 2000, "message after sending")?;
+    s.form.suggest_space = s.form.suggest_space.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(|x| x.chars().take(60).collect());
     s.form.slug = match s.form.slug.as_deref().map(|x| x.trim().to_lowercase()).filter(|x| !x.is_empty()) {
         None => None,
         Some(slug) => {

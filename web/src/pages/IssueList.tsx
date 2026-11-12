@@ -6,7 +6,7 @@ import { t } from '../i18n'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Columns3, Download, Rows3, Save, Star, Trash, ArrowUp, ArrowDown, Ellipsis, Share2, ListFilter, Lock } from 'lucide-react'
+import { Columns3, Download, Rows3, Save, Star, Trash, ArrowUp, ArrowDown, Ellipsis, Share2, ListFilter, Lock, Printer } from 'lucide-react'
 import { api, qs, shortDate, duration, ago, type Issue, type Project, type SavedView, type CustomField } from '../api'
 import { Avatar, Confirm, Empty, ErrorBox, Loading, Modal, PopButton, useMe, usePeople, useProject, useProjects, useToast } from '../ui'
 import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
@@ -32,6 +32,7 @@ const BASE_COLUMNS: { id: ColId; label: () => string; sort?: string }[] = [
   { id: 'components', label: () => t('Components') },
   { id: 'labels', label: () => t('Labels') },
   { id: 'security', label: () => t('Security') },
+  { id: 'votes', label: () => t('Votes'), sort: 'votes' },
   { id: 'points', label: () => t('Points'), sort: 'points' },
   { id: 'estimate', label: () => t('Estimate'), sort: 'estimate' },
   { id: 'spent', label: () => t('Spent'), sort: 'spent' },
@@ -105,10 +106,10 @@ export default function IssueList() {
         <span className="spacer" />
         <span className="faint small">{result.data ? t('{count} issues', { count: result.data.total }) : ''}</span>
       </div>
-      <div className="toolbar">
+      <div className="toolbar no-print">
         <QueryBar value={query} onChange={setQuery} />
       </div>
-      <div className="toolbar">
+      <div className="toolbar no-print">
         <QuickFilters query={query} setQuery={setQuery} project={project.data} />
         <span className="spacer" />
         <PopButton className="btn btn-sm" label={<><Rows3 size={14} /> {groupLabel(group)}</>} width={200} align="end">
@@ -127,6 +128,8 @@ export default function IssueList() {
           )}
         </PopButton>
         <a className="btn btn-sm" href={`/api/search.csv${qs({ q: effective, project: key })}`} download><Download size={14} /> {t('CSV')}</a>
+        <a className="btn btn-sm" href={`/api/search.xlsx${qs({ q: effective, project: key })}`} download><Download size={14} /> {t('Excel')}</a>
+        <button className="btn btn-sm" onClick={() => window.print()} title={t('Print the list, or save it as PDF')}><Printer size={14} /> {t('Print')}</button>
         <SaveView query={query} columns={columns} group={group} projectKey={key} current={view} />
       </div>
       {result.error && <ErrorBox error={result.error} />}
@@ -433,6 +436,8 @@ function Cell({ col, issue: i, fields, onOpen }: { col: string; issue: Issue; fi
       return <td>{(i.affectedVersions ?? []).map((v) => v.name).join(', ')}</td>
     case 'components':
       return <td>{(i.components ?? []).map((c) => c.name).join(', ')}</td>
+    case 'votes':
+      return <td className="num">{i.votes ?? 0}</td>
     case 'labels':
       return <td><span className="row" style={{ gap: 4 }}>{i.labels.map((l) => <span key={l} className="label-chip">{l}</span>)}</span></td>
     case 'points':

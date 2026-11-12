@@ -278,6 +278,7 @@ schemas = {
             "childCount": d(num, "sub-tasks / child issues"),
             "childDone": d(num, "of those, done"),
             "commentCount": num,
+            "votes": d(num, "how many people voted for it"),
             "pullRequest": d(enum("open", "merged", "closed"), "state of a linked pull request (an open one first); only present when the Git integration linked one"),
             "blocked": d(boolean, "an unfinished issue blocks it"),
             "url": d(uri, "the issue in the web app"),
@@ -331,6 +332,8 @@ schemas = {
                     "description": null(S("PmNode"), "rich text (ProseMirror JSON)"),
                     "watchers": arr(S("Named")),
                     "watching": d(boolean, "the caller watches it"),
+                    "voters": arr(S("Named"), "who voted for it, first vote first"),
+                    "voted": d(boolean, "the caller voted for it"),
                     "links": arr(S("IssueLink"), "links to issues the caller can see"),
                     "webLinks": arr(S("WebLink")),
                     "attachments": arr(S("IssueAttachment")),
@@ -1416,6 +1419,8 @@ op("post", "/issues/{key}/clone", "cloneIssue", "Issues", "Copy an issue",
    res=created(S("IssueSummary")))
 op("get", "/issues/{key}/history", "getIssueHistory", "Issues", "Everything that happened to an issue",
    desc="Oldest first, at most 1,000 entries.", res=ok(arr(S("IssueEvent"))))
+op("put", "/issues/{key}/vote", "voteIssue", "Issues", "Vote for an issue, or take the vote back",
+   desc="Anyone who sees the issue, once.", req=body(obj({"voted": d(boolean, "default true; false takes the vote back")})), res=NO)
 op("put", "/issues/{key}/watch", "watchIssue", "Issues", "Watch or stop watching an issue",
    desc="Watchers are notified of changes and comments. Adding or removing someone else (`userId`) needs edit rights in the project.",
    req=body(obj({"watching": d(boolean, "default true; false stops watching"), "userId": d(uuid, "someone else (default: the caller)")})), res=NO)
@@ -1450,8 +1455,11 @@ op("get", "/search", "searchIssues", "Search & TQL", "Search issues with TQL",
    desc="Only issues of projects the caller can see. Errors in the query answer 400 with a message saying what's wrong.",
    query=[q("q", E_TQL), *page(100, 1000), E_PROJECT, E_ORDER], res=ok(S("SearchResult")))
 op("get", "/search.csv", "exportIssuesCsv", "Search & TQL", "Search results as CSV (spreadsheet export)",
-   desc="The first 1,000 matches with key, title, type, status, priority, assignee, reporter, sprint, version, parent, points, estimate and spent hours, labels and dates.",
+   desc="The first 1,000 matches with key, title, type, status, priority, assignee, reporter, sprint, releases (fixed in, found in), components, parent, points, original, remaining and spent hours, labels, dates, resolution, security level and votes.",
    query=[q("q", E_TQL), E_PROJECT, E_ORDER], res=raw("text/csv", "issues.csv (attachment)"))
+op("get", "/search.xlsx", "exportIssuesXlsx", "Search & TQL", "Search results as an Excel workbook",
+   desc="The same columns as the CSV export, numbers as numbers, with a frozen header row and a filter.",
+   query=[q("q", E_TQL), E_PROJECT, E_ORDER], res=raw("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "issues.xlsx (attachment)"))
 op("get", "/quick", "quickSearch", "Search & TQL", "Quick search by key or words (pickers, command palette)",
    desc="Up to 15 issues whose key, title or description match; without `q` the caller's recently viewed issues.",
    query=[q("q", "words or an issue key"), E_PROJECT], res=ok(arr(S("IssueSummary"))))
@@ -2575,6 +2583,7 @@ schemas["RequestFormSettings"] = obj(
     {
         "enabled": d(boolean, "the form is published"),
         "slug": d(txt, "its address instead of the project key (/portal/forms/<slug>): 2–40 letters a–z, digits and dashes, unique"),
+        "suggestSpace": ntxt("a WikiCraft space whose pages are suggested while requesters type the summary (one they can read without signing in)"),
         "listed": d(boolean, "shown on the portal's start page (default true)"),
         "title": d(txt, "up to 200 characters (empty: the portal's own)"),
         "intro": d(txt, "shown above the fields, plain text, up to 5,000 characters"),
@@ -2607,6 +2616,7 @@ schemas["RequestForm"] = obj(
         "name": D_SHOW,
         "types": arr(S("Named"), "issue types to choose from (only when there are several)"),
         "priority": d(boolean, "the form asks for a priority"),
+        "suggest": d(boolean, "articles are suggested while the summary is typed (see suggestArticles)"),
         "fields": arr(
             obj(
                 {
@@ -2963,6 +2973,11 @@ op("get", "/portal/attachments/{id}", "downloadPortalAttachment", "Service desk 
 op("get", "/portal/forms/{path}", "getRequestForm", "Service desk portal", "A public request form",
    desc="Published forms of projects that aren't archived; 404 for others. Carries a signed `stamp` to send back.",
    auth="public", pp={"path": (txt, "the form's slug, or the project key (also a former one)")}, res=ok(S("RequestForm")))
+op("get", "/portal/forms/{path}/suggest", "suggestArticles", "Service desk portal", "Articles that might answer a request",
+   desc="Up to five pages of the form's WikiCraft space (`suggestSpace`) matching `q`, read with the installation's WikiCraft token; an empty list when the form suggests nothing, "
+   "`q` is shorter than 3 characters, WikiCraft doesn't answer, or an address asks more than 60 times a minute.",
+   auth="public", pp={"path": (txt, "the form's slug, or the project key (also a former one)")}, query=[q("q", "what the requester typed so far")],
+   res=ok(arr(obj({"title": txt, "url": uri, "excerpt": ntxt("the matching text")}, ["title", "url"]))))
 op("post", "/portal/forms/{path}", "submitRequestForm", "Service desk portal", "Send a request form",
    desc="Opens an issue with the sender as its requester, who gets an acknowledgement with a link to the request in the portal. Requesters signed in to the portal send it "
    "under their own address and learn the new key (`request`); for others it is null. Kept free of spam by the hidden `website` field, a minimum fill time of 3 seconds "
@@ -3194,7 +3209,7 @@ Search (`GET /search?q=`), CSV export, saved filters, dashboards and automation 
 `project = WEB and sprint in openSprints() and assignee = me() order by rank` or
 `type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status
 category priority assignee reporter creator labels sprint version affects component parent/epic points estimate spent created
-updated resolved resolution security due start remaining watcher blocked` and custom fields by name (quoted when they contain spaces). Operators
+updated resolved resolution security due start remaining watcher voter votes blocked` and custom fields by name (quoted when they contain spaces). Operators
 `= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,
 `futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates like `-7d`, `+2w`,

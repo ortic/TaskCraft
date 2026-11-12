@@ -562,3 +562,45 @@ async fn request_forms_open_requests_and_keep_bots_out() {
     assert_eq!(issues_count(&app).await, n);
     assert!(get(&anon, app.url("/portal")).await["forms"].as_array().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn the_form_suggests_articles_from_a_wiki_space() {
+    use axum::Json;
+    // a stand-in for WikiCraft's search: pages of two spaces
+    let wiki = axum::Router::new().route(
+        "/api/v1/search",
+        axum::routing::get(|axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>| async move {
+            assert_eq!(q.get("space").map(String::as_str), Some("HELP"));
+            Json(json!([
+                {"id": uuid::Uuid::now_v7(), "title": "Printer offline", "spaceKey": "HELP", "spaceName": "Help", "snippet": "Turn the <mark>printer</mark> off and on"},
+                {"id": uuid::Uuid::now_v7(), "title": "Internal printer notes", "spaceKey": "ENG", "spaceName": "Engineering"},
+                {"id": uuid::Uuid::now_v7(), "title": "Paper jams", "spaceKey": "HELP", "spaceName": "Help"},
+            ]))
+        }),
+    );
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let wiki_url = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, wiki).await.unwrap() });
+    let w = wiki_url.clone();
+    let app = spawn_with(move |c| {
+        c.wikicraft_url = Some(w);
+        c.wikicraft_token = Some("wct_test".into());
+    })
+    .await;
+    let owner = app.setup(false).await;
+    post(&owner, app.url("/projects"), json!({"key": "HLP", "name": "Help desk", "template": "kanban"})).await;
+    let anon = visitor("198.51.100.30");
+    send(&owner, Method::PUT, app.url("/projects/HLP/portal"), json!({"form": {"enabled": true}})).await;
+    assert_eq!(get(&anon, app.url("/portal/forms/hlp")).await["suggest"], false, "no space chosen");
+    assert_eq!(get(&anon, app.url("/portal/forms/hlp/suggest?q=printer")).await, json!([]));
+
+    let (s, _) = send(&owner, Method::PUT, app.url("/projects/HLP/portal"), json!({"form": {"enabled": true, "suggestSpace": " HELP "}})).await;
+    assert!(s < 300);
+    assert_eq!(get(&anon, app.url("/portal/forms/hlp")).await["suggest"], true);
+    let found = get(&anon, app.url("/portal/forms/hlp/suggest?q=printer")).await;
+    let titles: Vec<&str> = found.as_array().unwrap().iter().map(|p| p["title"].as_str().unwrap()).collect();
+    assert_eq!(titles, ["Printer offline", "Paper jams"], "that space only");
+    assert_eq!(found[0]["excerpt"], "Turn the printer off and on");
+    assert!(found[0]["url"].as_str().unwrap().starts_with(&format!("{wiki_url}/pages/")));
+    assert_eq!(get(&anon, app.url("/portal/forms/hlp/suggest?q=pr")).await, json!([]), "too short");
+}

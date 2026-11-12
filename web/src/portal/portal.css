@@ -91,3 +91,12 @@
   .portal-message, .portal-message.mine { margin-inline: 0; }
   .portal-card { padding: 16px; }
 }
+
+/* articles suggested while the summary is typed */
+.portal-suggest:empty { display: none; }
+.portal-suggest { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: var(--accent-soft); }
+.portal-suggest-h { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-weight: 600; font-size: 14px; }
+.portal-suggest ul { margin: 0; padding-inline-start: 22px; }
+.portal-suggest li { margin: 4px 0; }
+.portal-suggest a { color: var(--accent-text); font-weight: 500; }
+.portal-suggest-x { display: block; color: var(--text-soft); font-size: 13px; }

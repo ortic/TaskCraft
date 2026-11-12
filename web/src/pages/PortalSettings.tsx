@@ -22,6 +22,8 @@ interface FormSettings {
   typeId?: string | null
   priority: boolean
   custom: { id: string; required: boolean }[]
+  /** a WikiCraft space whose articles are suggested while requesters type */
+  suggestSpace?: string | null
 }
 interface Settings {
   resolve: boolean
@@ -91,6 +93,8 @@ function ShowSelect({ id, label, value, onChange }: { id: string; label: string;
 }
 
 function SettingsForm({ project, data, onSaved }: { project: Project; data: Overview; onSaved: (d: Overview) => void }) {
+  // WikiCraft spaces (none: WikiCraft isn't connected)
+  const spaces = useQuery({ queryKey: ['wiki-spaces'], queryFn: () => api.get<{ key: string; name: string }[]>('/integrations/wikicraft/spaces'), staleTime: 60_000, retry: false })
   const toast = useToast()
   const [s, setS] = useState<Settings>(data.settings)
   const [busy, setBusy] = useState(false)
@@ -170,6 +174,16 @@ function SettingsForm({ project, data, onSaved }: { project: Project; data: Over
             <textarea id="portal-intro" className="textarea" rows={3} maxLength={5000} value={form.intro} aria-describedby="portal-intro-hint" onChange={(e) => setForm({ intro: e.target.value })} />
             <span className="field-hint" id="portal-intro-hint">{t('Shown above the fields: what to ask here, what happens next.')}</span>
           </div>
+          {spaces.data && (
+            <div className="field">
+              <label htmlFor="portal-suggest">{t('Suggest articles from')}</label>
+              <select id="portal-suggest" className="select" value={form.suggestSpace ?? ''} aria-describedby="portal-suggest-hint" onChange={(e) => setForm({ suggestSpace: e.target.value || null })}>
+                <option value="">{t('Nowhere')}</option>
+                {spaces.data.map((sp) => <option key={sp.key} value={sp.key}>{sp.name} ({sp.key})</option>)}
+              </select>
+              <span className="field-hint" id="portal-suggest-hint">{t('While requesters type the summary, matching pages of this WikiCraft space are shown — maybe one answers the question. Choose a space they can read without signing in.')}</span>
+            </div>
+          )}
 
           <h3 className="portal-set-h">{t('Fields')}</h3>
           <p className="faint small portal-set-p">{t('A summary and an e-mail address are always asked for. Signed-in requesters don’t need to give their address.')}</p>

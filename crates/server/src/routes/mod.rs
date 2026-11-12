@@ -136,6 +136,7 @@ pub fn api() -> Router<AppState> {
         .route("/issues/{key}/move-project", get(moves::preview).post(moves::move_to_project))
         .route("/issues/{key}/history", get(issues::history))
         .route("/issues/{key}/watch", put(issues::watch))
+        .route("/issues/{key}/vote", put(issues::vote))
         .route("/issues/{key}/links", post(issues::add_link))
         .route("/issues/{key}/web-links", post(issues::add_web_link))
         .route("/issues/{key}/comments", get(comments::list).post(comments::create))
@@ -152,6 +153,7 @@ pub fn api() -> Router<AppState> {
         // search, views, activity, notifications
         .route("/search", get(issues::search))
         .route("/search.csv", get(issues::search_csv))
+        .route("/search.xlsx", get(issues::search_xlsx))
         .route("/search/groups", get(dashboards::groups))
         .route("/dashboards", get(dashboards::list).post(dashboards::create))
         .route("/dashboards/{id}", get(dashboards::get).patch(dashboards::update).delete(dashboards::delete))
@@ -190,6 +192,7 @@ pub fn api() -> Router<AppState> {
         .route("/portal/requests/{key}/resolve", post(portal::resolve))
         .route("/portal/attachments/{id}", get(portal::download))
         .route("/portal/forms/{path}", get(portal::form).post(portal::submit))
+        .route("/portal/forms/{path}/suggest", get(portal::suggest))
         .route("/projects/{key}/portal", get(portal::settings).put(portal::put_settings))
         // administration
         .route("/admin/workspace", put(admin::put_workspace))

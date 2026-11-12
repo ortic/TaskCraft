@@ -81,7 +81,7 @@
 - [x] Fields per issue type: which fields a type shows, hides and requires (enforced on create, type change and edits; the create dialog asks for them)
 - [ ] Subprojects: a project hierarchy with views and reports across a project and its subprojects
 - [x] E-mails in each person's language: their own, else the workspace's default, else their browser's (German, French, Italian; requesters get the workspace's)
-- [ ] Voting on issues; issue lists and issues as Excel and PDF, a print view
-- [ ] Portal: suggest WikiCraft articles while a requester types, before the request is sent
+- [x] Voting on issues (TQL `votes`, `voter`, order by votes); issue lists as Excel; a print view of issues and lists (print or save as PDF from the browser)
+- [x] Portal: suggest WikiCraft articles while a requester types, before the request is sent (a space per form, read with the installation's token, that space only)
 - [x] Importers from other trackers' APIs (GitHub / GitLab issues and similar), next to CSV and XML site backups: three sources, read with a token into the same check, choices, background import and report (Administration → Import, and `taskcraft import-…` on the command line)
 

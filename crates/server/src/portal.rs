@@ -109,6 +109,9 @@ pub struct Form {
     /// a priority to choose (low, medium, high, urgent)
     pub priority: bool,
     pub custom: Vec<FormField>,
+    /// a WikiCraft space whose pages are suggested while the summary is typed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggest_space: Option<String>,
 }
 
 impl Default for Form {
@@ -126,6 +129,7 @@ impl Default for Form {
             type_id: None,
             priority: false,
             custom: Vec::new(),
+            suggest_space: None,
         }
     }
 }

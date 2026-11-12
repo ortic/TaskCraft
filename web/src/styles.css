@@ -507,3 +507,66 @@ table.list tr:hover td { background: var(--bg-soft); }
 .badge-private { display: inline-flex; align-items: center; gap: 4px; color: var(--warning-text); background: color-mix(in srgb, var(--warning-text) 12%, transparent); border-color: transparent; }
 .wl-options { flex-basis: 100%; gap: 10px; padding-inline-start: 23px; }
 .multi-check { display: inline-flex; width: 14px; margin-inline-end: 6px; color: var(--accent-text); }
+
+/* votes */
+.icon-btn.voted { color: var(--accent-text); }
+
+/* printing (and ?print=1 pages): the content without the app around it */
+body.print-view .topbar, body.print-view .sidebar, body.print-view .no-print { display: none !important; }
+body.print-view .shell { display: block; height: auto; }
+body.print-view .main, body.print-view .issue-main, body.print-view .issue-side { overflow: visible; }
+body.print-view .issue-layout { display: block; }
+body.print-view .issue-side { border: 0; background: none; padding: 0 28px; }
+@media print {
+  .topbar, .sidebar, .no-print, .toast, .icon-btn, .issue-side .spacer ~ * { display: none !important; }
+  html, body, #root, .shell, .main { height: auto !important; overflow: visible !important; background: #fff !important; }
+  .shell { display: block; }
+  .issue-layout { display: block; }
+  .issue-main, .issue-side { overflow: visible !important; padding: 0 !important; border: 0 !important; background: none !important; }
+  .issue-side { margin-top: 18px; break-inside: avoid; }
+  .issue-title { resize: none; border: 0; }
+  a { color: inherit; text-decoration: none; }
+  .comment-box, .activity-item { break-inside: avoid; }
+}
+
+/* printing: always the light palette (dark text on white paper) */
+@media print {
+  :root, :root[data-theme], :root:not([data-theme='light']):not([data-theme='contrast']) {
+    --bg: #ffffff;
+    --bg-soft: #f6f7f9;
+    --bg-sidebar: #f7f8fa;
+    --bg-hover: #eef0f4;
+    --bg-active: #e7ebfd;
+    --bg-column: #f2f4f7;
+    --border: #e3e6ec;
+    --border-strong: #cfd4dd;
+    --text: #1b1f27;
+    --text-soft: #535a68;
+    --text-faint: #646b79;
+    --accent: #4f5fe0;
+    --accent-soft: #eef0fe;
+    --accent-text: #3241b5;
+    --on-accent: #ffffff;
+    --danger: #d1293d;
+    --success: #12805c;
+    --warning: #b45309;
+    --warning-text: #8a3c04;
+    --p-urgent: #d1293d;
+    --p-high: #e0661f;
+    --p-medium: #b8860b;
+    --p-low: #3b82f6;
+    --cat-todo: #5c6370;
+    --cat-todo-bg: #eceef2;
+    --cat-progress: #2054c8;
+    --cat-progress-bg: #e3ecfd;
+    --cat-done: #0b6b4b;
+    --cat-done-bg: #dcf3e8;
+    --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 8px 24px rgb(16 24 40 / 0.1);
+    --shadow-card: 0 1px 1px rgb(16 24 40 / 0.06), 0 0 0 1px rgb(16 24 40 / 0.06);
+    color-scheme: light;
+  }
+}
+@media print {
+  .page-wide, .page { padding: 0 !important; max-width: none !important; }
+  table.list input[type='checkbox'] { display: none; }
+}

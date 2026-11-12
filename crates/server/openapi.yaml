@@ -25,11 +25,11 @@ info:
     \ and automation conditions take TQL, e.g.\n`project = WEB and sprint in openSprints() and assignee = me() order by rank`\
     \ or\n`type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status\n\
     category priority assignee reporter creator labels sprint version affects component parent/epic points estimate spent\
-    \ created\nupdated resolved resolution security due start remaining watcher blocked` and custom fields by name (quoted\
-    \ when they contain spaces). Operators\n`= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`,\
-    \ parentheses; `order by`. Functions\n`me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`,\
-    \ `openSprints()`,\n`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates\
-    \ like `-7d`, `+2w`,\n`-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n\
+    \ created\nupdated resolved resolution security due start remaining watcher voter votes blocked` and custom fields by\
+    \ name (quoted when they contain spaces). Operators\n`= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`,\
+    \ `or`, `not`, parentheses; `order by`. Functions\n`me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`,\
+    \ `endOfMonth()`, `openSprints()`,\n`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`;\
+    \ relative dates like `-7d`, `+2w`,\n`-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n\
     `POST /query/validate` checks a query and `GET /query/suggest` completes field names and values.\n\n## Pagination\n\n\
     `GET /search` pages with `limit` (default 100, at most 1,000) and `offset` and answers `{total, issues}`; other\noperations\
     \ that take `limit` / `offset` say so. Everything else answers a bounded list (e.g. the latest 60 activity\nentries, the\
@@ -4270,6 +4270,41 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /issues/{key}/vote:
+    put:
+      tags:
+      - Issues
+      summary: Vote for an issue, or take the vote back
+      operationId: voteIssue
+      description: Anyone who sees the issue, once.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: issue key (e.g. WEB-12; former keys keep working) or issue id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                voted:
+                  type: boolean
+                  description: default true; false takes the vote back
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /issues/{key}/watch:
     put:
       tags:
@@ -5512,8 +5547,9 @@ paths:
       - Search & TQL
       summary: Search results as CSV (spreadsheet export)
       operationId: exportIssuesCsv
-      description: The first 1,000 matches with key, title, type, status, priority, assignee, reporter, sprint, version, parent,
-        points, estimate and spent hours, labels and dates.
+      description: The first 1,000 matches with key, title, type, status, priority, assignee, reporter, sprint, releases (fixed
+        in, found in), components, parent, points, original, remaining and spent hours, labels, dates, resolution, security
+        level and votes.
       parameters:
       - name: q
         in: query
@@ -5546,6 +5582,50 @@ paths:
             text/csv:
               schema:
                 type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /search.xlsx:
+    get:
+      tags:
+      - Search & TQL
+      summary: Search results as an Excel workbook
+      operationId: exportIssuesXlsx
+      description: The same columns as the CSV export, numbers as numbers, with a frozen header row and a filter.
+      parameters:
+      - name: q
+        in: query
+        required: false
+        description: a TQL query (see the description at the top); empty matches every issue the caller can see
+        schema:
+          type: string
+      - name: project
+        in: query
+        required: false
+        description: limit the search to this project (key or id)
+        schema:
+          type: string
+      - name: order
+        in: query
+        required: false
+        description: 'order when the query has no `order by`: rank, created (newest first), priority (highest first) or updated
+          (default, latest first)'
+        schema:
+          type: string
+          enum:
+          - rank
+          - created
+          - priority
+          - updated
+      responses:
+        '200':
+          description: issues.xlsx (attachment)
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -7515,6 +7595,55 @@ paths:
       security:
       - {}
       - portalSession: []
+  /portal/forms/{path}/suggest:
+    get:
+      tags:
+      - Service desk portal
+      summary: Articles that might answer a request
+      operationId: suggestArticles
+      description: Up to five pages of the form's WikiCraft space (`suggestSpace`) matching `q`, read with the installation's
+        WikiCraft token; an empty list when the form suggests nothing, `q` is shorter than 3 characters, WikiCraft doesn't
+        answer, or an address asks more than 60 times a minute.
+      parameters:
+      - name: path
+        in: path
+        required: true
+        description: the form's slug, or the project key (also a former one)
+        schema:
+          type: string
+      - name: q
+        in: query
+        required: false
+        description: what the requester typed so far
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    title:
+                      type: string
+                    url:
+                      type: string
+                      format: uri
+                    excerpt:
+                      type:
+                      - string
+                      - 'null'
+                      description: the matching text
+                  required:
+                  - title
+                  - url
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+      - {}
   /projects/{key}/portal:
     get:
       tags:
@@ -9126,6 +9255,9 @@ components:
           description: of those, done
         commentCount:
           type: integer
+        votes:
+          type: integer
+          description: how many people voted for it
         pullRequest:
           type: string
           enum:
@@ -9325,6 +9457,14 @@ components:
           watching:
             type: boolean
             description: the caller watches it
+          voters:
+            type: array
+            items:
+              $ref: '#/components/schemas/Named'
+            description: who voted for it, first vote first
+          voted:
+            type: boolean
+            description: the caller voted for it
           links:
             type: array
             items:
@@ -13631,6 +13771,12 @@ components:
           type: string
           description: 'its address instead of the project key (/portal/forms/<slug>): 2–40 letters a–z, digits and dashes,
             unique'
+        suggestSpace:
+          type:
+          - string
+          - 'null'
+          description: a WikiCraft space whose pages are suggested while requesters type the summary (one they can read without
+            signing in)
         listed:
           type: boolean
           description: shown on the portal's start page (default true)
@@ -13736,6 +13882,9 @@ components:
         priority:
           type: boolean
           description: the form asks for a priority
+        suggest:
+          type: boolean
+          description: articles are suggested while the summary is typed (see suggestArticles)
         fields:
           type: array
           items:

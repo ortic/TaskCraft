@@ -144,6 +144,8 @@ export interface Issue {
   updatedAt: string
   /** a private issue's security level: who sees it besides its reporter, creator and assignee */
   security?: Named | null
+  /** how many people voted for it */
+  votes?: number
   childCount: number
   childDone: number
   commentCount: number
@@ -185,6 +187,8 @@ export interface IssueDetail extends Issue {
   description: any
   watchers: Named[]
   watching: boolean
+  voters?: Named[]
+  voted?: boolean
   links: IssueLink[]
   webLinks: { id: string; url: string; title: string; kind: 'web' | 'wiki'; createdAt: string }[]
   attachments: { id: string; name: string; mime: string; size: number; uploadedBy: string | null; createdAt: string; url: string }[]
