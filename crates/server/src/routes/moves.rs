@@ -226,8 +226,10 @@ pub async fn preview(
     Path(key): Path<String>,
     Query(q): Query<PreviewQuery>,
 ) -> ApiResult<Json<Value>> {
-    let (id, _, _) = issue_for(&state, &user, &key, Role::Member).await?;
-    let (target, _) = by_key(&state, &user, &q.to, Role::Member).await?;
+    let (id, source, role) = issue_for(&state, &user, &key, Role::Member).await?;
+    crate::access::require_action(&state, source, role, "moveIssues").await?;
+    let (target, target_role) = by_key(&state, &user, &q.to, Role::Member).await?;
+    crate::access::require_action(&state, target.id, target_role, "moveIssues").await?;
     let mut tx = state.db.begin().await?;
     let m = moving(&mut tx, id).await?;
     let type_id = target_type(&mut tx, target.id, None, &m.type_name, m.type_level).await?;
@@ -276,8 +278,10 @@ pub async fn move_to_project(
     Path(key): Path<String>,
     Json(req): Json<MoveReq>,
 ) -> ApiResult<Json<Summary>> {
-    let (id, source, _) = issue_for(&state, &user, &key, Role::Member).await?;
-    let (target, _) = by_key(&state, &user, &req.project_key, Role::Member).await?;
+    let (id, source, role) = issue_for(&state, &user, &key, Role::Member).await?;
+    crate::access::require_action(&state, source, role, "moveIssues").await?;
+    let (target, target_role) = by_key(&state, &user, &req.project_key, Role::Member).await?;
+    crate::access::require_action(&state, target.id, target_role, "moveIssues").await?;
     if target.archived_at.is_some() {
         return Err(ApiError::bad("the target project is archived"));
     }
@@ -315,8 +319,8 @@ pub async fn update_worklog(
     let row: Option<(Uuid, Option<Uuid>)> = sqlx::query_as("SELECT issue_id, user_id FROM worklogs WHERE id = $1").bind(id).fetch_optional(&state.db).await?;
     let (issue, owner) = row.ok_or(ApiError::NotFound("work log"))?;
     let (_, project, role) = issue_for(&state, &user, &issue.to_string(), Role::Member).await?;
-    if owner != Some(user.id) && role < Role::Admin {
-        return Err(ApiError::Denied("only the person who logged it or a project admin can change it".into()));
+    if owner != Some(user.id) {
+        crate::access::require_action(&state, project, role, "logTimeForOthers").await?;
     }
     let minutes = match (&req["minutes"], req["time"].as_str()) {
         (Value::Number(n), _) => {

@@ -206,7 +206,8 @@ pub async fn move_issue(
 }
 
 pub async fn delete(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>) -> ApiResult<StatusCode> {
-    let (id, project, _) = issue_for(&state, &user, &key, Role::Member).await?;
+    let (id, project, role) = issue_for(&state, &user, &key, Role::Member).await?;
+    crate::access::require_action(&state, project, role, "deleteIssues").await?;
     let s = issues::summary(&state, issues::load(&state, id).await?);
     let mut tx = state.db.begin().await?;
     sqlx::query("UPDATE issues SET deleted_at = now(), deleted_by = $2 WHERE id = $1").bind(id).bind(user.id).execute(&mut *tx).await?;
@@ -271,6 +272,7 @@ pub async fn bulk(State(state): State<AppState>, CurrentUser(user): CurrentUser,
                 return Err(ApiError::Forbidden);
             }
             if req.action.as_deref() == Some("delete") {
+                crate::access::require_action(&state, project, role, "deleteIssues").await?;
                 let mut tx = state.db.begin().await?;
                 sqlx::query("UPDATE issues SET deleted_at = now(), deleted_by = $2 WHERE id = $1").bind(id).bind(user.id).execute(&mut *tx).await?;
                 issues::record(&mut tx, id, project, Some(user.id), "deleted", None).await?;

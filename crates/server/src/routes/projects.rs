@@ -495,6 +495,12 @@ pub async fn update(
                             continue;
                         }
                         "resolutions" => {}
+                        "permissions" if !sv.is_null() => {
+                            let tidy = access::check_permissions(sv)?;
+                            cur.insert(sk.clone(), tidy);
+                            continue;
+                        }
+                        "permissions" => {}
                         "estimation" | "workflow" | "wikiSpace" | "defaultAssignee" | "wikiParentPage" | "doneAfterDays" => {}
                         other => return Err(ApiError::bad(format!("unknown setting {other}"))),
                     }
@@ -936,7 +942,8 @@ pub async fn create_version(
     Path(key): Path<String>,
     Json(req): Json<Value>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    let (p, _) = by_key(&state, &user, &key, Role::Member).await?;
+    let (p, role) = by_key(&state, &user, &key, Role::Member).await?;
+    access::require_action(&state, p.id, role, "manageReleases").await?;
     let name = req["name"].as_str().map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| ApiError::bad("a version needs a name"))?;
     let id = new_id();
     sqlx::query(
@@ -963,7 +970,10 @@ async fn member_of(state: &AppState, user: &User, id: Uuid, table: &str) -> ApiR
     .fetch_optional(&state.db)
     .await?;
     let p = p.ok_or(ApiError::NotFound("item"))?;
-    access::require(state, user, p, Role::Member).await?;
+    let role = access::require(state, user, p, Role::Member).await?;
+    if table == "versions" {
+        access::require_action(state, p, role, "manageReleases").await?;
+    }
     Ok(p)
 }
 

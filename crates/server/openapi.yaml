@@ -4572,7 +4572,8 @@ paths:
       - Comments & time
       summary: Edit a comment
       operationId: updateComment
-      description: Its author only. Replaces the text (`body` or `markdown`); `forRequester` can't be changed here.
+      description: Its author, or whoever the project's `moderateComments` permission allows (project admins by default).
+        Replaces the text (`body` or `markdown`); `forRequester` can't be changed here.
       parameters:
       - name: id
         in: path
@@ -4603,7 +4604,8 @@ paths:
       - Comments & time
       summary: Delete a comment
       operationId: deleteComment
-      description: Its author or a project admin.
+      description: Its author, or whoever the project's `moderateComments` permission allows (project admins by default; see
+        ProjectSettings.permissions).
       parameters:
       - name: id
         in: path
@@ -4694,9 +4696,10 @@ paths:
       - Comments & time
       summary: Log time on an issue
       operationId: logWork
-      description: Project members, as themselves. `minutes`, or `time` like `1h 30m`, `45m`, `1.5h`, `2d` (8-hour days),
-        `1w` (5 days); at most a week. The issue's time spent is updated; with `reduceEstimate` its estimate goes down by
-        the time logged (not below zero).
+      description: Project members, as themselves or — with `userId` — for someone else where the project's `logTimeForOthers`
+        permission allows it (project admins by default). `minutes`, or `time` like `1h 30m`, `45m`, `1.5h`, `2d` (8-hour
+        days), `1w` (5 days); at most a week. The issue's time spent is updated; with `reduceEstimate` its estimate goes down
+        by the time logged (not below zero).
       parameters:
       - name: key
         in: path
@@ -4714,6 +4717,10 @@ paths:
                 minutes:
                   type: number
                   description: time spent in minutes (instead of time)
+                userId:
+                  type: string
+                  format: uuid
+                  description: 'whose time it is (default: the caller)'
                 time:
                   type: string
                   description: 'time spent as a duration: 1h 30m, 45m, 1.5h, 2d'
@@ -10102,6 +10109,17 @@ components:
         doneAfterDays:
           type: number
           description: stored as given (not used by the server)
+        permissions:
+          type: object
+          additionalProperties:
+            type: string
+            enum:
+            - member
+            - admin
+            - nobody
+          description: 'who may: deleteIssues, moveIssues, manageSprints, manageReleases (member or admin; default member),
+            moderateComments and logTimeForOthers (member, admin or nobody; default admin). Project admins may whatever members
+            may.'
         resolutions:
           type: array
           items:
@@ -10126,8 +10144,8 @@ components:
           readOnly: true
           description: service desk settings (GET/PUT /projects/{key}/portal)
       description: Project settings. Changes merge into the current ones key by key (null removes a key); only estimation,
-        workflow, sla, resolutions, wikiSpace, wikiParentPage, defaultAssignee and doneAfterDays can be set here, anything
-        else is a 400.
+        workflow, sla, resolutions, permissions, wikiSpace, wikiParentPage, defaultAssignee and doneAfterDays can be set here,
+        anything else is a 400.
       additionalProperties: true
     NewProject:
       type: object

@@ -135,7 +135,8 @@ helper on every issue. See [Git integration](#git-integration).
 the user's permissions. See [AI assistants (MCP)](#ai-assistants-mcp).
 
 **Administration**: workspace owner / admins / members / guests; project roles (viewer, member,
-admin) for people and teams, a default role per project; invitations and password-reset links;
+admin) for people and teams, a default role per project; per project, who may delete or move
+issues, plan sprints, manage releases, edit others' comments and log time for others; invitations and password-reset links;
 teams; personal API tokens (read-only or read/write); signed webhooks; audit log. With SMTP
 configured, invitations and password-reset links are e-mailed and people can reset a forgotten
 password themselves.

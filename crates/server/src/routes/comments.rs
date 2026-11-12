@@ -204,9 +204,9 @@ async fn comment_issue(state: &AppState, id: Uuid) -> ApiResult<(Uuid, Option<Uu
 
 pub async fn update(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>, Json(req): Json<CommentReq>) -> ApiResult<StatusCode> {
     let (issue, author) = comment_issue(&state, id).await?;
-    let (_, project, _) = issue_for(&state, &user, &issue.to_string(), Role::Viewer).await?;
+    let (_, project, role) = issue_for(&state, &user, &issue.to_string(), Role::Viewer).await?;
     if author != Some(user.id) {
-        return Err(ApiError::Denied("only the author can edit a comment".into()));
+        crate::access::require_action(&state, project, role, "moderateComments").await?;
     }
     let body = req.doc()?;
     crate::doc::validate(&body).map_err(ApiError::BadRequest)?;
@@ -223,8 +223,8 @@ pub async fn update(State(state): State<AppState>, CurrentUser(user): CurrentUse
 pub async fn delete(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>) -> ApiResult<StatusCode> {
     let (issue, author) = comment_issue(&state, id).await?;
     let (_, project, role) = issue_for(&state, &user, &issue.to_string(), Role::Viewer).await?;
-    if author != Some(user.id) && role < Role::Admin {
-        return Err(ApiError::Denied("only the author or a project admin can delete a comment".into()));
+    if author != Some(user.id) {
+        crate::access::require_action(&state, project, role, "moderateComments").await?;
     }
     sqlx::query("DELETE FROM comments WHERE id = $1").bind(id).execute(&state.db).await?;
     events::publish(&state, Event::new(user.workspace_id, "comment").project(project).actor(user.id)).await;
@@ -326,7 +326,26 @@ pub async fn log_work(
     Path(key): Path<String>,
     Json(req): Json<Value>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    let (id, project, _) = issue_for(&state, &user, &key, Role::Member).await?;
+    let (id, project, role) = issue_for(&state, &user, &key, Role::Member).await?;
+    // time for someone else (where the project allows it), else for the caller
+    let who: Uuid = match req["userId"].as_str().filter(|s| !s.is_empty()) {
+        Some(u) => {
+            let u: Uuid = u.parse().map_err(|_| ApiError::bad("userId must be a person's id"))?;
+            if u != user.id {
+                crate::access::require_action(&state, project, role, "logTimeForOthers").await?;
+                let ok: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND workspace_id = $2 AND status <> 'deactivated')")
+                    .bind(u)
+                    .bind(user.workspace_id)
+                    .fetch_one(&state.db)
+                    .await?;
+                if !ok {
+                    return Err(ApiError::bad("no such person in this workspace"));
+                }
+            }
+            u
+        }
+        None => user.id,
+    };
     let minutes = match &req["minutes"] {
         Value::Number(n) => n.as_f64().map(|m| m.round() as i32),
         _ => req["time"].as_str().and_then(parse_duration),
@@ -339,7 +358,7 @@ pub async fn log_work(
     sqlx::query("INSERT INTO worklogs (id, issue_id, user_id, minutes, work_date, note) VALUES ($1, $2, $3, $4, $5, $6)")
         .bind(wid)
         .bind(id)
-        .bind(user.id)
+        .bind(who)
         .bind(minutes)
         .bind(date)
         .bind(req["note"].as_str().map(str::trim).filter(|n| !n.is_empty()))
@@ -372,8 +391,8 @@ pub async fn delete_worklog(State(state): State<AppState>, CurrentUser(user): Cu
     let row: Option<(Uuid, Option<Uuid>)> = sqlx::query_as("SELECT issue_id, user_id FROM worklogs WHERE id = $1").bind(id).fetch_optional(&state.db).await?;
     let (issue, owner) = row.ok_or(ApiError::NotFound("work log"))?;
     let (_, project, role) = issue_for(&state, &user, &issue.to_string(), Role::Member).await?;
-    if owner != Some(user.id) && role < Role::Admin {
-        return Err(ApiError::Denied("only the person who logged it or a project admin can delete it".into()));
+    if owner != Some(user.id) {
+        crate::access::require_action(&state, project, role, "logTimeForOthers").await?;
     }
     sqlx::query("DELETE FROM worklogs WHERE id = $1").bind(id).execute(&state.db).await?;
     refresh_spent(&state, issue).await?;

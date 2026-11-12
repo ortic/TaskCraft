@@ -978,12 +978,16 @@ schemas["ProjectSettings"] = obj(
         "wikiParentPage": d(txt, "WikiCraft page id new pages from the project go under"),
         "defaultAssignee": d(uuid, "who new issues without an assignee get"),
         "doneAfterDays": d(number, "stored as given (not used by the server)"),
+        "permissions": d(
+            {"type": "object", "additionalProperties": enum("member", "admin", "nobody")},
+            "who may: deleteIssues, moveIssues, manageSprints, manageReleases (member or admin; default member), moderateComments and logTimeForOthers (member, admin or nobody; default admin). Project admins may whatever members may.",
+        ),
         "resolutions": arr(txt, "the project's resolutions, 1–20 distinct names (default Done, Won't do, Duplicate, Cannot reproduce); the first is the default"),
         "template": {**enum("scrum", "kanban", "tracker", "business"), "readOnly": True, "description": "the template the project was created from"},
         "mailIn": {"type": "object", "readOnly": True, "description": "e-mail settings (GET/PUT /projects/{key}/mail-in)"},
         "portal": {"type": "object", "readOnly": True, "description": "service desk settings (GET/PUT /projects/{key}/portal)"},
     },
-    desc="Project settings. Changes merge into the current ones key by key (null removes a key); only estimation, workflow, sla, resolutions, wikiSpace, wikiParentPage, defaultAssignee and doneAfterDays can be set here, anything else is a 400.",
+    desc="Project settings. Changes merge into the current ones key by key (null removes a key); only estimation, workflow, sla, resolutions, permissions, wikiSpace, wikiParentPage, defaultAssignee and doneAfterDays can be set here, anything else is a 400.",
     additional=True,
 )
 schemas["NewProject"] = obj(
@@ -1974,11 +1978,11 @@ op(
     "updateComment",
     "Comments & time",
     "Edit a comment",
-    desc="Its author only. Replaces the text (`body` or `markdown`); `forRequester` can't be changed here.",
+    desc="Its author, or whoever the project's `moderateComments` permission allows (project admins by default). Replaces the text (`body` or `markdown`); `forRequester` can't be changed here.",
     req=body(S("CommentInput")),
     res=NO,
 )
-op("delete", "/comments/{id}", "deleteComment", "Comments & time", "Delete a comment", desc="Its author or a project admin.", res=NO)
+op("delete", "/comments/{id}", "deleteComment", "Comments & time", "Delete a comment", desc="Its author, or whoever the project's `moderateComments` permission allows (project admins by default; see ProjectSettings.permissions).", res=NO)
 op(
     "post",
     "/comments/{id}/react",
@@ -1996,11 +2000,12 @@ op(
     "logWork",
     "Comments & time",
     "Log time on an issue",
-    desc="Project members, as themselves. `minutes`, or `time` like `1h 30m`, `45m`, `1.5h`, `2d` (8-hour days), `1w` (5 days); at most a week. The issue's time spent is updated; with `reduceEstimate` its estimate goes down by the time logged (not below zero).",
+    desc="Project members, as themselves or — with `userId` — for someone else where the project's `logTimeForOthers` permission allows it (project admins by default). `minutes`, or `time` like `1h 30m`, `45m`, `1.5h`, `2d` (8-hour days), `1w` (5 days); at most a week. The issue's time spent is updated; with `reduceEstimate` its estimate goes down by the time logged (not below zero).",
     req=body(
         obj(
             {
                 "minutes": d(number, "time spent in minutes (instead of time)"),
+                "userId": d(uuid, "whose time it is (default: the caller)"),
                 "time": d(txt, "time spent as a duration: 1h 30m, 45m, 1.5h, 2d"),
                 "date": d(date, "the day worked (default: today)"),
                 "note": txt,

@@ -236,7 +236,11 @@ async fn sprint_for(state: &AppState, user: &User, id: Uuid, min: Role) -> ApiRe
     .fetch_optional(&state.db)
     .await?;
     let s = s.ok_or(ApiError::NotFound("sprint"))?;
-    access::require(state, user, s.project_id, min).await?;
+    let role = access::require(state, user, s.project_id, min).await?;
+    // changing sprints is for those the project lets plan them
+    if min >= Role::Member {
+        access::require_action(state, s.project_id, role, "manageSprints").await?;
+    }
     Ok(s)
 }
 
@@ -305,7 +309,8 @@ pub async fn create_sprint(
     Path(key): Path<String>,
     Json(req): Json<Value>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    let (p, _) = by_key(&state, &user, &key, Role::Member).await?;
+    let (p, role) = by_key(&state, &user, &key, Role::Member).await?;
+    access::require_action(&state, p.id, role, "manageSprints").await?;
     let n: i64 = sqlx::query_scalar("SELECT count(*) FROM sprints WHERE project_id = $1").bind(p.id).fetch_one(&state.db).await?;
     let name = req["name"].as_str().map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(|| format!("{} Sprint {}", p.key, n + 1));
     let id = new_id();

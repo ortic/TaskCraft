@@ -51,6 +51,49 @@ impl Role {
     }
 }
 
+/// Project actions whose minimum role each project chooses (`settings.permissions`): the action,
+/// its default, whether "nobody" is allowed, and how a refusal reads.
+pub const ACTIONS: [(&str, Role, bool, &str); 6] = [
+    ("deleteIssues", Role::Member, false, "delete issues"),
+    ("moveIssues", Role::Member, false, "move issues to another project"),
+    ("manageSprints", Role::Member, false, "plan, start and complete sprints"),
+    ("manageReleases", Role::Member, false, "create, change and release releases"),
+    ("moderateComments", Role::Admin, true, "edit or delete other people's comments"),
+    ("logTimeForOthers", Role::Admin, true, "log or change time for other people"),
+];
+
+/// Checks a project's `permissions` setting: known actions, member / admin (or nobody where allowed).
+pub fn check_permissions(v: &serde_json::Value) -> ApiResult<serde_json::Value> {
+    let o = v.as_object().ok_or_else(|| ApiError::bad("permissions must be an object"))?;
+    let mut out = serde_json::Map::new();
+    for (k, val) in o {
+        let (_, _, nobody, _) = ACTIONS.iter().find(|a| a.0 == k).ok_or_else(|| ApiError::bad(format!("unknown permission {k}")))?;
+        match val.as_str() {
+            Some("member" | "admin") => {}
+            Some("nobody") if *nobody => {}
+            _ => return Err(ApiError::bad(format!("{k} takes member, admin{}", if *nobody { " or nobody" } else { "" }))),
+        }
+        out.insert(k.clone(), val.clone());
+    }
+    Ok(serde_json::Value::Object(out))
+}
+
+/// Whether someone with `role` in `project` may do `action` (see [`ACTIONS`]).
+pub async fn require_action(state: &AppState, project: Uuid, role: Role, action: &str) -> ApiResult<()> {
+    let (_, default, _, what) = ACTIONS.iter().find(|a| a.0 == action).copied().unwrap_or((action, Role::Admin, false, "do that"));
+    let settings: serde_json::Value = sqlx::query_scalar("SELECT settings FROM projects WHERE id = $1").bind(project).fetch_one(&state.db).await?;
+    let needed = match settings["permissions"][action].as_str() {
+        Some("member") => Role::Member,
+        Some("admin") => Role::Admin,
+        Some("nobody") => return Err(ApiError::Denied(format!("nobody may {what} in this project"))),
+        _ => default,
+    };
+    if role < needed {
+        return Err(ApiError::Denied(format!("only {} may {what} in this project", if needed == Role::Admin { "project admins" } else { "members" })));
+    }
+    Ok(())
+}
+
 /// The caller's role in one project (None when the project doesn't exist in their workspace).
 pub async fn role(state: &AppState, user: &User, project: Uuid) -> ApiResult<Role> {
     let rank: Option<i32> =

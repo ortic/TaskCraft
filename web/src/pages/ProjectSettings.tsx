@@ -11,7 +11,7 @@ import {
   ExternalLink, BookOpen, Undo2, Info, Lock, LockOpen, Columns3, Funnel, ChevronDown, ChevronRight, FileStack, Timer, Upload, Mail, LifeBuoy,
 } from 'lucide-react'
 import {
-  api, ago, dateTime, PRIORITIES, type Category, type CustomField, type FieldOption, type IssueType, type Named, type Priority, type Project, type Role,
+  api, ago, dateTime, PRIORITIES, PROJECT_ACTIONS, type ProjectAction, type Category, type CustomField, type FieldOption, type IssueType, type Named, type Priority, type Project, type Role,
   type BoardData, type BoardConfig, type BoardColumn, type Status, type StatusRules, type WikiPage,
 } from '../api'
 import { requirementLabel, resolutionLabel, resolutionsOf } from '../components/Transition'
@@ -159,6 +159,7 @@ const useSettings = () => useContext(SettingsCtx)
 const SECTIONS = [
   { id: 'details', icon: SlidersHorizontal, label: () => t('Details') },
   { id: 'members', icon: Users, label: () => t('Members') },
+  { id: 'permissions', icon: Shield, label: () => t('Permissions') },
   { id: 'workflow', icon: Workflow, label: () => t('Workflow') },
   { id: 'types', icon: Shapes, label: () => t('Issue types') },
   { id: 'fields', icon: TextCursorInput, label: () => t('Fields & components') },
@@ -249,6 +250,7 @@ export default function ProjectSettings() {
             {active.id === 'details' && <DetailsSection />}
             {active.id === 'members' && <MembersSection />}
             {active.id === 'workflow' && <WorkflowSection />}
+            {active.id === 'permissions' && <PermissionsSection />}
             {active.id === 'types' && <TypesSection />}
             {active.id === 'fields' && <FieldsSection />}
             {active.id === 'boards' && <BoardsSection boardId={sub} />}
@@ -1119,6 +1121,58 @@ function WorkflowSection() {
         />
       )}
     </>
+  )
+}
+
+const ACTION_LABELS: Record<ProjectAction, () => string> = {
+  deleteIssues: () => t('Delete issues'),
+  moveIssues: () => t('Move issues to another project'),
+  manageSprints: () => t('Plan, start and complete sprints'),
+  manageReleases: () => t('Create, change and release releases'),
+  moderateComments: () => t('Edit and delete other people’s comments'),
+  logTimeForOthers: () => t('Log and change time for other people'),
+}
+
+/** Who may do the sensitive things in this project. */
+function PermissionsSection() {
+  const { project, run, patch } = useSettings()
+  const current = (project.settings.permissions ?? {}) as Record<string, string>
+  const change = (action: ProjectAction, value: string) => {
+    const next = { ...current, [action]: value }
+    patch((p) => ({ ...p, settings: { ...p.settings, permissions: next } }))
+    run(() => api.patch(`/projects/${project.key}`, { settings: { permissions: next } }), t('Permissions saved'))
+  }
+  return (
+    <Section
+      title={t('Permissions')}
+      description={t('Who may do what beyond editing issues. Members, project admins and teams are set under Members; project admins may also do everything marked for members. Who may move issues into a status is set per status under Workflow.')}
+    >
+      <table className="list ps-perm">
+        <thead>
+          <tr>
+            <th>{t('Action')}</th>
+            <th>{t('Allowed for')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(Object.keys(PROJECT_ACTIONS) as ProjectAction[]).map((a) => {
+            const value = current[a] ?? PROJECT_ACTIONS[a].default
+            return (
+              <tr key={a}>
+                <td>{ACTION_LABELS[a]()}</td>
+                <td>
+                  <select className="select input-sm" aria-label={t('Who may: {action}', { action: ACTION_LABELS[a]() })} value={value} onChange={(e) => change(a, e.target.value)}>
+                    <option value="member">{t('Members and admins')}</option>
+                    <option value="admin">{t('Project admins')}</option>
+                    {PROJECT_ACTIONS[a].nobody && <option value="nobody">{t('Nobody (only their own)')}</option>}
+                  </select>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </Section>
   )
 }
 

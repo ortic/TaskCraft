@@ -412,3 +412,22 @@ export function isoDate(d: Date): string {
 export function tqlQuote(s: string): string {
   return /^[\p{L}\p{N}_\-.@+:/#]+$/u.test(s) && !/^(and|or|not|in|is|empty|null|order|by)$/i.test(s) ? s : `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
+
+/** Project actions whose minimum role each project chooses (crate::access::ACTIONS). */
+export const PROJECT_ACTIONS = {
+  deleteIssues: { default: 'member', nobody: false },
+  moveIssues: { default: 'member', nobody: false },
+  manageSprints: { default: 'member', nobody: false },
+  manageReleases: { default: 'member', nobody: false },
+  moderateComments: { default: 'admin', nobody: true },
+  logTimeForOthers: { default: 'admin', nobody: true },
+} as const
+export type ProjectAction = keyof typeof PROJECT_ACTIONS
+
+/** Whether the signed-in person may do `action` in `project` (the server decides in the end). */
+export function may(project: Project, action: ProjectAction): boolean {
+  const set = (project.settings?.permissions as Record<string, string> | undefined)?.[action] ?? PROJECT_ACTIONS[action].default
+  if (set === 'nobody') return false
+  const rank = { none: 0, viewer: 1, member: 2, admin: 3 }
+  return rank[project.role] >= rank[set === 'admin' ? 'admin' : 'member']
+}

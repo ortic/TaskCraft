@@ -9,9 +9,9 @@ import {
   Mail, MailCheck, LifeBuoy, ClipboardList,
 } from 'lucide-react'
 import {
-  api, ago, dateTime, duration, shortDate, type Comment, type HistoryEvent, type Issue, type IssueDetail, type Project, type WikiPage,
+  api, ago, dateTime, duration, may, shortDate, type Comment, type HistoryEvent, type Issue, type IssueDetail, type Named, type Project, type WikiPage,
 } from '../api'
-import { Avatar, BotAvatar, Confirm, Empty, Lozenge, Loading, ErrorBox, Modal, PopButton, Tabs, useMe, useProject, useProjects, useToast } from '../ui'
+import { Avatar, BotAvatar, Confirm, Empty, Lozenge, Loading, ErrorBox, Modal, PopButton, Tabs, useMe, usePeople, useProject, useProjects, useToast } from '../ui'
 import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
 import { RichText, RichView, EMPTY_DOC, isEmptyDoc } from './Editor'
 import Development, { describeDevEvent } from './Development'
@@ -236,7 +236,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
           />
           {tab === 'comments' && <Comments issue={issue} meId={me?.user?.id} />}
           {tab === 'history' && <History issueKey={issue.key} />}
-          {tab === 'work' && <WorkLog issue={issue} />}
+          {tab === 'work' && <WorkLog issue={issue} project={project} />}
         </div>
       </div>
 
@@ -284,7 +284,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
                   </button>
                 )}
                 {can && <button className="menu-item" onClick={() => { close(); setMoving(true) }}><FolderInput size={14} /> {t('Move to another project…')}</button>}
-                {can && <button className="menu-item danger" onClick={() => { close(); setDel(true) }}><Trash size={14} /> {t('Delete')}</button>}
+                {can && may(project, 'deleteIssues') && <button className="menu-item danger" onClick={() => { close(); setDel(true) }}><Trash size={14} /> {t('Delete')}</button>}
               </div>
             )}
           </PopButton>
@@ -1037,11 +1037,15 @@ function History({ issueKey }: { issueKey: string }) {
   )
 }
 
-function WorkLog({ issue }: { issue: IssueDetail }) {
+function WorkLog({ issue, project }: { issue: IssueDetail; project: Project }) {
   const [editing, setEditing] = useState<string | null>(null)
+  // time for someone else, where the project allows it
+  const forOthers = may(project, 'logTimeForOthers')
+  const [who, setWho] = useState<Named | null>(null)
   const qc = useQueryClient()
   const toast = useToast()
   const me = useMe().data?.user
+  const people = usePeople().data ?? []
   const list = useQuery({ queryKey: ['worklogs', issue.key], queryFn: () => api.get<{ id: string; user: { id: string; name: string } | null; minutes: number; date: string; note: string | null }[]>(`/issues/${issue.key}/worklogs`) })
   const [time, setTime] = useState('')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
@@ -1060,7 +1064,7 @@ function WorkLog({ issue }: { issue: IssueDetail }) {
           onSubmit={async (e) => {
             e.preventDefault()
             try {
-              await api.post(`/issues/${issue.key}/worklogs`, { time, date, note, reduceEstimate: reduce && issue.estimateMinutes != null })
+              await api.post(`/issues/${issue.key}/worklogs`, { time, date, note, reduceEstimate: reduce && issue.estimateMinutes != null, userId: who?.id })
               setTime('')
               setNote('')
               refresh()
@@ -1070,6 +1074,7 @@ function WorkLog({ issue }: { issue: IssueDetail }) {
           }}
         >
           <Clock size={15} className="faint" />
+          {forOthers && <PersonPicker className="btn btn-sm" value={who} label={who ? undefined : t('For me')} onChange={(id) => setWho(id ? people.find((p) => p.id === id) ?? null : null)} />}
           <input className="input input-sm" style={{ width: 110 }} placeholder={t('1h 30m')} value={time} onChange={(e) => setTime(e.target.value)} aria-label={t('Time spent')} />
           <input type="date" className="input input-sm" style={{ width: 150 }} value={date} onChange={(e) => setDate(e.target.value)} aria-label={t('Date')} />
           <input className="input input-sm" style={{ flex: 1, minWidth: 140 }} placeholder={t('What did you do? (optional)')} value={note} onChange={(e) => setNote(e.target.value)} />
