@@ -1634,6 +1634,7 @@
   "This workspace knows WikiCraft at {url}, but your account has no access token. Add a personal WikiCraft token under Profile & settings.": "Dieser Arbeitsbereich kennt WikiCraft unter {url}, aber Ihr Konto hat kein Zugriffstoken. Hinterlegen Sie ein persönliches WikiCraft-Token unter „Profil & Einstellungen“.",
   "This workspace signs in with single sign-on. Log in with your provider as {email}.": "In diesem Arbeitsbereich melden Sie sich mit Single Sign-on an. Melden Sie sich bei Ihrem Anbieter als {email} an.",
   "Time": "Zeit",
+  "Time [[tracking]]": "Zeit",
   "Time logged this week": "Diese Woche erfasste Zeit",
   "Time range": "Zeitraum",
   "Time spent": "Aufgewendete Zeit",

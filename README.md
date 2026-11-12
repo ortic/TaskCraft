@@ -98,8 +98,9 @@ issues on.
 **Live**: boards, backlogs and open issues update as others work (Server-Sent Events, relayed
 through Postgres so it works with several replicas).
 
-**Interface**: English and German (more languages are a JSON catalog away, see below), light, dark
-and high-contrast themes, phone layout, checked with axe against WCAG 2.2 AA in the browser tests.
+**Interface**: English, German, French and Italian (more languages are a JSON catalog away, see
+below; each person picks theirs, else the workspace default, else the browser's), light, dark and
+high-contrast themes, phone layout, checked with axe against WCAG 2.2 AA in the browser tests.
 
 **Git**: commits, branches and pull / merge requests from GitHub, GitLab (or any server, through a
 small JSON format) appear on the issues whose keys they mention, with state badges on the issue and
@@ -278,7 +279,13 @@ npx playwright test          # starts the server on :8798 with a fresh database 
 ```
 
 Interface texts go through `t()` with the English text as the key; catalogs are
-`web/src/locales/<code>.json`. `node web/scripts/i18n.mjs check de` lists missing translations.
+`web/src/locales/<code>.json` (`de`, `fr`, `it`). Plural forms are objects keyed by the language's
+`Intl.PluralRules` categories (`one`, `many`, `other`, …); a key ending in a note like
+`Done [[close]]` is translated without the note. `node web/scripts/i18n.mjs extract` refreshes
+`messages.json` (every key) and `node web/scripts/i18n.mjs check de fr it` lists missing
+translations and lost `{placeholders}`. A new language is a new catalog: once
+`web/src/locales/<code>.json` exists, the language (listed in `web/src/i18n.ts` with its own name)
+shows up in the profile and workspace pickers.
 
 ### CLI
 

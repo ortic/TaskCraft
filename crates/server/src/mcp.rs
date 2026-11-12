@@ -119,7 +119,7 @@ fn strip(v: &mut Value) {
 
 // ---- arguments ----
 
-const TQL_HELP: &str = "Search issues with TQL, TaskCraft's query language (much like Jira's JQL). Returns the total and the matching issues (key, title, type, status, category, priority, assignee, sprint, points, labels, due date, URL).
+const TQL_HELP: &str = "Search issues with TQL, TaskCraft's query language. Returns the total and the matching issues (key, title, type, status, category, priority, assignee, sprint, points, labels, due date, URL).
 
 TQL: clauses `field operator value` joined with `and`, `or`, `not` and parentheses, optionally followed by `order by field [asc|desc], …`. Bare words search titles and descriptions (`login timeout`).
 Fields: project, key, title, text (title, description and more), description, comment, type, status, category (todo | in_progress | done), priority (none < low < medium < high < urgent), assignee, reporter, creator, watcher, labels, sprint, version, component, parent / epic (an issue key), points, estimate and spent (hours), created, updated, resolved, due, start, blocked (true | false), and custom fields by name (quote names with spaces: \"Customer tier\" = Gold).
