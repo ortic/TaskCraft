@@ -43,7 +43,12 @@ async fn send(state: &AppState, workspace: Uuid, user: Uuid, s: &Summary, actor:
     }
 }
 
-async fn watchers(state: &AppState, issue: Uuid) -> Vec<Uuid> {
+/// A notification about an issue (automation and service-level alerts use it).
+pub async fn notify(state: &AppState, workspace: Uuid, user: Uuid, s: &Summary, actor: Option<Uuid>, kind: &str, data: Value) {
+    send(state, workspace, user, s, actor, kind, data).await
+}
+
+pub async fn watchers(state: &AppState, issue: Uuid) -> Vec<Uuid> {
     sqlx::query_scalar("SELECT user_id FROM issue_watchers WHERE issue_id = $1").bind(issue).fetch_all(&state.db).await.unwrap_or_default()
 }
 

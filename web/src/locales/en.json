@@ -122,5 +122,13 @@
   "Its {count} sub-tasks move along.": {
     "one": "Its {count} sub-task moves along.",
     "other": "Its {count} sub-tasks move along."
+  },
+  "{count} sub-tasks": {
+    "one": "{count} sub-task",
+    "other": "{count} sub-tasks"
+  },
+  "Its {count} sub-tasks are created too.": {
+    "one": "Its {count} sub-task is created too.",
+    "other": "Its {count} sub-tasks are created too."
   }
 }

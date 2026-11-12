@@ -154,6 +154,8 @@ export interface IssueDetail extends Issue {
   attachments: { id: string; name: string; mime: string; size: number; uploadedBy: string | null; createdAt: string; url: string }[]
   children: Issue[]
   permissions: { edit: boolean; comment: boolean; admin: boolean }
+  /** service-level goals (projects with service levels) */
+  sla: import('./components/SlaBadges').SlaGoal[]
 }
 
 export interface Status extends StatusRef {
@@ -282,7 +284,7 @@ export interface Notification {
   id: string
   actor: Named | null
   kind: 'assigned' | 'mentioned' | 'commented' | 'status' | string
-  data: { key: string; title: string; from?: string; to?: string; excerpt?: string; commentId?: string }
+  data: { key: string; title: string; from?: string; to?: string; excerpt?: string; commentId?: string; message?: string; goal?: string }
   createdAt: string
   read: boolean
 }

@@ -127,6 +127,7 @@ export default function Layout() {
               {(!p || p.kind === 'scrum') && <ProjectLink to={`/projects/${pk}/backlog`} icon={<ListTodo size={16} />} label={t('Backlog')} />}
               <ProjectLink to={`/projects/${pk}/board`} icon={<Kanban size={16} />} label={p && p.kind !== 'scrum' ? t('Board') : t('Active sprint')} />
               <ProjectLink to={`/projects/${pk}/list`} icon={<Table size={16} />} label={t('List')} />
+              {p?.settings.sla && <ProjectLink to={`/projects/${pk}/queue`} icon={<Timer size={16} />} label={t('Queue')} />}
               <ProjectLink to={`/projects/${pk}/timeline`} icon={<ChartGantt size={16} />} label={t('Timeline')} />
               <ProjectLink to={`/projects/${pk}/calendar`} icon={<Calendar size={16} />} label={t('Calendar')} />
               <ProjectLink to={`/projects/${pk}/reports`} icon={<ChartColumn size={16} />} label={t('Reports')} />
@@ -262,6 +263,10 @@ function Notifications() {
         return t('{who} commented', { who })
       case 'status':
         return t('{who} moved it to {to}', { who, to: x.data.to ?? '' })
+      case 'automation':
+        return x.data.message || t('A rule needs your attention')
+      case 'sla':
+        return x.data.goal === 'response' ? t('First-response goal missed') : t('Resolution goal missed')
       default:
         return who
     }

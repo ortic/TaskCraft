@@ -507,6 +507,13 @@ pub async fn seed(state: &AppState, owner: Uuid) -> anyhow::Result<()> {
         }
     }
 
+    // support goals: urgent issues get an answer within an hour
+    sqlx::query("UPDATE projects SET settings = settings || $2 WHERE id = $1")
+        .bind(sup)
+        .bind(json!({"sla": {"response": {"urgent": 1, "high": 4, "medium": 8, "low": 24}, "resolution": {"urgent": 8, "high": 24, "medium": 72}}}))
+        .execute(&state.db)
+        .await?;
+
     // ---------- MKT: business ----------
     let (mkt, _) = create_project_spec(
         state,
@@ -552,6 +559,37 @@ pub async fn seed(state: &AppState, owner: Uuid) -> anyhow::Result<()> {
     }
     let launch: Uuid = sqlx::query_scalar("SELECT id FROM issues WHERE project_id = $1 AND title = 'Launch event'").bind(mkt).fetch_one(&state.db).await?;
     s.change(launch, 1, 0.5, json!({"typeId": ty["Milestone"]})).await?;
+
+    // a recurring issue and a morning reminder
+    let task_type: Uuid = sqlx::query_scalar("SELECT id FROM issue_types WHERE project_id = $1 AND name = 'Task'").bind(web).fetch_one(&state.db).await?;
+    let weekly = json!({"every": "week", "at": "09:00", "weekday": 1, "tz": "Europe/Zurich"});
+    sqlx::query(
+        "INSERT INTO issue_templates (id, project_id, name, title, description, fields, subtasks, schedule, next_run_at, created_by)
+         VALUES ($1, $2, 'Dependency updates', 'Dependency updates {week}', $3, $4, $5, $6, $7, $8)",
+    )
+    .bind(new_id())
+    .bind(web)
+    .bind(crate::doc::from_markdown("Update libraries, run the tests, note anything that needs a follow-up."))
+    .bind(json!({"typeId": task_type, "priority": "low", "labels": ["maintenance"], "dueInDays": 4, "sprint": "active"}))
+    .bind(json!(["Backend dependencies", "Frontend dependencies"]))
+    .bind(&weekly)
+    .bind(crate::schedule::parse(&weekly).ok().map(|s| crate::schedule::next_after(&s, Utc::now())))
+    .bind(owner)
+    .execute(&state.db)
+    .await?;
+    let morning = json!({"event": "schedule", "schedule": {"every": "weekday", "at": "08:00", "tz": "Europe/Zurich"}});
+    sqlx::query(
+        "INSERT INTO automation_rules (id, project_id, name, trigger, condition, actions, created_by, next_run_at) VALUES ($1, $2, 'Due tomorrow reminder', $3, $4, $5, $6, $7)",
+    )
+    .bind(new_id())
+    .bind(ops)
+    .bind(&morning)
+    .bind("due = 1d and category != done")
+    .bind(json!([{"action": "notify", "to": "assignee", "message": "Due tomorrow"}]))
+    .bind(owner)
+    .bind(crate::schedule::parse(&morning["schedule"]).ok().map(|s| crate::schedule::next_after(&s, Utc::now())))
+    .execute(&state.db)
+    .await?;
 
     // the owner follows the main projects; shared views
     for pid in [web, ops, sup, mkt] {

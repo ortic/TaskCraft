@@ -44,7 +44,28 @@ pub async fn create(
     };
     // placement in a backlog or board column
     let after = fields.remove("after").and_then(|v| v.as_str().and_then(|s| s.parse::<Uuid>().ok()));
-    let s = issues::create(&state, &Actor::of(&user), NewIssue { project: p.id, title, description, fields }).await?;
+    let template = fields.remove("templateId").and_then(|v| v.as_str().and_then(|s| s.parse::<Uuid>().ok()));
+    let s = match template {
+        Some(tid) => {
+            let ok: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM issue_templates WHERE id = $1 AND project_id = $2)")
+                .bind(tid)
+                .bind(p.id)
+                .fetch_one(&state.db)
+                .await?;
+            if !ok {
+                return Err(ApiError::bad("that template belongs to another project"));
+            }
+            let mut overrides = fields;
+            if !title.trim().is_empty() {
+                overrides.insert("title".into(), json!(title));
+            }
+            if let Some(d) = description {
+                overrides.insert("description".into(), d);
+            }
+            crate::schedule::instantiate(&state, &Actor::of(&user), tid, overrides).await?
+        }
+        None => issues::create(&state, &Actor::of(&user), NewIssue { project: p.id, title, description, fields }).await?,
+    };
     if after.is_some() {
         let mut tx = state.db.begin().await?;
         let r = issues::rank_between(&mut tx, p.id, after, None, s.id).await?;
@@ -117,6 +138,7 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
             .collect::<Vec<_>>()
     );
     v["children"] = json!(children);
+    v["sla"] = json!(crate::sla::for_issues(&state, &[id]).await?.remove(&id).unwrap_or_default());
     v["permissions"] = json!({"edit": role >= Role::Member, "comment": role >= Role::Viewer, "admin": role >= Role::Admin});
     Ok(Json(v))
 }

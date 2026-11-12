@@ -26,6 +26,7 @@ const Admin = lazy(() => import('./pages/Admin'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Timesheet = lazy(() => import('./pages/Timesheet'))
 const People = lazy(() => import('./pages/People'))
+const Queue = lazy(() => import('./pages/Queue'))
 
 export default function App() {
   const setup = useQuery({ queryKey: ['setup'], queryFn: () => api.get<{ needsSetup: boolean }>('/setup') })
@@ -64,6 +65,7 @@ export default function App() {
             <Route path="/projects/:key/reports" element={<Reports />} />
             <Route path="/projects/:key/releases" element={<Releases />} />
             <Route path="/projects/:key/docs" element={<ProjectDocs />} />
+            <Route path="/projects/:key/queue" element={<Queue />} />
             <Route path="/projects/:key/settings/*" element={<ProjectSettings />} />
             <Route path="/issues/:key" element={<IssuePage />} />
             <Route path="/search" element={<IssueList />} />

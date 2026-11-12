@@ -14,6 +14,8 @@ pub mod notify;
 pub mod query;
 pub mod reports;
 pub mod routes;
+pub mod schedule;
+pub mod sla;
 pub mod web_assets;
 pub mod webhooks;
 pub mod wikicraft;

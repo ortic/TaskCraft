@@ -8,6 +8,7 @@ pub mod issues;
 pub mod moves;
 pub mod projects;
 pub mod reports;
+pub mod templates;
 pub mod users;
 pub mod views;
 
@@ -82,6 +83,10 @@ pub fn api() -> Router<AppState> {
         .route("/projects/{key}/trash", get(issues::trash))
         .route("/projects/{key}/reports/{report}", get(reports::project_report))
         .route("/projects/{key}/wiki", get(integrations::project_wiki))
+        .route("/projects/{key}/templates", get(templates::list).post(templates::create))
+        .route("/projects/{key}/sla", get(templates::sla_queue))
+        .route("/templates/{id}", patch(templates::update).delete(templates::delete))
+        .route("/templates/{id}/create", post(templates::instantiate))
         .route("/statuses/{id}", patch(projects::update_status).delete(projects::delete_status))
         .route("/types/{id}", patch(projects::update_type).delete(projects::delete_type))
         .route("/versions/{id}", patch(projects::update_version).delete(projects::delete_version))

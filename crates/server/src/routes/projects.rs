@@ -488,6 +488,7 @@ pub async fn update(
                     match sk.as_str() {
                         "estimation" if !matches!(sv.as_str(), Some("points" | "hours")) => return Err(ApiError::bad("estimation must be points or hours")),
                         "workflow" if !matches!(sv.as_str(), Some("free" | "restricted")) => return Err(ApiError::bad("workflow must be free or restricted")),
+                        "sla" => check_sla(sv)?,
                         "estimation" | "workflow" | "wikiSpace" | "defaultAssignee" | "wikiParentPage" | "doneAfterDays" => {}
                         other => return Err(ApiError::bad(format!("unknown setting {other}"))),
                     }
@@ -1160,22 +1161,57 @@ pub async fn delete_field(State(state): State<AppState>, CurrentUser(user): Curr
 
 pub async fn rules(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>) -> ApiResult<Json<Value>> {
     let (p, _) = by_key(&state, &user, &key, Role::Viewer).await?;
-    let rows: Vec<(Uuid, String, bool, Value, String, Value, i32, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
-        "SELECT id, name, enabled, trigger, condition, actions, runs, last_run_at FROM automation_rules WHERE project_id = $1 ORDER BY created_at",
+    type RuleRow = (Uuid, String, bool, Value, String, Value, i32, Option<chrono::DateTime<chrono::Utc>>, Option<chrono::DateTime<chrono::Utc>>);
+    let rows: Vec<RuleRow> = sqlx::query_as(
+        "SELECT id, name, enabled, trigger, condition, actions, runs, last_run_at, next_run_at FROM automation_rules WHERE project_id = $1 ORDER BY created_at",
     )
     .bind(p.id)
     .fetch_all(&state.db)
     .await?;
     Ok(Json(json!(
         rows.into_iter()
-            .map(|(id, n, e, t, c, a, r, l)| json!({"id": id, "name": n, "enabled": e, "trigger": t, "condition": c, "actions": a, "runs": r, "lastRunAt": l}))
+            .map(|(id, n, e, t, c, a, r, l, nx)| {
+                json!({"id": id, "name": n, "enabled": e, "trigger": t, "condition": c, "actions": a, "runs": r, "lastRunAt": l, "nextRunAt": nx})
+            })
             .collect::<Vec<_>>()
     )))
 }
 
+/// Service-level goals: `{"response"|"resolution": {"urgent"|"high"|…: hours}}` (or null to remove).
+fn check_sla(v: &Value) -> ApiResult<()> {
+    if v.is_null() {
+        return Ok(());
+    }
+    let o = v.as_object().ok_or_else(|| ApiError::bad("sla must be an object"))?;
+    for (goal, hours) in o {
+        if !matches!(goal.as_str(), "response" | "resolution") {
+            return Err(ApiError::bad("sla goals are response and resolution"));
+        }
+        for (prio, h) in hours.as_object().into_iter().flatten() {
+            if crate::query::parse_priority(prio).is_none() || !(h.is_null() || h.as_f64().is_some_and(|h| (0.0..=24.0 * 365.0).contains(&h))) {
+                return Err(ApiError::bad("sla hours are numbers per priority (urgent, high, medium, low, none)"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// When a scheduled rule runs next (None for event rules or disabled ones).
+fn next_run(trigger: &Value, enabled: bool) -> Option<chrono::DateTime<chrono::Utc>> {
+    (enabled && trigger["event"] == "schedule")
+        .then(|| crate::schedule::parse(&trigger["schedule"]).ok().map(|s| crate::schedule::next_after(&s, chrono::Utc::now())))
+        .flatten()
+}
+
 fn check_rule(req: &Value) -> ApiResult<()> {
-    if !matches!(req["trigger"]["event"].as_str(), Some("created" | "status" | "assigned" | "field" | "commented")) {
-        return Err(ApiError::bad("trigger.event must be created, status, assigned, field or commented"));
+    if !matches!(req["trigger"]["event"].as_str(), Some("created" | "status" | "assigned" | "field" | "commented" | "schedule")) {
+        return Err(ApiError::bad("trigger.event must be created, status, assigned, field, commented or schedule"));
+    }
+    if req["trigger"]["event"] == "schedule" {
+        crate::schedule::parse(&req["trigger"]["schedule"]).map_err(ApiError::BadRequest)?;
+        if req["condition"].as_str().is_none_or(|c| c.trim().is_empty()) {
+            return Err(ApiError::bad("a scheduled rule needs a condition: the issues it acts on (e.g. due = today() and category != done)"));
+        }
     }
     if let Some(c) = req["condition"].as_str().filter(|c| !c.trim().is_empty()) {
         crate::query::parse(c)?;
@@ -1185,7 +1221,7 @@ fn check_rule(req: &Value) -> ApiResult<()> {
         return Err(ApiError::bad("a rule needs 1–10 actions"));
     }
     for a in actions {
-        if !matches!(a["action"].as_str(), Some("setStatus" | "assign" | "setPriority" | "addLabel" | "removeLabel" | "setSprint" | "comment")) {
+        if !matches!(a["action"].as_str(), Some("setStatus" | "assign" | "setPriority" | "addLabel" | "removeLabel" | "setSprint" | "comment" | "notify")) {
             return Err(ApiError::bad("unknown action"));
         }
     }
@@ -1201,17 +1237,19 @@ pub async fn create_rule(
     let (p, _) = by_key(&state, &user, &key, Role::Admin).await?;
     check_rule(&req)?;
     let id = new_id();
+    let enabled = req["enabled"].as_bool().unwrap_or(true);
     sqlx::query(
-        "INSERT INTO automation_rules (id, project_id, name, enabled, trigger, condition, actions, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        "INSERT INTO automation_rules (id, project_id, name, enabled, trigger, condition, actions, created_by, next_run_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
     )
     .bind(id)
     .bind(p.id)
     .bind(req["name"].as_str().map(str::trim).filter(|n| !n.is_empty()).unwrap_or("Rule"))
-    .bind(req["enabled"].as_bool().unwrap_or(true))
+    .bind(enabled)
     .bind(&req["trigger"])
     .bind(req["condition"].as_str().unwrap_or(""))
     .bind(&req["actions"])
     .bind(user.id)
+    .bind(next_run(&req["trigger"], enabled))
     .execute(&state.db)
     .await?;
     Ok((StatusCode::CREATED, Json(json!({"id": id}))))
@@ -1235,6 +1273,8 @@ pub async fn update_rule(State(state): State<AppState>, CurrentUser(user): Curre
     if let Some(e) = req["enabled"].as_bool() {
         sqlx::query("UPDATE automation_rules SET enabled = $2 WHERE id = $1").bind(id).bind(e).execute(&state.db).await?;
     }
+    let (trigger, enabled): (Value, bool) = sqlx::query_as("SELECT trigger, enabled FROM automation_rules WHERE id = $1").bind(id).fetch_one(&state.db).await?;
+    sqlx::query("UPDATE automation_rules SET next_run_at = $2 WHERE id = $1").bind(id).bind(next_run(&trigger, enabled)).execute(&state.db).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

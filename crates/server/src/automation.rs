@@ -96,7 +96,7 @@ async fn run_inner(state: &AppState, actor: &Actor, s: &Summary, changes: &[Chan
     }
 }
 
-async fn execute(state: &AppState, bot: &Actor, s: &Summary, actions: &Value) -> crate::error::ApiResult<()> {
+pub async fn execute(state: &AppState, bot: &Actor, s: &Summary, actions: &Value) -> crate::error::ApiResult<()> {
     let mut patch = Map::new();
     let mut comments = Vec::new();
     let mut labels: Option<Vec<String>> = None;
@@ -142,6 +142,26 @@ async fn execute(state: &AppState, bot: &Actor, s: &Summary, actions: &Value) ->
                 patch.insert("sprintId".into(), sprint);
             }
             "comment" => comments.push(a["text"].as_str().unwrap_or("").to_string()),
+            "notify" => {
+                let mut to: Vec<Uuid> = match a["to"].as_str() {
+                    Some("reporter") => s.reporter.iter().map(|r| r.id).collect(),
+                    Some("watchers") => crate::notify::watchers(state, s.id).await,
+                    Some("lead") => sqlx::query_scalar::<_, Option<Uuid>>("SELECT lead_id FROM projects WHERE id = $1")
+                        .bind(s.project_id)
+                        .fetch_one(&state.db)
+                        .await?
+                        .into_iter()
+                        .collect(),
+                    _ => s.assignee.iter().map(|r| r.id).collect(),
+                };
+                if let Some(u) = a["userId"].as_str().and_then(|u| u.parse().ok()) {
+                    to = vec![u];
+                }
+                let message: String = a["message"].as_str().unwrap_or("").chars().take(300).collect();
+                for u in to {
+                    crate::notify::notify(state, bot.workspace, u, s, None, "automation", json!({"message": message})).await;
+                }
+            }
             _ => {}
         }
     }

@@ -13,6 +13,7 @@ import {
 import { Avatar, BotAvatar, Confirm, Empty, Lozenge, Loading, ErrorBox, Modal, PopButton, Tabs, useMe, useProject, useProjects, useToast } from '../ui'
 import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
 import { RichText, RichView, EMPTY_DOC, isEmptyDoc } from './Editor'
+import { SlaList } from './SlaBadges'
 import {
   ComponentPicker, CustomFieldValue, DateValue, LabelsEditor, NumberValue, ParentPicker, PersonPicker, PriorityPicker, SprintPicker, StatusPicker, TypePicker, VersionPicker,
 } from './fields'
@@ -241,7 +242,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
             {issue.watching ? <Eye size={16} /> : <EyeOff size={16} />}
           </button>
           <span className="faint small">{issue.watchers.length}</span>
-          <PopButton className="icon-btn" title={t('More')} label={<Ellipsis size={16} />} align="end" width={210}>
+          <PopButton className="icon-btn" title={t('More')} label={<Ellipsis size={16} />} align="end" width={230}>
             {(close) => (
               <div>
                 <button className="menu-item" onClick={() => { close(); copyLink() }}><Copy size={14} /> {t('Copy link')}</button>
@@ -266,6 +267,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
           </PopButton>
         </div>
 
+        {issue.sla?.length > 0 && <SlaList goals={issue.sla} />}
         <SideField label={t('Assignee')}>
           <PersonPicker value={issue.assignee} disabled={!can} onChange={(id) => set({ assigneeId: id })} />
         </SideField>

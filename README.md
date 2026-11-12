@@ -70,7 +70,17 @@ change mid-sprint)
 
 **Automation**: "when an issue is created / changes status / is assigned / a field changes /
 someone comments, if it matches a TQL condition, then set the status, assign, set the priority,
-add or remove a label, move it into the running sprint or the backlog, or comment".
+add or remove a label, move it into the running sprint or the backlog, comment or notify
+someone". Rules can also run **on a schedule** for every issue matching a query ("every weekday
+at 08:00, for issues due tomorrow: notify the assignee"), in the time zone they were set up in.
+
+**Templates and recurring issues**: ready-made issues (title with `{date}` / `{week}` /
+`{month}`, description, fields, due in N days, sub-tasks) to pick when creating an issue; with a
+schedule a template creates its issue by itself.
+
+**Service levels**: goals in hours per priority for the first response and for resolution; issues
+show the time left, a queue lists the most urgent first, and the assignee (else the project lead)
+is told when a goal is missed.
 
 **Releases**: versions with progress, release dates and a release action that moves unfinished
 issues on.
@@ -181,7 +191,7 @@ on writes.
 |---|---|
 | Issues | `POST /issues` (`projectKey`, `title`, `descriptionMarkdown` or ProseMirror `description`, any field), `GET/PATCH/DELETE /issues/{KEY}`, `POST /issues/{KEY}/move` (`statusId`, `sprintId`, `after`/`before`), `/restore`, `/clone`, `GET/POST /issues/{KEY}/move-project` (preview / move to another project), `GET /issues/{KEY}/history`, `PUT /issues/{KEY}/watch`, `POST /issues/{KEY}/links`, `/web-links`, `/comments`, `/worklogs`, `/attachments`, `POST /issues/bulk` |
 | Search | `GET /search?q=<TQL>&limit=&offset=&project=`, `GET /search.csv`, `GET /quick?q=`, `POST /query/validate`, `GET /query/suggest?field=` |
-| Projects | `GET/POST /projects`, `GET/PATCH/DELETE /projects/{KEY}`, members, statuses, transitions, types, versions, components, fields, automation, boards, `GET /projects/{KEY}/backlog`, `/sprints`, `/trash`, `/reports/{overview,velocity,cumulative-flow,cycle-time,created-resolved,workload}` |
+| Projects | `GET/POST /projects`, `GET/PATCH/DELETE /projects/{KEY}`, members, statuses, transitions, types, versions, components, fields, automation, templates (`/projects/{KEY}/templates`, `POST /templates/{id}/create`), service-level queue (`/projects/{KEY}/sla`), boards, `GET /projects/{KEY}/backlog`, `/sprints`, `/trash`, `/reports/{overview,velocity,cumulative-flow,cycle-time,created-resolved,workload}` |
 | Sprints & boards | `GET /boards/{id}`, `POST /sprints/{id}/start`, `/complete`, `GET /sprints/{id}/burndown` |
 | WikiCraft | `GET /issues/{KEY}/wiki-pages`, `POST /issues/{KEY}/wiki-page`, `POST /sprints/{id}/wiki-page`, `POST /versions/{id}/wiki-page`, `GET /projects/{KEY}/wiki`, `GET /wiki-links?url=` (issues linking a page) |
 | Live | `GET /events` (Server-Sent Events) |

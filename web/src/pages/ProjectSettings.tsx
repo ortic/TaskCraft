@@ -1,13 +1,14 @@
 // Project settings for project admins: details, members, workflow, issue types, fields and
 // components, boards, automation rules, integrations and the trash.
 import { t } from '../i18n'
+import ScheduleEditor, { defaultSchedule, describeSchedule, type Schedule } from '../components/ScheduleEditor'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   SlidersHorizontal, Users, Workflow, Shapes, TextCursorInput, Kanban, Bot, Plug, Trash, Shield, GripVertical, Plus, Pencil, X, Check, ArrowRight,
   Archive, ArchiveArrowUp, TriangleExclamationPoint, Type, Hash, CircleDot, ListChecks, Calendar, User, SquareCheck, Link as LinkIcon, Puzzle, Search,
-  ExternalLink, BookOpen, Undo2, Info, Lock, LockOpen, Columns3, Funnel, ChevronDown, ChevronRight,
+  ExternalLink, BookOpen, Undo2, Info, Lock, LockOpen, Columns3, Funnel, ChevronDown, ChevronRight, FileStack, Timer,
 } from 'lucide-react'
 import {
   api, ago, dateTime, PRIORITIES, type Category, type CustomField, type FieldOption, type IssueType, type Named, type Priority, type Project, type Role,
@@ -17,6 +18,7 @@ import { Avatar, Choices, Confirm, Empty, ErrorBox, Loading, Lozenge, Modal, Pop
 import { PROJECT_COLORS, PROJECT_ICONS, ProjectIcon, TYPE_ICONS, TypeIcon, priorityLabel } from '../icons'
 import { OptionChip, PersonPicker } from '../components/fields'
 import { useOpenIssue } from '../components/Layout'
+import { ServiceLevelsSection, TemplatesSection } from '../components/TemplateSettings'
 import './ProjectSettings.css'
 
 // ---- local types (server shapes) ----
@@ -24,11 +26,12 @@ import './ProjectSettings.css'
 type Grant = { subjectType: 'user' | 'team'; subjectId: string; role: Role; name: string | null }
 type MembersData = { defaultRole: Role; grants: Grant[]; people: { id: string; name: string; role: Role }[] }
 type Team = { id: string; name: string; memberIds: string[]; color?: string | null }
-type TriggerEvent = 'created' | 'status' | 'assigned' | 'field' | 'commented'
-type Trigger = { event: TriggerEvent; toStatusId?: string; fromStatusId?: string; toCategory?: Category; field?: string }
-type ActionKind = 'setStatus' | 'assign' | 'setPriority' | 'addLabel' | 'removeLabel' | 'setSprint' | 'comment'
-type RuleAction = { action: ActionKind; statusId?: string; to?: 'reporter' | 'nobody'; userId?: string; priority?: Priority; label?: string; sprint?: 'active' | null; text?: string }
-type Rule = { id: string; name: string; enabled: boolean; trigger: Trigger; condition: string; actions: RuleAction[]; runs: number; lastRunAt: string | null }
+type TriggerEvent = 'created' | 'status' | 'assigned' | 'field' | 'commented' | 'schedule'
+type Trigger = { event: TriggerEvent; toStatusId?: string; fromStatusId?: string; toCategory?: Category; field?: string; schedule?: Schedule }
+type ActionKind = 'setStatus' | 'assign' | 'setPriority' | 'addLabel' | 'removeLabel' | 'setSprint' | 'comment' | 'notify'
+type NotifyTo = 'assignee' | 'reporter' | 'watchers' | 'lead'
+type RuleAction = { action: ActionKind; statusId?: string; to?: 'reporter' | 'nobody' | NotifyTo; userId?: string; priority?: Priority; label?: string; sprint?: 'active' | null; text?: string; message?: string }
+type Rule = { id: string; name: string; enabled: boolean; trigger: Trigger; condition: string; actions: RuleAction[]; runs: number; lastRunAt: string | null; nextRunAt?: string | null }
 type TrashItem = { id: string; key: string; title: string; deletedAt: string | null; deletedBy: string | null }
 type WikiSpace = { key: string; name: string; url: string }
 
@@ -155,7 +158,9 @@ const SECTIONS = [
   { id: 'types', icon: Shapes, label: () => t('Issue types') },
   { id: 'fields', icon: TextCursorInput, label: () => t('Fields & components') },
   { id: 'boards', icon: Kanban, label: () => t('Boards') },
+  { id: 'templates', icon: FileStack, label: () => t('Templates') },
   { id: 'automation', icon: Bot, label: () => t('Automation') },
+  { id: 'sla', icon: Timer, label: () => t('Service levels') },
   { id: 'integrations', icon: Plug, label: () => t('Integrations') },
   { id: 'trash', icon: Trash, label: () => t('Trash') },
 ] as const
@@ -239,7 +244,9 @@ export default function ProjectSettings() {
             {active.id === 'types' && <TypesSection />}
             {active.id === 'fields' && <FieldsSection />}
             {active.id === 'boards' && <BoardsSection boardId={sub} />}
+            {active.id === 'templates' && <TemplatesSection project={p} />}
             {active.id === 'automation' && <AutomationSection />}
+            {active.id === 'sla' && <ServiceLevelsSection key={JSON.stringify(p.settings.sla ?? null)} project={p} onSaved={refresh} />}
             {active.id === 'integrations' && <IntegrationsSection />}
             {active.id === 'trash' && <TrashSection />}
           </div>
@@ -2024,6 +2031,7 @@ const EVENTS: { id: TriggerEvent; label: () => string }[] = [
   { id: 'assigned', label: () => t('an issue is assigned') },
   { id: 'field', label: () => t('a field changes') },
   { id: 'commented', label: () => t('someone comments') },
+  { id: 'schedule', label: () => t('on a schedule') },
 ]
 const TRIGGER_FIELDS: { id: string; label: () => string }[] = [
   { id: 'title', label: () => t('Title') },
@@ -2051,6 +2059,7 @@ const ACTIONS: { id: ActionKind; label: () => string }[] = [
   { id: 'removeLabel', label: () => t('remove a label') },
   { id: 'setSprint', label: () => t('move it to a sprint') },
   { id: 'comment', label: () => t('add a comment') },
+  { id: 'notify', label: () => t('notify someone') },
 ]
 
 function describeTrigger(tr: Trigger, project: Project): string {
@@ -2062,6 +2071,8 @@ function describeTrigger(tr: Trigger, project: Project): string {
       return t('an issue is assigned')
     case 'commented':
       return t('someone comments on an issue')
+    case 'schedule':
+      return describeSchedule(tr.schedule)
     case 'field':
       return t('the field “{field}” changes', { field: TRIGGER_FIELDS.find((f) => f.id === tr.field)?.label() ?? tr.field ?? '?' })
     case 'status': {
@@ -2091,6 +2102,8 @@ function describeAction(a: RuleAction, project: Project, people: Named[]): strin
       return a.sprint === 'active' ? t('move it to the active sprint') : t('move it to the backlog')
     case 'comment':
       return t('add the comment “{text}”', { text: (a.text ?? '').length > 60 ? (a.text ?? '').slice(0, 57) + '…' : a.text ?? '' })
+    case 'notify':
+      return t('notify {who}', { who: a.to === 'reporter' ? t('the reporter') : a.to === 'watchers' ? t('the watchers') : a.to === 'lead' ? t('the project lead') : t('the assignee') })
   }
   return ''
 }
@@ -2103,6 +2116,8 @@ function joinList(items: string[]): string {
 function describeRule(r: { trigger: Trigger; condition: string; actions: RuleAction[] }, project: Project, people: Named[]): string {
   const when = describeTrigger(r.trigger, project)
   const then = joinList(r.actions.map((a) => describeAction(a, project, people)))
+  if (r.trigger.event === 'schedule')
+    return t('{schedule}, for every issue matching {query}: {actions}.', { schedule: when.charAt(0).toUpperCase() + when.slice(1), query: r.condition.trim() || '…', actions: then })
   return r.condition.trim()
     ? t('When {trigger} and it matches {query}, then {actions}.', { trigger: when, query: r.condition.trim(), actions: then })
     : t('When {trigger}, then {actions}.', { trigger: when, actions: then })
@@ -2154,6 +2169,7 @@ function AutomationSection() {
                 {r.runs > 0 || r.lastRunAt
                   ? t('Ran {count} times, last {when}', { count: r.runs, when: r.lastRunAt ? ago(r.lastRunAt) : t('never') })
                   : t('Hasn’t run yet')}
+                {r.enabled && r.nextRunAt && <> · {t('next run {when}', { when: dateTime(r.nextRunAt) })}</>}
                 {!r.enabled && <> · {t('paused')}</>}
               </div>
             </div>
@@ -2196,6 +2212,8 @@ function actionReady(a: RuleAction): boolean {
       return !!a.label?.trim()
     case 'comment':
       return !!a.text?.trim()
+    case 'notify':
+      return !!a.message?.trim()
     default:
       return true
   }
@@ -2216,6 +2234,8 @@ function cleanAction(a: RuleAction): RuleAction {
       return { action: a.action, sprint: a.sprint === 'active' ? 'active' : null }
     case 'comment':
       return { action: a.action, text: a.text ?? '' }
+    case 'notify':
+      return { action: a.action, to: a.to ?? 'assignee', message: a.message ?? '' }
   }
 }
 
@@ -2229,6 +2249,8 @@ function newAction(kind: ActionKind, project: Project): RuleAction {
       return { action: kind, priority: 'high' }
     case 'setSprint':
       return { action: kind, sprint: 'active' }
+    case 'notify':
+      return { action: kind, to: 'assignee', message: '' }
     default:
       return { action: kind, label: '', text: '' }
   }
@@ -2248,7 +2270,8 @@ function RuleDialog({ rule, onClose }: { rule: Rule | null; onClose: () => void 
   const [err, setErr] = useState('')
   const setAct = (k: string, a: RuleAction) => setActions((l) => l.map((x) => (x.k === k ? { ...a, k } : x)))
   const toValue = trigger.toStatusId ? `s:${trigger.toStatusId}` : trigger.toCategory ? `c:${trigger.toCategory}` : ''
-  const ready = actions.length > 0 && actions.every(actionReady) && condOk && (trigger.event !== 'field' || !!trigger.field)
+  const ready =
+    actions.length > 0 && actions.every(actionReady) && condOk && (trigger.event !== 'field' || !!trigger.field) && (trigger.event !== 'schedule' || !!condition.trim())
   const cleanTrigger = (): Trigger => {
     const tr: Trigger = { event: trigger.event }
     if (trigger.event === 'status') {
@@ -2257,6 +2280,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule | null; onClose: () => void 
       else if (trigger.toCategory) tr.toCategory = trigger.toCategory
     }
     if (trigger.event === 'field') tr.field = trigger.field
+    if (trigger.event === 'schedule') tr.schedule = trigger.schedule ?? defaultSchedule()
     return tr
   }
   const draft = { trigger: cleanTrigger(), condition, actions: actions.map(cleanAction) }
@@ -2296,7 +2320,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule | null; onClose: () => void 
         <div className="ps-builder-step">
           <span className="ps-builder-word">{t('When')}</span>
           <div className="ps-builder-body">
-            <select className="select input-sm ps-auto" aria-label={t('Trigger')} value={trigger.event} onChange={(e) => setTrigger({ event: e.target.value as TriggerEvent })}>
+            <select className="select input-sm ps-auto" aria-label={t('Trigger')} value={trigger.event} onChange={(e) => setTrigger(e.target.value === 'schedule' ? { event: 'schedule', schedule: trigger.schedule ?? defaultSchedule() } : { event: e.target.value as TriggerEvent })}>
               {EVENTS.map((ev) => <option key={ev.id} value={ev.id}>{ev.label()}</option>)}
             </select>
             {trigger.event === 'status' && (
@@ -2326,6 +2350,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule | null; onClose: () => void 
                 </select>
               </>
             )}
+            {trigger.event === 'schedule' && <ScheduleEditor value={trigger.schedule ?? defaultSchedule()} onChange={(sc) => setTrigger({ ...trigger, schedule: sc })} />}
             {trigger.event === 'field' && (
               <select className="select input-sm ps-auto" aria-label={t('Field')} value={trigger.field ?? ''} onChange={(e) => setTrigger({ ...trigger, field: e.target.value || undefined })}>
                 <option value="">{t('Pick a field…')}</option>
@@ -2335,9 +2360,15 @@ function RuleDialog({ rule, onClose }: { rule: Rule | null; onClose: () => void 
           </div>
         </div>
         <div className="ps-builder-step">
-          <span className="ps-builder-word">{t('and it matches')}</span>
+          <span className="ps-builder-word">{trigger.event === 'schedule' ? t('for issues matching') : t('and it matches')}</span>
           <div className="ps-builder-body ps-grow">
-            <TqlInput small value={condition} onChange={setCondition} onValidity={setCondOk} placeholder={t('any issue (optional TQL, e.g. type = Bug)')} />
+            <TqlInput
+              small
+              value={condition}
+              onChange={setCondition}
+              onValidity={setCondOk}
+              placeholder={trigger.event === 'schedule' ? t('required, e.g. due <= today() and category != done') : t('any issue (optional TQL, e.g. type = Bug)')}
+            />
           </div>
         </div>
         <div className="ps-builder-step">
@@ -2418,6 +2449,18 @@ function ActionParams({ a, onChange }: { a: RuleAction; onChange: (a: RuleAction
       )
     case 'comment':
       return <textarea className="textarea ps-comment-input" rows={2} aria-label={t('Comment (Markdown)')} placeholder={t('Comment text (Markdown)')} value={a.text ?? ''} onChange={(e) => onChange({ ...a, text: e.target.value })} />
+    case 'notify':
+      return (
+        <>
+          <select className="select input-sm ps-auto" aria-label={t('Whom to notify')} value={a.to ?? 'assignee'} onChange={(e) => onChange({ ...a, to: e.target.value as NotifyTo })}>
+            <option value="assignee">{t('the assignee')}</option>
+            <option value="reporter">{t('the reporter')}</option>
+            <option value="watchers">{t('the watchers')}</option>
+            <option value="lead">{t('the project lead')}</option>
+          </select>
+          <input className="input input-sm ps-grow" aria-label={t('Message')} placeholder={t('Message, e.g. This is due tomorrow')} value={a.message ?? ''} onChange={(e) => onChange({ ...a, message: e.target.value })} />
+        </>
+      )
   }
 }
 

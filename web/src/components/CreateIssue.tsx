@@ -1,12 +1,23 @@
 import { t } from '../i18n'
 import { useEffect, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Issue, type Priority } from '../api'
 import { Modal, useProject, useProjects, useToast } from '../ui'
 import { TypeIcon } from '../icons'
 import { RichText, EMPTY_DOC, isEmptyDoc } from './Editor'
 import { DateValue, LabelsEditor, ParentPicker, PersonPicker, PriorityPicker } from './fields'
 import { refreshIssues } from './IssueView'
+import type { Template } from './TemplateSettings'
+
+/** `{date}`, `{week}`, `{month}` in a template title, as the server fills them. */
+function fillTitle(title: string): string {
+  const d = new Date()
+  const iso = (x: Date) => x.toISOString().slice(0, 10)
+  const thursday = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  thursday.setUTCDate(thursday.getUTCDate() + 4 - (thursday.getUTCDay() || 7))
+  const week = Math.ceil(((thursday.getTime() - Date.UTC(thursday.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7)
+  return title.replace('{date}', iso(d)).replace('{week}', `${thursday.getUTCFullYear()}-W${String(week).padStart(2, '0')}`).replace('{month}', iso(d).slice(0, 7))
+}
 
 export interface CreateDefaults {
   projectKey?: string
@@ -40,6 +51,8 @@ export default function CreateIssue({ defaults, onClose, onCreated }: { defaults
   }, [projectKey, writable])
   const project = useProject(projectKey).data
   const [typeId, setTypeId] = useState<string | undefined>(defaults?.typeId)
+  const templates = useQuery({ queryKey: ['templates', projectKey], queryFn: () => api.get<Template[]>(`/projects/${projectKey}/templates`), enabled: !!projectKey })
+  const [templateId, setTemplateId] = useState('')
   const type = project?.types.find((x) => x.id === typeId) ?? project?.types.find((x) => x.level === 0) ?? project?.types[0]
   const [title, setTitle] = useState('')
   const [desc, setDesc] = useState<any>(null)
@@ -79,6 +92,7 @@ export default function CreateIssue({ defaults, onClose, onCreated }: { defaults
         startDate: defaults?.startDate,
         description: desc && !isEmptyDoc(desc) ? desc : null,
       }
+      if (templateId) body.templateId = templateId
       if (parent) body.parentId = parent.id
       else if (defaults?.parentId) body.parentId = defaults.parentId
       if (defaults?.sprintId !== undefined && project.kind === 'scrum') body.sprintId = defaults.sprintId
@@ -128,6 +142,36 @@ export default function CreateIssue({ defaults, onClose, onCreated }: { defaults
         </>
       }
     >
+      {(templates.data ?? []).length > 0 && (
+        <div className="field" style={{ maxWidth: 360 }}>
+          <label htmlFor="ci-template">{t('Template')}</label>
+          <select
+            id="ci-template"
+            className="select"
+            value={templateId}
+            onChange={(e) => {
+              const tp = templates.data?.find((x) => x.id === e.target.value)
+              setTemplateId(tp?.id ?? '')
+              if (!tp) return
+              if (tp.fields.typeId) setTypeId(tp.fields.typeId)
+              if (tp.title) setTitle(fillTitle(tp.title))
+              if (tp.fields.priority) setPriority(tp.fields.priority)
+              setLabels(tp.fields.labels ?? [])
+              if (tp.description) {
+                setDesc(tp.description)
+                setApplied(null) // counts as written: changing the type keeps it
+                setDescKey((k) => k + 1)
+              }
+            }}
+          >
+            <option value="">{t('No template')}</option>
+            {templates.data?.map((tp) => <option key={tp.id} value={tp.id}>{tp.name}</option>)}
+          </select>
+          {templateId && (templates.data?.find((x) => x.id === templateId)?.subtasks.length ?? 0) > 0 && (
+            <span className="field-hint">{t('Its {count} sub-tasks are created too.', { count: templates.data?.find((x) => x.id === templateId)?.subtasks.length ?? 0 })}</span>
+          )}
+        </div>
+      )}
       <div className="row-wrap" style={{ marginBottom: 12 }}>
         <div className="field" style={{ margin: 0, minWidth: 200 }}>
           <label htmlFor="ci-project">{t('Project')}</label>
