@@ -80,7 +80,7 @@ pub fn suggest(header: &str) -> Option<&'static str> {
 fn read_csv(text: &str) -> ApiResult<(Vec<String>, Vec<Vec<String>>)> {
     let text = text.trim_start_matches('\u{feff}');
     let first = text.lines().next().unwrap_or("");
-    let delim = [b',', b';', b'\t'].into_iter().max_by_key(|d| first.matches(*d as char).count()).unwrap_or(b',');
+    let delim = b",;\t".iter().copied().max_by_key(|d| first.matches(*d as char).count()).unwrap_or(b',');
     let mut r = csv::ReaderBuilder::new().delimiter(delim).flexible(true).from_reader(text.as_bytes());
     let headers: Vec<String> = r.headers().map_err(|e| ApiError::bad(format!("not a CSV file: {e}")))?.iter().map(|h| h.trim().to_string()).collect();
     if headers.iter().all(|h| h.is_empty()) {
