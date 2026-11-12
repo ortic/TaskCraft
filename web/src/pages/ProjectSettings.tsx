@@ -11,7 +11,7 @@ import {
   ExternalLink, BookOpen, Undo2, Info, Lock, LockOpen, Columns3, Funnel, ChevronDown, ChevronRight, FileStack, Timer, Upload, Mail, LifeBuoy,
 } from 'lucide-react'
 import {
-  api, ago, dateTime, PRIORITIES, PROJECT_ACTIONS, type ProjectAction, type Category, type CustomField, type FieldOption, type IssueType, type Named, type Priority, type Project, type Role,
+  api, ago, dateTime, PRIORITIES, PROJECT_ACTIONS, TYPE_FIELDS, type ProjectAction, type Category, type CustomField, type FieldOption, type IssueType, type Named, type Priority, type Project, type Role,
   type BoardData, type BoardConfig, type BoardColumn, type Status, type StatusRules, type WikiPage, type SecurityLevel,
 } from '../api'
 import { requirementLabel, resolutionLabel, resolutionsOf } from '../components/Transition'
@@ -1666,6 +1666,18 @@ function TypeDialog({ type, onClose }: { type: IssueType | null; onClose: () => 
   const [level, setLevel] = useState(type?.level ?? 0)
   const initialTemplate = useMemo(() => docToMarkdown(type?.template), [type])
   const [template, setTemplate] = useState(initialTemplate)
+  // per field: shown (default), required or hidden
+  const [fieldModes, setFieldModes] = useState<Record<string, 'shown' | 'required' | 'hidden'>>(() => {
+    const m: Record<string, 'shown' | 'required' | 'hidden'> = {}
+    for (const f of type?.fields?.hidden ?? []) m[f] = 'hidden'
+    for (const f of type?.fields?.required ?? []) m[f] = 'required'
+    return m
+  })
+  const fieldKeys = [...TYPE_FIELDS, ...project.fields.map((f) => `custom:${f.id}`)]
+  const fieldsSetting = () => ({
+    hidden: fieldKeys.filter((k) => fieldModes[k] === 'hidden'),
+    required: fieldKeys.filter((k) => fieldModes[k] === 'required'),
+  })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const submit = async () => {
@@ -1673,11 +1685,11 @@ function TypeDialog({ type, onClose }: { type: IssueType | null; onClose: () => 
     setErr('')
     try {
       if (type) {
-        const body: Record<string, unknown> = { name: name.trim(), icon, color, level }
+        const body: Record<string, unknown> = { name: name.trim(), icon, color, level, fields: fieldsSetting() }
         if (template !== initialTemplate) body.template = template
         await api.patch(`/types/${type.id}`, body)
       } else {
-        const r = await api.post<{ id: string }>(`/projects/${project.key}/types`, { name: name.trim(), icon, color, level })
+        const r = await api.post<{ id: string }>(`/projects/${project.key}/types`, { name: name.trim(), icon, color, level, fields: fieldsSetting() })
         if (template.trim()) await api.patch(`/types/${r.id}`, { template })
       }
       refresh()
@@ -1748,6 +1760,26 @@ function TypeDialog({ type, onClose }: { type: IssueType | null; onClose: () => 
         />
         <span className="field-hint">{t('New issues of this type start with this description. Leave empty for none.')}</span>
       </div>
+      <fieldset className="ps-fieldset">
+        <legend>{t('Fields')}</legend>
+        <p className="faint small" style={{ margin: '0 0 8px' }}>{t('Hidden fields don’t show on issues of this type (unless they have a value). Required ones must be filled in when someone creates such an issue or changes an issue to this type, and can’t be emptied; automation and imports aren’t held up by them.')}</p>
+        <div className="ps-type-fields">
+          {fieldKeys.map((k) => {
+            const label = requirementLabel(k, project)
+            const requirable = !['priority', 'sprint', 'security'].includes(k)
+            return (
+              <label key={k} className="ps-type-field">
+                <span>{label}</span>
+                <select className="select input-sm" value={fieldModes[k] ?? 'shown'} aria-label={t('{field} on this type', { field: label })} onChange={(e) => setFieldModes((m) => ({ ...m, [k]: e.target.value as 'shown' | 'required' | 'hidden' }))}>
+                  <option value="shown">{t('Shown')}</option>
+                  {requirable && <option value="required">{t('Required')}</option>}
+                  <option value="hidden">{t('Hidden')}</option>
+                </select>
+              </label>
+            )
+          })}
+        </div>
+      </fieldset>
       {err && <p className="error-text">{err}</p>}
     </Modal>
   )

@@ -22,7 +22,135 @@ use crate::error::{ApiError, ApiResult};
 pub const DEFAULT_RESOLUTIONS: [&str; 4] = ["Done", "Won't do", "Duplicate", "Cannot reproduce"];
 
 /// Fields a status can require (custom fields as `custom:<id>`).
-pub const REQUIRABLE: [&str; 8] = ["assignee", "resolution", "version", "component", "dueDate", "startDate", "estimate", "storyPoints"];
+pub const REQUIRABLE: [&str; 10] = ["assignee", "resolution", "version", "affects", "component", "labels", "dueDate", "startDate", "estimate", "storyPoints"];
+
+/// Fields an issue type can hide; all but priority, security and sprint can also be required.
+pub const TYPE_FIELDS: [&str; 12] =
+    ["assignee", "priority", "labels", "sprint", "version", "affects", "component", "storyPoints", "estimate", "startDate", "dueDate", "security"];
+
+/// Checks and tidies an issue type's `fields`: `{"hidden": [field], "required": [field]}`.
+pub fn check_type_fields(v: &Value) -> ApiResult<Value> {
+    if v.is_null() {
+        return Ok(json!({}));
+    }
+    let o = v.as_object().ok_or_else(|| ApiError::bad("fields must be an object"))?;
+    let custom = |f: &str| f.strip_prefix("custom:").is_some_and(|id| id.parse::<Uuid>().is_ok());
+    let mut out = serde_json::Map::new();
+    for (k, val) in o {
+        if !matches!(k.as_str(), "hidden" | "required") {
+            return Err(ApiError::bad(format!("unknown fields setting {k}: hidden or required")));
+        }
+        let list = val.as_array().ok_or_else(|| ApiError::bad(format!("{k} must be a list of fields")))?;
+        let mut fields: Vec<String> = Vec::new();
+        for f in list {
+            let f = f.as_str().unwrap_or("");
+            let ok = match k.as_str() {
+                "hidden" => TYPE_FIELDS.contains(&f) || custom(f),
+                _ => (TYPE_FIELDS.contains(&f) && !matches!(f, "priority" | "security" | "sprint")) || custom(f),
+            };
+            if !ok {
+                return Err(ApiError::bad(format!("an issue type can't make {f} {k}")));
+            }
+            if !fields.iter().any(|x| x == f) {
+                fields.push(f.to_string());
+            }
+        }
+        out.insert(k.clone(), json!(fields));
+    }
+    let hidden: Vec<&str> = out.get("hidden").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
+    if let Some(both) = out.get("required").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).find(|f| hidden.contains(f)) {
+        return Err(ApiError::bad(format!("{both} can't be hidden and required")));
+    }
+    Ok(Value::Object(out))
+}
+
+/// The requirement key of a recorded change (`custom:<id>` for custom fields).
+pub fn requirement_of(field: &str, new: &Value) -> Option<String> {
+    Some(match field {
+        "assignee" => "assignee".into(),
+        "versions" => "version".into(),
+        "affects" => "affects".into(),
+        "components" => "component".into(),
+        "labels" => "labels".into(),
+        "points" => "storyPoints".into(),
+        "estimate" => "estimate".into(),
+        "start" => "startDate".into(),
+        "due" => "dueDate".into(),
+        "custom" => format!("custom:{}", new["id"].as_str()?),
+        _ => return None,
+    })
+}
+
+/// Holds a person to what an issue's type requires: everything (`changed` None, as when
+/// creating it or changing its type), or the fields just changed (they can't be emptied).
+pub async fn enforce_type(tx: &mut Transaction<'_, Postgres>, issue: Uuid, changed: Option<&[String]>) -> ApiResult<()> {
+    let (name, fields): (String, Value) = sqlx::query_as("SELECT it.name, it.fields FROM issues i JOIN issue_types it ON it.id = i.type_id WHERE i.id = $1")
+        .bind(issue)
+        .fetch_one(&mut **tx)
+        .await?;
+    let required: Vec<&str> =
+        fields["required"].as_array().into_iter().flatten().filter_map(Value::as_str).filter(|f| changed.is_none_or(|c| c.iter().any(|x| x == f))).collect();
+    if required.is_empty() {
+        return Ok(());
+    }
+    let missing = missing(tx, issue, &required).await?;
+    if !missing.is_empty() {
+        return Err(ApiError::BadRequest(format!("a {name} needs {}", missing.join(", "))));
+    }
+    Ok(())
+}
+
+/// Which of `required` an issue leaves empty, by name.
+async fn missing(tx: &mut Transaction<'_, Postgres>, issue: Uuid, required: &[&str]) -> ApiResult<Vec<String>> {
+    #[derive(sqlx::FromRow)]
+    struct Now {
+        assignee_id: Option<Uuid>,
+        resolution: Option<String>,
+        has_version: bool,
+        has_affects: bool,
+        has_component: bool,
+        has_labels: bool,
+        due_date: Option<chrono::NaiveDate>,
+        start_date: Option<chrono::NaiveDate>,
+        estimate_minutes: Option<i32>,
+        story_points: Option<f64>,
+        custom: Value,
+    }
+    let now: Now = sqlx::query_as(
+        "SELECT assignee_id, resolution,
+                EXISTS (SELECT 1 FROM issue_versions v WHERE v.issue_id = i.id AND v.kind = 'fix') AS has_version,
+                EXISTS (SELECT 1 FROM issue_versions v WHERE v.issue_id = i.id AND v.kind = 'affects') AS has_affects,
+                EXISTS (SELECT 1 FROM issue_components c WHERE c.issue_id = i.id) AS has_component,
+                EXISTS (SELECT 1 FROM issue_labels l WHERE l.issue_id = i.id) AS has_labels,
+                due_date, start_date, estimate_minutes, story_points, custom FROM issues i WHERE id = $1",
+    )
+    .bind(issue)
+    .fetch_one(&mut **tx)
+    .await?;
+    let mut out = Vec::new();
+    for f in required {
+        let set = match *f {
+            "assignee" => now.assignee_id.is_some(),
+            "resolution" => now.resolution.is_some(),
+            "version" => now.has_version,
+            "affects" => now.has_affects,
+            "component" => now.has_component,
+            "labels" => now.has_labels,
+            "dueDate" => now.due_date.is_some(),
+            "startDate" => now.start_date.is_some(),
+            "estimate" => now.estimate_minutes.is_some(),
+            "storyPoints" => now.story_points.is_some(),
+            other => other.strip_prefix("custom:").is_none_or(|id| {
+                let v = &now.custom[id];
+                !(v.is_null() || v.as_str() == Some("") || v.as_array().is_some_and(|a| a.is_empty()))
+            }),
+        };
+        if !set {
+            out.push(field_name(tx, f).await?);
+        }
+    }
+    Ok(out)
+}
 
 /// The project's resolutions.
 pub fn resolutions(settings: &Value) -> Vec<String> {
@@ -143,48 +271,7 @@ pub async fn enforce(tx: &mut Transaction<'_, Postgres>, user: Uuid, issue: Uuid
         _ => {}
     }
     let required: Vec<&str> = rules["require"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-    let mut missing: Vec<String> = Vec::new();
-    if !required.is_empty() {
-        #[derive(sqlx::FromRow)]
-        struct Now {
-            assignee_id: Option<Uuid>,
-            resolution: Option<String>,
-            has_version: bool,
-            has_component: bool,
-            due_date: Option<chrono::NaiveDate>,
-            start_date: Option<chrono::NaiveDate>,
-            estimate_minutes: Option<i32>,
-            story_points: Option<f64>,
-            custom: Value,
-        }
-        let now: Now = sqlx::query_as(
-            "SELECT assignee_id, resolution, EXISTS (SELECT 1 FROM issue_versions v WHERE v.issue_id = i.id AND v.kind = 'fix') AS has_version,
-                    EXISTS (SELECT 1 FROM issue_components c WHERE c.issue_id = i.id) AS has_component,
-                    due_date, start_date, estimate_minutes, story_points, custom FROM issues i WHERE id = $1",
-        )
-        .bind(issue)
-        .fetch_one(&mut **tx)
-        .await?;
-        for f in &required {
-            let set = match *f {
-                "assignee" => now.assignee_id.is_some(),
-                "resolution" => now.resolution.is_some(),
-                "version" => now.has_version,
-                "component" => now.has_component,
-                "dueDate" => now.due_date.is_some(),
-                "startDate" => now.start_date.is_some(),
-                "estimate" => now.estimate_minutes.is_some(),
-                "storyPoints" => now.story_points.is_some(),
-                other => other.strip_prefix("custom:").is_none_or(|id| {
-                    let v = &now.custom[id];
-                    !(v.is_null() || v.as_str() == Some("") || v.as_array().is_some_and(|a| a.is_empty()))
-                }),
-            };
-            if !set {
-                missing.push(field_name(tx, f).await?);
-            }
-        }
-    }
+    let mut missing = if required.is_empty() { Vec::new() } else { missing(tx, issue, &required).await? };
     if rules["comment"].as_str() == Some("required") && !comment {
         missing.push("a comment".into());
     }
@@ -199,7 +286,9 @@ async fn field_name(tx: &mut Transaction<'_, Postgres>, f: &str) -> ApiResult<St
         "assignee" => "an assignee".into(),
         "resolution" => "a resolution".into(),
         "version" => "a release".into(),
+        "affects" => "a release it was found in".into(),
         "component" => "a component".into(),
+        "labels" => "labels".into(),
         "dueDate" => "a due date".into(),
         "startDate" => "a start date".into(),
         "estimate" => "an estimate".into(),

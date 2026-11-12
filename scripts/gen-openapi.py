@@ -420,8 +420,24 @@ schemas = {
         desc="What it takes for a person to move an issue into the status (automation and imports aren't held up). A refused move answers 403 (who) or 400 naming what's missing.",
     ),
     "IssueType": obj(
-        {"id": uuid, "name": txt, "icon": txt, "color": txt, "level": d(num, "1 = epic, 0 = standard, -1 = sub-task"), "template": null(S("PmNode"), "description new issues of this type start with")},
+        {
+            "id": uuid,
+            "name": txt,
+            "icon": txt,
+            "color": txt,
+            "level": d(num, "1 = epic, 0 = standard, -1 = sub-task"),
+            "template": null(S("PmNode"), "description new issues of this type start with"),
+            "fields": S("TypeFields"),
+        },
         ["id", "name", "icon", "color", "level"],
+    ),
+    "TypeFields": obj(
+        {
+            "hidden": arr(txt, "fields issues of this type don't show unless they have a value: assignee, priority, labels, sprint, version, affects, component, storyPoints, estimate, startDate, dueDate, security, custom:<id>"),
+            "required": arr(txt, "fields people must fill in when creating such an issue or changing an issue to this type, and can't empty (the same names but priority, sprint and security); automation and imports aren't held to them"),
+        },
+        [],
+        "Which fields an issue type hides and requires.",
     ),
     "Version": obj(
         {"id": uuid, "name": txt, "description": ntxt(), "status": enum("unreleased", "released", "archived"), "startDate": ndate(), "releaseDate": ndate(), "releasedAt": ndt()},
@@ -1257,9 +1273,10 @@ op("post", "/projects/{key}/types", "createIssueType", "Project configuration", 
        "color": d(txt, "default #3b82f6"),
        "level": {"type": "integer", "minimum": -1, "maximum": 1, "default": 0, "description": "1 = epic, 0 = standard, -1 = sub-task"},
        "template": one(d(txt, "Markdown"), S("PmNode"), desc="description new issues of this type start with (empty = none)"),
+       "fields": S("TypeFields"),
    }, ["name"])), res=created(B_ID), err="409")
 op("patch", "/types/{id}", "updateIssueType", "Project configuration", "Change an issue type (project admins)",
-   req=body(obj({"name": txt, "icon": txt, "color": txt, "level": {"type": "integer", "minimum": -1, "maximum": 1}, "template": one(d(txt, "Markdown"), S("PmNode"), {"type": "null"}, desc="empty or null removes it")})),
+   req=body(obj({"name": txt, "icon": txt, "color": txt, "level": {"type": "integer", "minimum": -1, "maximum": 1}, "template": one(d(txt, "Markdown"), S("PmNode"), {"type": "null"}, desc="empty or null removes it"), "fields": S("TypeFields")})),
    res=NO, err="409")
 op("delete", "/types/{id}", "deleteIssueType", "Project configuration", "Delete an issue type (project admins)",
    desc="Its issues get the type `moveTo`. A project keeps at least one type.", query=B_MOVE_TO("type"), res=NO)

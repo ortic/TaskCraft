@@ -220,3 +220,8 @@ a.field-hint { display: inline-flex; align-items: center; gap: 4px; }
 .ps-level-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }
 .ps-level-count { white-space: nowrap; }
 .ps-level-people { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+/* fields per issue type */
+.ps-type-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px 16px; }
+.ps-type-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.ps-type-field .select { width: auto; min-width: 104px; }

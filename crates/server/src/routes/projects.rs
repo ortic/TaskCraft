@@ -118,8 +118,8 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
             .bind(p.id)
             .fetch_all(&state.db)
             .await?;
-    let types: Vec<(Uuid, String, String, String, i16, Option<Value>)> =
-        sqlx::query_as("SELECT id, name, icon, color, level, template FROM issue_types WHERE project_id = $1 ORDER BY position")
+    let types: Vec<(Uuid, String, String, String, i16, Option<Value>, Value)> =
+        sqlx::query_as("SELECT id, name, icon, color, level, template, fields FROM issue_types WHERE project_id = $1 ORDER BY position")
             .bind(p.id)
             .fetch_all(&state.db)
             .await?;
@@ -167,7 +167,7 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
             "starred": starred,
             "leadName": lead_name,
             "statuses": statuses.iter().map(|(id, n, c, col, pos, rules)| json!({"id": id, "name": n, "category": c, "color": col, "position": pos, "rules": rules})).collect::<Vec<_>>(),
-            "types": types.iter().map(|(id, n, i, c, l, t)| json!({"id": id, "name": n, "icon": i, "color": c, "level": l, "template": t})).collect::<Vec<_>>(),
+            "types": types.iter().map(|(id, n, i, c, l, t, f)| json!({"id": id, "name": n, "icon": i, "color": c, "level": l, "template": t, "fields": f})).collect::<Vec<_>>(),
             "versions": versions.iter().map(|(id, n, d, s, sd, rd, ra)| json!({"id": id, "name": n, "description": d, "status": s, "startDate": sd, "releaseDate": rd, "releasedAt": ra})).collect::<Vec<_>>(),
             "components": components.iter().map(|(id, n, d, l)| json!({"id": id, "name": n, "description": d, "leadId": l})).collect::<Vec<_>>(),
             "fields": fields.iter().map(|(id, n, k, o, d)| json!({"id": id, "name": n, "kind": k, "options": o, "description": d})).collect::<Vec<_>>(),
@@ -854,8 +854,8 @@ pub async fn create_type(
     let level = req["level"].as_i64().unwrap_or(0).clamp(-1, 1) as i16;
     let id = new_id();
     sqlx::query(
-        "INSERT INTO issue_types (id, project_id, name, icon, color, level, template, position)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT COALESCE(max(position), 0) + 1 FROM issue_types WHERE project_id = $2))",
+        "INSERT INTO issue_types (id, project_id, name, icon, color, level, template, fields, position)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT COALESCE(max(position), 0) + 1 FROM issue_types WHERE project_id = $2))",
     )
     .bind(id)
     .bind(p.id)
@@ -864,6 +864,7 @@ pub async fn create_type(
     .bind(req["color"].as_str().unwrap_or("#3b82f6"))
     .bind(level)
     .bind(type_template(&req["template"])?)
+    .bind(crate::workflow::check_type_fields(&req["fields"])?)
     .execute(&state.db)
     .await?;
     changed(&state, &user, p.id).await;
@@ -897,6 +898,9 @@ pub async fn update_type(State(state): State<AppState>, CurrentUser(user): Curre
     }
     if let Some(t) = req.get("template") {
         sqlx::query("UPDATE issue_types SET template = $2 WHERE id = $1").bind(id).bind(type_template(t)?).execute(&state.db).await?;
+    }
+    if let Some(f) = req.get("fields") {
+        sqlx::query("UPDATE issue_types SET fields = $2 WHERE id = $1").bind(id).bind(crate::workflow::check_type_fields(f)?).execute(&state.db).await?;
     }
     changed(&state, &user, project).await;
     Ok(StatusCode::NO_CONTENT)
@@ -1429,6 +1433,25 @@ pub async fn delete_field(State(state): State<AppState>, CurrentUser(user): Curr
     let project = status_project(&state, &user, id, "custom_fields").await?;
     sqlx::query("DELETE FROM custom_fields WHERE id = $1").bind(id).execute(&state.db).await?;
     sqlx::query("UPDATE issues SET custom = custom - $2 WHERE project_id = $1 AND custom ? $2").bind(project).bind(id.to_string()).execute(&state.db).await?;
+    // nothing may go on hiding or requiring it (types, status rules)
+    let key = format!("custom:{id}");
+    sqlx::query(
+        "UPDATE issue_types SET fields = (SELECT COALESCE(jsonb_object_agg(k, (SELECT COALESCE(jsonb_agg(x), '[]') FROM jsonb_array_elements(v) x WHERE x <> to_jsonb($2::text))), '{}')
+                                           FROM jsonb_each(fields) AS e(k, v))
+          WHERE project_id = $1",
+    )
+    .bind(project)
+    .bind(&key)
+    .execute(&state.db)
+    .await?;
+    sqlx::query(
+        "UPDATE statuses SET rules = jsonb_set(rules, '{require}', (SELECT COALESCE(jsonb_agg(x), '[]') FROM jsonb_array_elements(rules->'require') x WHERE x <> to_jsonb($2::text)))
+          WHERE project_id = $1 AND rules ? 'require'",
+    )
+    .bind(project)
+    .bind(&key)
+    .execute(&state.db)
+    .await?;
     changed(&state, &user, project).await;
     Ok(StatusCode::NO_CONTENT)
 }

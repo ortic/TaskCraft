@@ -29,7 +29,8 @@ One binary, PostgreSQL, optional S3. Built with the same stack as WikiCraft.
   transitions with a transition matrix; **rules per status** — who may move issues there (everyone,
   project admins or chosen teams), the fields an issue needs to get there, a comment asked for —
   with a small form that asks for what's missing on the board, in the issue and in bulk changes;
-  **resolutions** (Done, Won't do, Duplicate, … per project) set when an issue is done
+  **resolutions** (Done, Won't do, Duplicate, … per project) set when an issue is done; **fields
+  per issue type** — which ones a type hides and which it requires
 - **Move issues to another project** (the old key keeps working; type, status and custom fields are mapped, sub-tasks move along)
 - **CSV import** with column mapping and a dry run: statuses, types, people, sprints and releases matched by name (missing statuses created and put on the board); issue numbers kept when the project key stays, other keys keep working as links; parents by key or id; times in hours, durations or seconds, booked to whoever did the work; people who haven't joined yet or have left keep their issues; wiki-markup descriptions converted
 - **Migration from another tracker**: upload its XML site backup (.zip) in the browser, check what it holds, choose projects and how people come over, and import people, projects, issues with their numbers, comments, time logs, attachments, links, watchers, components, releases, sprints and the history the reports replay (see [Migrating from another tracker](#migrating-from-another-tracker))

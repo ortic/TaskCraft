@@ -78,7 +78,7 @@
 - [x] Finer permissions: per project who may delete or move issues, plan sprints, manage releases, moderate comments, log time for others and change who sees an issue; comments restricted to members, project admins or a team; private issues (security levels by role, teams or people; a default level; enforced in lookups, lists, boards, search, reports that name issues, activity, live updates, notifications, e-mail replies and wiki pages)
 - [x] Several fix versions, affected versions and components per issue (TQL, CSV both ways, imports, workflow rules, releasing moves only that release)
 - [x] Time tracking: remaining estimate next to the original (follows the time logged or set by hand; logging reduces, keeps or sets it), time categories with a billable default, time reports grouped by person / project / issue / category / day / week / month (twice), filtered, with a CSV of every log
-- [ ] Fields per issue type: which fields a type shows and which it requires
+- [x] Fields per issue type: which fields a type shows, hides and requires (enforced on create, type change and edits; the create dialog asks for them)
 - [ ] Subprojects: a project hierarchy with views and reports across a project and its subprojects
 - [ ] E-mails in each person's language (they're English only)
 - [ ] Voting on issues; issue lists and issues as Excel and PDF, a print view

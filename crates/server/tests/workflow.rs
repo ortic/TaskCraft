@@ -100,3 +100,56 @@ async fn statuses_require_fields_comments_and_people_and_resolutions_follow_done
     patch(&c, app.url(&format!("/issues/{key3}")), json!({"statusId": done})).await;
     assert_eq!(get(&c, app.url(&format!("/issues/{key3}"))).await["resolution"], "Fixed", "the first of the project's list");
 }
+
+#[tokio::test]
+async fn issue_types_hide_and_require_fields() {
+    let app = spawn().await;
+    let c = app.setup(false).await;
+    post(&c, app.url("/projects"), json!({"key": "TYP", "name": "Types", "template": "tracker"})).await;
+    let (mia, _) = app.user(&c, "Mia Member", "mia@example.com", "member").await;
+    let p = get(&c, app.url("/projects/TYP")).await;
+    let ty = |name: &str| p["types"].as_array().unwrap().iter().find(|t| t["name"] == name).unwrap()["id"].as_str().unwrap().to_string();
+    let (bug, task) = (ty("Bug"), ty("Task"));
+    let comp = post(&c, app.url("/projects/TYP/components"), json!({"name": "API"})).await["id"].as_str().unwrap().to_string();
+    let sev = post(&c, app.url("/projects/TYP/fields"), json!({"name": "Impact", "kind": "text"})).await["id"].as_str().unwrap().to_string();
+
+    // the settings are checked
+    for bad in
+        [json!({"hidden": ["component"], "required": ["component"]}), json!({"required": ["priority"]}), json!({"shown": []}), json!({"hidden": ["shoe size"]})]
+    {
+        let (s, _) = send(&c, Method::PATCH, app.url(&format!("/types/{bug}")), json!({"fields": bad})).await;
+        assert_eq!(s, 400, "{bad}");
+    }
+    let fields = json!({"required": ["component", format!("custom:{sev}")], "hidden": ["storyPoints"]});
+    patch(&c, app.url(&format!("/types/{bug}")), json!({"fields": fields})).await;
+    assert_eq!(get(&c, app.url("/projects/TYP")).await["types"].as_array().unwrap().iter().find(|t| t["id"] == bug.as_str()).unwrap()["fields"], fields);
+
+    // creating a Bug needs them
+    let (s, v) = send(&mia, Method::POST, app.url("/issues"), json!({"projectKey": "TYP", "title": "Crash", "typeId": bug})).await;
+    assert_eq!(s, 400);
+    assert!(v["message"].as_str().unwrap().contains("a Bug needs a component, Impact"), "{v}");
+    let (s, b) = send(
+        &mia,
+        Method::POST,
+        app.url("/issues"),
+        json!({"projectKey": "TYP", "title": "Crash", "typeId": bug, "componentIds": [comp], "custom": {sev.clone(): "high"}}),
+    )
+    .await;
+    assert_eq!(s, 201, "{b}");
+    let key = b["key"].as_str().unwrap().to_string();
+    // they can't be emptied, other changes go through
+    assert_eq!(send(&mia, Method::PATCH, app.url(&format!("/issues/{key}")), json!({"componentIds": []})).await.0, 400);
+    assert_eq!(send(&mia, Method::PATCH, app.url(&format!("/issues/{key}")), json!({"title": "Crash on save"})).await.0, 200);
+    // turning a Task into a Bug needs them too
+    let t = post(&mia, app.url("/issues"), json!({"projectKey": "TYP", "title": "Chore", "typeId": task})).await["key"].as_str().unwrap().to_string();
+    assert_eq!(send(&mia, Method::PATCH, app.url(&format!("/issues/{t}")), json!({"typeId": bug})).await.0, 400);
+    assert_eq!(
+        send(&mia, Method::PATCH, app.url(&format!("/issues/{t}")), json!({"typeId": bug, "componentIds": [comp], "custom": {sev.clone(): "low"}})).await.0,
+        200
+    );
+
+    // a deleted custom field stops being required
+    send(&c, Method::DELETE, app.url(&format!("/fields/{sev}")), json!(null)).await;
+    let (s, v) = send(&mia, Method::POST, app.url("/issues"), json!({"projectKey": "TYP", "title": "Leak", "typeId": bug, "componentIds": [comp]})).await;
+    assert_eq!(s, 201, "{v}");
+}

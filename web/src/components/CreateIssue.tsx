@@ -7,6 +7,7 @@ import { TypeIcon } from '../icons'
 import { RichText, EMPTY_DOC, isEmptyDoc } from './Editor'
 import { DateValue, LabelsEditor, ParentPicker, PersonPicker, PriorityPicker, SecurityPicker } from './fields'
 import { refreshIssues } from './IssueView'
+import { FieldInput, isFilled, requirementLabel, toFields } from './Transition'
 import type { Template } from './TemplateSettings'
 
 /** `{date}`, `{week}`, `{month}` in a template title, as the server fills them. */
@@ -67,6 +68,14 @@ export default function CreateIssue({ defaults, onClose, onCreated }: { defaults
   useEffect(() => setSecurity(undefined), [projectKey])
   const defaultLevel = project?.securityLevels?.find((l) => l.isDefault) ?? null
   const level = security === undefined ? (defaultLevel ? { id: defaultLevel.id, name: defaultLevel.name } : null) : security
+  // what the type requires and hides; required fields the dialog has no control of its own for
+  const required = type?.fields?.required ?? []
+  const hidden = type?.fields?.hidden ?? []
+  const shows = (k: string) => !hidden.includes(k)
+  const BUILT_IN = ['assignee', 'labels', 'dueDate']
+  const extraKeys = required.filter((k) => !BUILT_IN.includes(k) && (!k.startsWith('custom:') || project?.fields.some((f) => f.id === k.slice(7))))
+  const [extra, setExtra] = useState<Record<string, unknown>>({})
+  const req = (k: string) => (required.includes(k) ? <span className="tr-req"> {t('required')}</span> : null)
   const [another, setAnother] = useState(false)
   const [busy, setBusy] = useState(false)
   // the type's template fills an untouched description (and follows the type while untouched)
@@ -84,6 +93,16 @@ export default function CreateIssue({ defaults, onClose, onCreated }: { defaults
 
   const submit = async () => {
     if (!project || !title.trim() || !type) return
+    const missing = [
+      ...(required.includes('assignee') && !assignee && !defaults?.assigneeId ? ['assignee'] : []),
+      ...(required.includes('labels') && !labels.length ? ['labels'] : []),
+      ...(required.includes('dueDate') && !due ? ['dueDate'] : []),
+      ...extraKeys.filter((k) => !isFilled(extra[k])),
+    ]
+    if (missing.length) {
+      toast(t('A {type} needs {fields}', { type: type.name, fields: missing.map((k) => requirementLabel(k, project)).join(', ') }))
+      return
+    }
     setBusy(true)
     try {
       const body: Record<string, unknown> = {
@@ -96,6 +115,7 @@ export default function CreateIssue({ defaults, onClose, onCreated }: { defaults
         dueDate: due,
         startDate: defaults?.startDate,
         description: desc && !isEmptyDoc(desc) ? desc : null,
+        ...toFields(Object.fromEntries(extraKeys.map((k) => [k, extra[k]]))),
       }
       if (templateId) body.templateId = templateId
       if (security !== undefined) body.securityLevelId = security?.id ?? null
@@ -218,23 +238,37 @@ export default function CreateIssue({ defaults, onClose, onCreated }: { defaults
       </div>
       {project && (
         <div className="row-wrap" style={{ gap: 16 }}>
-          <div className="field" style={{ minWidth: 200 }}>
-            <span className="field-label">{t('Assignee')}</span>
-            <PersonPicker value={assignee} onChange={(id) => setAssignee(id ? { id, name: '' } : null)} />
-          </div>
-          <div className="field">
-            <span className="field-label">{t('Priority')}</span>
-            <PriorityPicker value={priority} onChange={setPriority} />
-          </div>
-          <div className="field">
-            <span className="field-label">{t('Labels')}</span>
-            <LabelsEditor value={labels} onChange={setLabels} />
-          </div>
-          <div className="field">
-            <span className="field-label">{t('Due')}</span>
-            <DateValue value={due} onChange={setDue} />
-          </div>
-          {(project.securityLevels?.length ?? 0) > 0 && (
+          {shows('assignee') && (
+            <div className="field" style={{ minWidth: 200 }}>
+              <span className="field-label">{t('Assignee')}{req('assignee')}</span>
+              <PersonPicker value={assignee} onChange={(id) => setAssignee(id ? { id, name: '' } : null)} />
+            </div>
+          )}
+          {shows('priority') && (
+            <div className="field">
+              <span className="field-label">{t('Priority')}</span>
+              <PriorityPicker value={priority} onChange={setPriority} />
+            </div>
+          )}
+          {shows('labels') && (
+            <div className="field">
+              <span className="field-label">{t('Labels')}{req('labels')}</span>
+              <LabelsEditor value={labels} onChange={setLabels} />
+            </div>
+          )}
+          {shows('dueDate') && (
+            <div className="field">
+              <span className="field-label">{t('Due')}{req('dueDate')}</span>
+              <DateValue value={due} onChange={setDue} />
+            </div>
+          )}
+          {extraKeys.map((k) => (
+            <div className="field" key={k} style={{ minWidth: 160 }}>
+              <span className="field-label">{requirementLabel(k, project)}{req(k)}</span>
+              <FieldInput k={k} project={project} value={extra[k]} onChange={(v) => setExtra((o) => ({ ...o, [k]: v }))} />
+            </div>
+          ))}
+          {(project.securityLevels?.length ?? 0) > 0 && shows('security') && (
             <div className="field" style={{ minWidth: 180 }}>
               <span className="field-label">{t('Security')}</span>
               <SecurityPicker

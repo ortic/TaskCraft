@@ -385,7 +385,8 @@ table.list tr:hover td { background: var(--bg-soft); }
 .ProseMirror ul, .ProseMirror ol { padding-inline-start: 1.4em; margin: .3em 0; }
 .ProseMirror ul[data-type='taskList'] { list-style: none; padding-inline-start: .2em; }
 .ProseMirror ul[data-type='taskList'] li { display: flex; gap: 8px; align-items: flex-start; }
-.ProseMirror ul[data-type='taskList'] li > label { margin-top: 3px; }
+.ProseMirror ul[data-type='taskList'] li > label { margin-top: 0; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; }
+.ProseMirror ul[data-type='taskList'] li > label input { width: 16px; height: 16px; margin: 0; cursor: pointer; accent-color: var(--accent); }
 .ProseMirror ul[data-type='taskList'] li > div { flex: 1; }
 .ProseMirror blockquote { border-inline-start: 3px solid var(--border-strong); margin: .6em 0; padding: 2px 0 2px 12px; color: var(--text-soft); }
 .ProseMirror code { background: var(--bg-hover); border-radius: 4px; padding: .1em .35em; font-size: .88em; }

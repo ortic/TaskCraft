@@ -213,7 +213,12 @@ export interface Status extends StatusRef {
 
 export interface IssueType extends TypeRef {
   template: any
+  /** fields the type hides and requires (custom fields as `custom:<id>`) */
+  fields?: { hidden?: string[]; required?: string[] }
 }
+
+/** Fields an issue type can hide; all but priority, sprint and security can be required. */
+export const TYPE_FIELDS = ['assignee', 'priority', 'labels', 'sprint', 'version', 'affects', 'component', 'storyPoints', 'estimate', 'startDate', 'dueDate', 'security'] as const
 
 export interface Version {
   id: string

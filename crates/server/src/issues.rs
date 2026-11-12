@@ -1040,7 +1040,11 @@ pub async fn apply(
                     let val = custom_value(&kind, &options, val, &name)?;
                     let old = merged.get(fid).cloned().unwrap_or(Value::Null);
                     if old != val {
-                        changes.push(Change { field: "custom", old: json!({"field": name, "value": old}), new: json!({"field": name, "value": val}) });
+                        changes.push(Change {
+                            field: "custom",
+                            old: json!({"field": name, "id": fid, "value": old}),
+                            new: json!({"field": name, "id": fid, "value": val}),
+                        });
                         if val.is_null() {
                             merged.remove(fid);
                         } else {
@@ -1112,6 +1116,18 @@ pub async fn apply(
     // what it takes to move there: who may, the fields it needs, a comment (people only)
     if let (Some(to), Some(user)) = (moved_to, person) {
         crate::workflow::enforce(tx, user, id, to, comment).await?;
+    }
+    // what its type requires (people only): all of it when creating or changing the type, else
+    // the fields changed can't be emptied
+    if person.is_some() {
+        if quiet || changes.iter().any(|c| c.field == "type") {
+            crate::workflow::enforce_type(tx, id, None).await?;
+        } else {
+            let keys: Vec<String> = changes.iter().filter_map(|c| crate::workflow::requirement_of(c.field, &c.new)).collect();
+            if !keys.is_empty() {
+                crate::workflow::enforce_type(tx, id, Some(&keys)).await?;
+            }
+        }
     }
     if !changes.is_empty() {
         sqlx::query("UPDATE issues SET updated_at = now() WHERE id = $1").bind(id).execute(&mut **tx).await?;

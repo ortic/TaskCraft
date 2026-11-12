@@ -4,9 +4,9 @@
 // the move ({} when there's nothing to ask), or null when the person cancelled.
 import { t } from '../i18n'
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
-import type { Issue, Named, Project, Status, StatusRules } from '../api'
+import type { Issue, Project, Status, StatusRules } from '../api'
 import { Modal, usePeople } from '../ui'
-import { ComponentsPicker, CustomFieldValue, DateValue, NumberValue, PersonPicker, VersionsPicker } from './fields'
+import { ComponentsPicker, CustomFieldValue, DateValue, LabelsEditor, NumberValue, PersonPicker, VersionsPicker } from './fields'
 
 export type { StatusRules }
 
@@ -44,8 +44,18 @@ export function requirementLabel(key: string, project: Project): string {
       return t('Resolution')
     case 'version':
       return t('Release')
+    case 'affects':
+      return t('Found in')
     case 'component':
       return t('Component')
+    case 'labels':
+      return t('Labels')
+    case 'priority':
+      return t('Priority')
+    case 'sprint':
+      return t('Sprint')
+    case 'security':
+      return t('Security')
     case 'dueDate':
       return t('Due date')
     case 'startDate':
@@ -73,6 +83,10 @@ function missing(issue: Issue | null, rules: StatusRules): string[] {
         return !issue.assignee
       case 'version':
         return !(issue.versions ?? []).length
+      case 'affects':
+        return !(issue.affectedVersions ?? []).length
+      case 'labels':
+        return !issue.labels.length
       case 'component':
         return !(issue.components ?? []).length
       case 'dueDate':
@@ -87,6 +101,55 @@ function missing(issue: Issue | null, rules: StatusRules): string[] {
         return k.startsWith('custom:') ? isEmpty(issue.custom?.[k.slice(7)]) : false
     }
   })
+}
+
+/** An input for a field a status or an issue type asks for (values as `toFields` reads them). */
+export function FieldInput({ k, project, value, onChange }: { k: string; project: Project; value: unknown; onChange: (v: unknown) => void }) {
+  const people = usePeople().data ?? []
+  const ids = (value as string[] | undefined) ?? []
+  const field = k.startsWith('custom:') ? project.fields.find((f) => f.id === k.slice(7)) : undefined
+  switch (k) {
+    case 'assignee':
+      return <PersonPicker value={people.find((p) => p.id === value) ?? null} label={requirementLabel(k, project)} onChange={(id) => onChange(id)} allowNone={false} />
+    case 'version':
+    case 'affects':
+      return <VersionsPicker kind={k === 'version' ? 'fix' : 'affects'} project={project} value={project.versions.filter((v) => ids.includes(v.id))} onChange={onChange} />
+    case 'component':
+      return <ComponentsPicker project={project} value={project.components.filter((c) => ids.includes(c.id))} onChange={onChange} />
+    case 'labels':
+      return <LabelsEditor value={ids} onChange={onChange} />
+    case 'dueDate':
+    case 'startDate':
+      return <DateValue value={(value as string) ?? null} onChange={onChange} />
+    case 'estimate':
+      return <NumberValue value={(value as number) ?? null} onChange={onChange} suffix={t('hours')} />
+    case 'storyPoints':
+      return <NumberValue value={(value as number) ?? null} onChange={onChange} />
+    default:
+      return field ? <CustomFieldValue field={field} value={value ?? null} onChange={onChange} /> : null
+  }
+}
+
+/** The values of `FieldInput`s as issue fields to send. */
+export function toFields(values: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  const custom: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(values)) {
+    if (k.startsWith('custom:')) custom[k.slice(7)] = v
+    else if (k === 'assignee') out.assigneeId = v
+    else if (k === 'version') out.versionIds = v
+    else if (k === 'affects') out.affectedVersionIds = v
+    else if (k === 'component') out.componentIds = v
+    else if (k === 'estimate') out.estimateMinutes = v == null ? null : Math.round(Number(v) * 60)
+    else out[k] = v
+  }
+  if (Object.keys(custom).length) out.custom = custom
+  return out
+}
+
+/** Whether a `FieldInput` value counts as filled in. */
+export function isFilled(v: unknown) {
+  return !isEmpty(v)
 }
 
 type Ask = (issue: Issue | null, project: Project, statusId: string) => Promise<Record<string, unknown> | null>
@@ -139,13 +202,8 @@ function TransitionForm({ issue, project, status, rules, fields, onDone }: Pendi
   const [resolution, setResolution] = useState(() => names.find((n) => n.toLowerCase() === rules.resolution?.toLowerCase()) ?? names[0])
   const [comment, setComment] = useState('')
   const [values, setValues] = useState<Record<string, unknown>>({})
-  const [shown, setShown] = useState<Record<string, Named | null>>({})
   const [error, setError] = useState('')
-  const people = usePeople().data ?? []
-  const set = (k: string, v: unknown, label?: Named | null) => {
-    setValues((o) => ({ ...o, [k]: v }))
-    if (label !== undefined) setShown((o) => ({ ...o, [k]: label }))
-  }
+  const set = (k: string, v: unknown) => setValues((o) => ({ ...o, [k]: v }))
   const submit = () => {
     const empty = fields.filter((k) => isEmpty(values[k])).map((k) => requirementLabel(k, project))
     if (rules.comment === 'required' && !comment.trim()) empty.push(t('Comment'))
@@ -153,18 +211,7 @@ function TransitionForm({ issue, project, status, rules, fields, onDone }: Pendi
       setError(t('Still needed: {fields}', { fields: empty.join(', ') }))
       return
     }
-    const out: Record<string, unknown> = {}
-    const custom: Record<string, unknown> = {}
-    for (const k of fields) {
-      const v = values[k]
-      if (k.startsWith('custom:')) custom[k.slice(7)] = v
-      else if (k === 'assignee') out.assigneeId = v
-      else if (k === 'version') out.versionIds = v
-      else if (k === 'component') out.componentIds = v
-      else if (k === 'estimate') out.estimateMinutes = Math.round(Number(v) * 60)
-      else out[k] = v
-    }
-    if (Object.keys(custom).length) out.custom = custom
+    const out = toFields(Object.fromEntries(fields.map((k) => [k, values[k]])))
     if (done) out.resolution = resolution
     if (comment.trim()) out.comment = comment.trim()
     onDone(out)
@@ -191,18 +238,10 @@ function TransitionForm({ issue, project, status, rules, fields, onDone }: Pendi
       >
         {fields.length > 0 && <p className="muted small" style={{ marginTop: 0 }}>{t('{status} needs these filled in:', { status: status.name })}</p>}
         {fields.map((k) => {
-          const label = requirementLabel(k, project)
-          const field = k.startsWith('custom:') ? project.fields.find((f) => f.id === k.slice(7)) : undefined
           return (
             <div className="field" key={k}>
-              <span className="field-label">{label} <span className="tr-req">{t('required')}</span></span>
-              {k === 'assignee' && <PersonPicker value={shown[k] ?? null} label={label} onChange={(id) => set(k, id, id ? people.find((p) => p.id === id) ?? null : null)} allowNone={false} />}
-              {k === 'version' && <VersionsPicker project={project} value={project.versions.filter((v) => ((values[k] as string[]) ?? []).includes(v.id))} onChange={(ids) => set(k, ids)} />}
-              {k === 'component' && <ComponentsPicker project={project} value={project.components.filter((c) => ((values[k] as string[]) ?? []).includes(c.id))} onChange={(ids) => set(k, ids)} />}
-              {(k === 'dueDate' || k === 'startDate') && <DateValue value={(values[k] as string) ?? null} onChange={(d) => set(k, d)} />}
-              {k === 'estimate' && <NumberValue value={(values[k] as number) ?? null} onChange={(n) => set(k, n)} suffix={t('hours')} />}
-              {k === 'storyPoints' && <NumberValue value={(values[k] as number) ?? null} onChange={(n) => set(k, n)} />}
-              {field && <CustomFieldValue field={field} value={values[k] ?? null} onChange={(v) => set(k, v)} />}
+              <span className="field-label">{requirementLabel(k, project)} <span className="tr-req">{t('required')}</span></span>
+              <FieldInput k={k} project={project} value={values[k]} onChange={(v) => set(k, v)} />
             </div>
           )
         })}

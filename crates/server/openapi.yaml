@@ -2538,6 +2538,8 @@ paths:
                     description: Markdown
                   - $ref: '#/components/schemas/PmNode'
                   description: description new issues of this type start with (empty = none)
+                fields:
+                  $ref: '#/components/schemas/TypeFields'
               required:
               - name
       responses:
@@ -2601,6 +2603,8 @@ paths:
                   - $ref: '#/components/schemas/PmNode'
                   - type: 'null'
                   description: empty or null removes it
+                fields:
+                  $ref: '#/components/schemas/TypeFields'
       responses:
         '204':
           description: Done (no content)
@@ -9659,12 +9663,30 @@ components:
           - $ref: '#/components/schemas/PmNode'
           - type: 'null'
           description: description new issues of this type start with
+        fields:
+          $ref: '#/components/schemas/TypeFields'
       required:
       - id
       - name
       - icon
       - color
       - level
+    TypeFields:
+      type: object
+      properties:
+        hidden:
+          type: array
+          items:
+            type: string
+          description: 'fields issues of this type don''t show unless they have a value: assignee, priority, labels, sprint,
+            version, affects, component, storyPoints, estimate, startDate, dueDate, security, custom:<id>'
+        required:
+          type: array
+          items:
+            type: string
+          description: fields people must fill in when creating such an issue or changing an issue to this type, and can't
+            empty (the same names but priority, sprint and security); automation and imports aren't held to them
+      description: Which fields an issue type hides and requires.
     Version:
       type: object
       properties:

@@ -1,7 +1,7 @@
 // An issue in full: title, description, children, links, wiki pages, files, comments, history,
 // time logs, and every field on the side. Used in the side panel and on /issues/:key.
 import { t } from '../i18n'
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -92,6 +92,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
     }
   }
   const estimation = project.settings.estimation ?? 'points'
+  const hiddenFields = project.types.find((x) => x.id === issue.type.id)?.fields?.hidden ?? []
   const isSub = issue.type.level < 0
   const childTypes = project.types.filter((x) => (issue.type.level > 0 ? x.level === 0 : x.level < 0))
   const copyLink = () => {
@@ -245,157 +246,159 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
         </div>
       </div>
 
-      <aside className="issue-side">
-        <div className="row" style={{ marginBottom: 12 }}>
-          <StatusPicker project={project} status={issue.status} disabled={!can} onChange={(id) => void moveTo(id)} />
-          {issue.status.category === 'done' && issue.resolution && (
-            <select
-              className="select input-sm issue-resolution"
-              aria-label={t('Resolution')}
-              title={t('Resolution')}
-              value={issue.resolution}
-              disabled={!can}
-              onChange={(e) => set({ resolution: e.target.value })}
-            >
-              {[...new Set([issue.resolution, ...resolutionsOf(project)])].map((n) => <option key={n} value={n}>{resolutionLabel(n)}</option>)}
-            </select>
-          )}
-          {issue.blocked && (
-            <span className="badge badge-danger" title={t('An open issue blocks this one')}>
-              <Ban size={12} /> {t('Blocked')}
-            </span>
-          )}
-          <span className="spacer" />
-          <button className="icon-btn" title={issue.watching ? t('Stop watching') : t('Watch')} aria-label={issue.watching ? t('Stop watching') : t('Watch')} onClick={async () => { await api.put(`/issues/${issue.key}/watch`, { watching: !issue.watching }); qc.invalidateQueries({ queryKey: ['issue', issue.key] }) }}>
-            {issue.watching ? <Eye size={16} /> : <EyeOff size={16} />}
-          </button>
-          <span className="faint small">{issue.watchers.length}</span>
-          <PopButton className="icon-btn" title={t('More')} label={<Ellipsis size={16} />} align="end" width={230}>
-            {(close) => (
-              <div>
-                <button className="menu-item" onClick={() => { close(); copyLink() }}><Copy size={14} /> {t('Copy link')}</button>
-                {can && (
-                  <button
-                    className="menu-item"
-                    onClick={async () => {
-                      close()
-                      const c = await api.post<Issue>(`/issues/${issue.key}/clone`)
-                      refreshIssues(qc)
-                      toast(t('Created {key}', { key: c.key }))
-                      open(c.key)
-                    }}
-                  >
-                    <Copy size={14} /> {t('Clone')}
-                  </button>
-                )}
-                {can && <button className="menu-item" onClick={() => { close(); setMoving(true) }}><FolderInput size={14} /> {t('Move to another project…')}</button>}
-                {can && may(project, 'deleteIssues') && <button className="menu-item danger" onClick={() => { close(); setDel(true) }}><Trash size={14} /> {t('Delete')}</button>}
-              </div>
-            )}
-          </PopButton>
-        </div>
-
-        {issue.sla?.length > 0 && <SlaList goals={issue.sla} />}
-        <SideField label={t('Assignee')}>
-          <PersonPicker value={issue.assignee} disabled={!can} onChange={(id) => set({ assigneeId: id })} />
-        </SideField>
-        {can && !issue.assignee && me?.user && (
-          <div style={{ margin: '-4px 0 4px 108px' }}>
-            <button className="btn btn-ghost btn-sm" style={{ paddingInline: 4, color: 'var(--accent-text)' }} onClick={() => set({ assigneeId: me.user!.id })}>{t('Assign to me')}</button>
-          </div>
-        )}
-        <SideField label={t('Reporter')}>
-          <PersonPicker value={issue.reporter} disabled={!can} allowNone={false} label={t('Reporter')} onChange={(id) => set({ reporterId: id })} />
-        </SideField>
-        {issue.requester && <RequesterField requester={issue.requester} />}
-        <SideField label={t('Priority')}>
-          <PriorityPicker value={issue.priority} disabled={!can} onChange={(p) => set({ priority: p })} />
-        </SideField>
-        <SideField label={t('Type')}>
-          <TypePicker project={project} value={issue.type} disabled={!can} onChange={(id) => set({ typeId: id })} />
-        </SideField>
-        {issue.type.level <= 0 && (
-          <SideField label={isSub ? t('Parent') : t('Epic')}>
-            <ParentPicker value={issue.parent} disabled={!can} epicsOnly={!isSub} projectKey={issue.projectKey} onChange={(id) => set({ parentId: id })} />
-          </SideField>
-        )}
-        {project.kind === 'scrum' && issue.type.level <= 0 && (
-          <SideField label={t('Sprint')}>
-            <SprintPicker project={project} value={issue.sprint} disabled={!can} onChange={(id) => set({ sprintId: id })} />
-          </SideField>
-        )}
-        {project.versions.length > 0 && (
-          <SideField label={t('Releases')}>
-            <VersionsPicker project={project} value={issue.versions ?? []} disabled={!can} onChange={(ids) => set({ versionIds: ids })} />
-          </SideField>
-        )}
-        {(project.versions.length > 0 || (issue.affectedVersions ?? []).length > 0) && (
-          <SideField label={t('Found in')}>
-            <VersionsPicker kind="affects" project={project} value={issue.affectedVersions ?? []} disabled={!can} onChange={(ids) => set({ affectedVersionIds: ids })} />
-          </SideField>
-        )}
-        {project.components.length > 0 && (
-          <SideField label={t('Components')}>
-            <ComponentsPicker project={project} value={issue.components ?? []} disabled={!can} onChange={(ids) => set({ componentIds: ids })} />
-          </SideField>
-        )}
-        {((project.securityLevels?.length ?? 0) > 0 || issue.security) && (
-          <SideField label={t('Security')}>
-            <SecurityPicker project={project} value={issue.security ?? null} disabled={!can || !may(project, 'setSecurity')} onChange={(id) => set({ securityLevelId: id })} />
-          </SideField>
-        )}
-        <SideField label={t('Labels')}>
-          <LabelsEditor value={issue.labels} disabled={!can} onChange={(l) => set({ labels: l })} />
-        </SideField>
-        {estimation === 'points' ? (
-          <SideField label={t('Story points')}>
-            <NumberValue value={issue.storyPoints} disabled={!can} onChange={(n) => set({ storyPoints: n })} />
-          </SideField>
-        ) : null}
-        <SideField label={t('Estimate')}>
-          <NumberValue value={issue.estimateMinutes != null ? Math.round((issue.estimateMinutes / 60) * 10) / 10 : null} suffix={t('hours')} disabled={!can} onChange={(n) => set({ estimateMinutes: n == null ? null : Math.round(n * 60) })} />
-        </SideField>
-        {(issue.estimateMinutes != null || issue.remainingSet) && (
-          <SideField label={t('Remaining')}>
-            <span className="row" style={{ gap: 6 }}>
-              <NumberValue
-                value={issue.remainingMinutes != null ? Math.round((issue.remainingMinutes / 60) * 10) / 10 : null}
-                suffix={t('hours')}
+      <HiddenFields.Provider value={hiddenFields}>
+        <aside className="issue-side">
+          <div className="row" style={{ marginBottom: 12 }}>
+            <StatusPicker project={project} status={issue.status} disabled={!can} onChange={(id) => void moveTo(id)} />
+            {issue.status.category === 'done' && issue.resolution && (
+              <select
+                className="select input-sm issue-resolution"
+                aria-label={t('Resolution')}
+                title={t('Resolution')}
+                value={issue.resolution}
                 disabled={!can}
-                onChange={(n) => set({ remainingMinutes: n == null ? null : Math.round(n * 60) })}
-              />
-              {issue.remainingSet ? (
-                can && <button className="btn btn-ghost btn-sm" title={t('Follow the estimate minus the time logged again')} onClick={() => set({ remainingMinutes: null })}>{t('Auto')}</button>
-              ) : (
-                <span className="faint small" title={t('The estimate minus the time logged, until someone sets it')}>{t('auto')}</span>
+                onChange={(e) => set({ resolution: e.target.value })}
+              >
+                {[...new Set([issue.resolution, ...resolutionsOf(project)])].map((n) => <option key={n} value={n}>{resolutionLabel(n)}</option>)}
+              </select>
+            )}
+            {issue.blocked && (
+              <span className="badge badge-danger" title={t('An open issue blocks this one')}>
+                <Ban size={12} /> {t('Blocked')}
+              </span>
+            )}
+            <span className="spacer" />
+            <button className="icon-btn" title={issue.watching ? t('Stop watching') : t('Watch')} aria-label={issue.watching ? t('Stop watching') : t('Watch')} onClick={async () => { await api.put(`/issues/${issue.key}/watch`, { watching: !issue.watching }); qc.invalidateQueries({ queryKey: ['issue', issue.key] }) }}>
+              {issue.watching ? <Eye size={16} /> : <EyeOff size={16} />}
+            </button>
+            <span className="faint small">{issue.watchers.length}</span>
+            <PopButton className="icon-btn" title={t('More')} label={<Ellipsis size={16} />} align="end" width={230}>
+              {(close) => (
+                <div>
+                  <button className="menu-item" onClick={() => { close(); copyLink() }}><Copy size={14} /> {t('Copy link')}</button>
+                  {can && (
+                    <button
+                      className="menu-item"
+                      onClick={async () => {
+                        close()
+                        const c = await api.post<Issue>(`/issues/${issue.key}/clone`)
+                        refreshIssues(qc)
+                        toast(t('Created {key}', { key: c.key }))
+                        open(c.key)
+                      }}
+                    >
+                      <Copy size={14} /> {t('Clone')}
+                    </button>
+                  )}
+                  {can && <button className="menu-item" onClick={() => { close(); setMoving(true) }}><FolderInput size={14} /> {t('Move to another project…')}</button>}
+                  {can && may(project, 'deleteIssues') && <button className="menu-item danger" onClick={() => { close(); setDel(true) }}><Trash size={14} /> {t('Delete')}</button>}
+                </div>
               )}
-            </span>
+            </PopButton>
+          </div>
+
+          {issue.sla?.length > 0 && <SlaList goals={issue.sla} />}
+          <SideField label={t('Assignee')} field="assignee" filled={!!issue.assignee}>
+            <PersonPicker value={issue.assignee} disabled={!can} onChange={(id) => set({ assigneeId: id })} />
           </SideField>
-        )}
-        <SideField label={t('Time spent')}>
-          <TimeBar spent={issue.spentMinutes} estimate={issue.estimateMinutes} remaining={issue.remainingMinutes ?? null} />
-        </SideField>
-        <SideField label={t('Start')}>
-          <DateValue value={issue.startDate} disabled={!can} onChange={(d) => set({ startDate: d })} />
-        </SideField>
-        <SideField label={t('Due')}>
-          <DateValue value={issue.dueDate} disabled={!can} highlightOverdue={issue.status.category !== 'done'} onChange={(d) => set({ dueDate: d })} />
-        </SideField>
-        {project.fields.length > 0 && <div className="divider" style={{ margin: '10px 0' }} />}
-        {project.fields.map((f) => (
-          <SideField key={f.id} label={f.name}>
-            <CustomFieldValue field={f} value={issue.custom?.[f.id]} disabled={!can} onChange={(v) => set({ custom: { [f.id]: v } })} />
+          {can && !issue.assignee && me?.user && (
+            <div style={{ margin: '-4px 0 4px 108px' }}>
+              <button className="btn btn-ghost btn-sm" style={{ paddingInline: 4, color: 'var(--accent-text)' }} onClick={() => set({ assigneeId: me.user!.id })}>{t('Assign to me')}</button>
+            </div>
+          )}
+          <SideField label={t('Reporter')}>
+            <PersonPicker value={issue.reporter} disabled={!can} allowNone={false} label={t('Reporter')} onChange={(id) => set({ reporterId: id })} />
           </SideField>
-        ))}
-        <div className="divider" style={{ margin: '12px 0' }} />
-        <div className="faint small col" style={{ gap: 3 }}>
-          <span>{t('Created {when}', { when: dateTime(issue.createdAt) })}</span>
-          <span>{t('Updated {when}', { when: ago(issue.updatedAt) })}</span>
-          {issue.resolvedAt && <span>{t('Resolved {when}', { when: dateTime(issue.resolvedAt) })}</span>}
-          <span>{t('In this status since {when}', { when: ago(issue.statusChangedAt) })}</span>
-          {issue.watchers.length > 0 && <span>{t('Watching: {names}', { names: issue.watchers.map((w) => w.name).join(', ') })}</span>}
-        </div>
-      </aside>
+          {issue.requester && <RequesterField requester={issue.requester} />}
+          <SideField label={t('Priority')} field="priority">
+            <PriorityPicker value={issue.priority} disabled={!can} onChange={(p) => set({ priority: p })} />
+          </SideField>
+          <SideField label={t('Type')}>
+            <TypePicker project={project} value={issue.type} disabled={!can} onChange={(id) => set({ typeId: id })} />
+          </SideField>
+          {issue.type.level <= 0 && (
+            <SideField label={isSub ? t('Parent') : t('Epic')}>
+              <ParentPicker value={issue.parent} disabled={!can} epicsOnly={!isSub} projectKey={issue.projectKey} onChange={(id) => set({ parentId: id })} />
+            </SideField>
+          )}
+          {project.kind === 'scrum' && issue.type.level <= 0 && (
+            <SideField label={t('Sprint')} field="sprint" filled={!!issue.sprint}>
+              <SprintPicker project={project} value={issue.sprint} disabled={!can} onChange={(id) => set({ sprintId: id })} />
+            </SideField>
+          )}
+          {project.versions.length > 0 && (
+            <SideField label={t('Releases')} field="version" filled={(issue.versions ?? []).length > 0}>
+              <VersionsPicker project={project} value={issue.versions ?? []} disabled={!can} onChange={(ids) => set({ versionIds: ids })} />
+            </SideField>
+          )}
+          {(project.versions.length > 0 || (issue.affectedVersions ?? []).length > 0) && (
+            <SideField label={t('Found in')} field="affects" filled={(issue.affectedVersions ?? []).length > 0}>
+              <VersionsPicker kind="affects" project={project} value={issue.affectedVersions ?? []} disabled={!can} onChange={(ids) => set({ affectedVersionIds: ids })} />
+            </SideField>
+          )}
+          {project.components.length > 0 && (
+            <SideField label={t('Components')} field="component" filled={(issue.components ?? []).length > 0}>
+              <ComponentsPicker project={project} value={issue.components ?? []} disabled={!can} onChange={(ids) => set({ componentIds: ids })} />
+            </SideField>
+          )}
+          {((project.securityLevels?.length ?? 0) > 0 || issue.security) && (
+            <SideField label={t('Security')} field="security" filled={!!issue.security}>
+              <SecurityPicker project={project} value={issue.security ?? null} disabled={!can || !may(project, 'setSecurity')} onChange={(id) => set({ securityLevelId: id })} />
+            </SideField>
+          )}
+          <SideField label={t('Labels')} field="labels" filled={issue.labels.length > 0}>
+            <LabelsEditor value={issue.labels} disabled={!can} onChange={(l) => set({ labels: l })} />
+          </SideField>
+          {estimation === 'points' ? (
+            <SideField label={t('Story points')} field="storyPoints" filled={issue.storyPoints != null}>
+              <NumberValue value={issue.storyPoints} disabled={!can} onChange={(n) => set({ storyPoints: n })} />
+            </SideField>
+          ) : null}
+          <SideField label={t('Estimate')} field="estimate" filled={issue.estimateMinutes != null}>
+            <NumberValue value={issue.estimateMinutes != null ? Math.round((issue.estimateMinutes / 60) * 10) / 10 : null} suffix={t('hours')} disabled={!can} onChange={(n) => set({ estimateMinutes: n == null ? null : Math.round(n * 60) })} />
+          </SideField>
+          {(issue.estimateMinutes != null || issue.remainingSet) && (
+            <SideField label={t('Remaining')} field="estimate" filled={issue.estimateMinutes != null}>
+              <span className="row" style={{ gap: 6 }}>
+                <NumberValue
+                  value={issue.remainingMinutes != null ? Math.round((issue.remainingMinutes / 60) * 10) / 10 : null}
+                  suffix={t('hours')}
+                  disabled={!can}
+                  onChange={(n) => set({ remainingMinutes: n == null ? null : Math.round(n * 60) })}
+                />
+                {issue.remainingSet ? (
+                  can && <button className="btn btn-ghost btn-sm" title={t('Follow the estimate minus the time logged again')} onClick={() => set({ remainingMinutes: null })}>{t('Auto')}</button>
+                ) : (
+                  <span className="faint small" title={t('The estimate minus the time logged, until someone sets it')}>{t('auto')}</span>
+                )}
+              </span>
+            </SideField>
+          )}
+          <SideField label={t('Time spent')}>
+            <TimeBar spent={issue.spentMinutes} estimate={issue.estimateMinutes} remaining={issue.remainingMinutes ?? null} />
+          </SideField>
+          <SideField label={t('Start')} field="startDate" filled={!!issue.startDate}>
+            <DateValue value={issue.startDate} disabled={!can} onChange={(d) => set({ startDate: d })} />
+          </SideField>
+          <SideField label={t('Due')} field="dueDate" filled={!!issue.dueDate}>
+            <DateValue value={issue.dueDate} disabled={!can} highlightOverdue={issue.status.category !== 'done'} onChange={(d) => set({ dueDate: d })} />
+          </SideField>
+          {project.fields.length > 0 && <div className="divider" style={{ margin: '10px 0' }} />}
+          {project.fields.map((f) => (
+            <SideField key={f.id} label={f.name} field={`custom:${f.id}`} filled={issue.custom?.[f.id] != null && issue.custom?.[f.id] !== '' && !(Array.isArray(issue.custom?.[f.id]) && issue.custom[f.id].length === 0)}>
+              <CustomFieldValue field={f} value={issue.custom?.[f.id]} disabled={!can} onChange={(v) => set({ custom: { [f.id]: v } })} />
+            </SideField>
+          ))}
+          <div className="divider" style={{ margin: '12px 0' }} />
+          <div className="faint small col" style={{ gap: 3 }}>
+            <span>{t('Created {when}', { when: dateTime(issue.createdAt) })}</span>
+            <span>{t('Updated {when}', { when: ago(issue.updatedAt) })}</span>
+            {issue.resolvedAt && <span>{t('Resolved {when}', { when: dateTime(issue.resolvedAt) })}</span>}
+            <span>{t('In this status since {when}', { when: ago(issue.statusChangedAt) })}</span>
+            {issue.watchers.length > 0 && <span>{t('Watching: {names}', { names: issue.watchers.map((w) => w.name).join(', ') })}</span>}
+          </div>
+        </aside>
+      </HiddenFields.Provider>
       {moving && <MoveDialog issue={issue} inPanel={!!inPanel} onClose={() => setMoving(false)} />}
       {del && (
         <Confirm
@@ -426,7 +429,12 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
   )
 }
 
-function SideField({ label, children }: { label: string; children: React.ReactNode }) {
+/** The fields the issue's type hides (they show while they have a value). */
+const HiddenFields = createContext<string[]>([])
+
+function SideField({ label, children, field, filled }: { label: string; children: React.ReactNode; field?: string; filled?: boolean }) {
+  const hidden = useContext(HiddenFields)
+  if (field && hidden.includes(field) && !filled) return null
   return (
     <div className="side-field">
       <span className="sf-label">{label}</span>
