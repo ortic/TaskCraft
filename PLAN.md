@@ -50,3 +50,15 @@
 - [x] Accessibility audit (axe, WCAG 2.2 AA) in the e2e suite
 - [x] Browser (Playwright) journey tests in CI
 - [x] Backup / restore command (one .tar.gz with every table and the attachments; restores across versions and storage backends); Kubernetes manifests (replicas, S3, PDB, autoscaler, nightly backup job)
+
+## Next (round 3)
+
+- [ ] Releases: container image on GHCR (amd64 + arm64) and Linux binaries on tagged releases, a changelog — the Kubernetes manifests and the website point at that image
+- [ ] Operations: Prometheus metrics (requests, database pool, outboxes, workers), protected by a token
+- [ ] API description: OpenAPI document of the REST API and a browsable reference
+- [ ] Full migration from another tracker's XML site backup: people, projects, issues with their numbers, comments, time logs, attachments, links, watchers, components and versions, and the status history the reports replay
+- [ ] Service desk portal: requesters follow and answer their requests on a small portal (sign-in by e-mailed link), public request forms per project
+- [ ] Chat notifications: post to Slack, Microsoft Teams, Mattermost or Matrix from automation rules and per project
+- [ ] Filter subscriptions: a saved filter's results e-mailed on a schedule
+- [ ] Personal data export (everything about one person) and retention rules for trash, audit log and mail logs
+- [ ] Scale check: a workspace with 100 000 issues — query plans, indexes, timings tracked in CI
