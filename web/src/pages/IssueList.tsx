@@ -6,7 +6,7 @@ import { t } from '../i18n'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Columns3, Download, Rows3, Save, Star, Trash, ArrowUp, ArrowDown, Ellipsis, Share2, ListFilter } from 'lucide-react'
+import { Columns3, Download, Rows3, Save, Star, Trash, ArrowUp, ArrowDown, Ellipsis, Share2, ListFilter, Lock } from 'lucide-react'
 import { api, qs, shortDate, duration, ago, type Issue, type Project, type SavedView, type CustomField } from '../api'
 import { Avatar, Confirm, Empty, ErrorBox, Loading, Modal, PopButton, useMe, usePeople, useProject, useProjects, useToast } from '../ui'
 import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
@@ -29,6 +29,7 @@ const BASE_COLUMNS: { id: ColId; label: () => string; sort?: string }[] = [
   { id: 'sprint', label: () => t('Sprint') },
   { id: 'version', label: () => t('Release') },
   { id: 'labels', label: () => t('Labels') },
+  { id: 'security', label: () => t('Security') },
   { id: 'points', label: () => t('Points'), sort: 'points' },
   { id: 'estimate', label: () => t('Estimate'), sort: 'estimate' },
   { id: 'spent', label: () => t('Spent'), sort: 'spent' },
@@ -391,7 +392,14 @@ function Cell({ col, issue: i, fields, onOpen }: { col: string; issue: Issue; fi
     case 'type':
       return <td style={{ width: 28 }}><TypeIcon icon={i.type.icon} color={i.type.color} title={i.type.name} /></td>
     case 'key':
-      return <td><a className="issue-key" href={`/issues/${i.key}`} onClick={(e) => { e.preventDefault(); onOpen() }} style={{ textDecoration: done ? 'line-through' : undefined }}>{i.key}</a></td>
+      return (
+        <td>
+          <a className="issue-key" href={`/issues/${i.key}`} onClick={(e) => { e.preventDefault(); onOpen() }} style={{ textDecoration: done ? 'line-through' : undefined }}>{i.key}</a>
+          {i.security && <span className="ic-private" title={t('Private ({name})', { name: i.security.name })}><Lock size={12} aria-label={t('Private ({name})', { name: i.security.name })} /></span>}
+        </td>
+      )
+    case 'security':
+      return <td>{i.security ? <span className="row" style={{ gap: 4 }}><Lock size={12} className="faint" aria-hidden />{i.security.name}</span> : <span className="faint">—</span>}</td>
     case 'title':
       return (
         <td style={{ minWidth: 260, maxWidth: 520 }}>

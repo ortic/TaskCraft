@@ -139,6 +139,7 @@ const BUILTIN: &[&str] = &[
     "updated",
     "resolved",
     "resolution",
+    "security",
     "due",
     "duedate",
     "start",
@@ -169,6 +170,18 @@ pub fn push_where(qb: &mut Qb, ctx: &Ctx, q: &Query) -> ApiResult<()> {
     qb.push(" i.deleted_at IS NULL AND i.project_id = ANY(");
     qb.push_bind(ctx.visible.clone());
     qb.push(")");
+    // private issues: for people (automation and schedules act for the project and see them all)
+    if !ctx.user.is_nil() {
+        qb.push(" AND (i.security_level_id IS NULL OR i.reporter_id = ");
+        qb.push_bind(ctx.user);
+        qb.push(" OR i.assignee_id = ");
+        qb.push_bind(ctx.user);
+        qb.push(" OR i.created_by = ");
+        qb.push_bind(ctx.user);
+        qb.push(" OR i.security_level_id IN (SELECT tc_visible_levels(");
+        qb.push_bind(ctx.user);
+        qb.push(")))");
+    }
     if let Some(f) = &q.filter {
         qb.push(" AND ");
         expr(qb, ctx, f)?;
@@ -382,6 +395,18 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
             qb.push(if neg { "NOT (lower(i.resolution) = ANY(" } else { "(lower(i.resolution) = ANY(" });
             qb.push_bind(names);
             qb.push("))");
+        }
+        "security" => {
+            let neg = only_eq(field, op)?;
+            let names: Vec<String> = texts(field, values)?.into_iter().map(|s| s.to_lowercase()).collect();
+            let visible = ctx.visible.clone();
+            member_of(qb, "i.security_level_id", neg, |qb| {
+                qb.push("SELECT id FROM security_levels WHERE project_id = ANY(");
+                qb.push_bind(visible);
+                qb.push(") AND lower(name) = ANY(");
+                qb.push_bind(names);
+                qb.push(")");
+            });
         }
         "category" | "statuscategory" => {
             let neg = only_eq(field, op)?;
@@ -899,6 +924,7 @@ fn empty(qb: &mut Qb, ctx: &Ctx, field: &str, negated: bool) -> ApiResult<()> {
         "start" | "startdate" => "i.start_date",
         "resolved" => "i.resolved_at",
         "resolution" => "i.resolution",
+        "security" => "i.security_level_id",
         "labels" | "label" => {
             qb.push(if negated { "EXISTS" } else { "NOT EXISTS" });
             qb.push(" (SELECT 1 FROM issue_labels l WHERE l.issue_id = i.id)");

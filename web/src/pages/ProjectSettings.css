@@ -213,3 +213,10 @@ a.field-hint { display: inline-flex; align-items: center; gap: 4px; }
 .ps-fieldset input[type=radio], .ps-fieldset input[type=checkbox] { width: 16px; height: 16px; margin: 0; }
 .ps-rule-teams { padding-left: 24px; }
 .ps-rule-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 12px; }
+
+/* security levels */
+.ps-level-row { align-items: center; }
+.ps-level-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.ps-level-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }
+.ps-level-count { white-space: nowrap; }
+.ps-level-people { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

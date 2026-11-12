@@ -3,7 +3,7 @@
 import { t } from '../i18n'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Check, X, Plus } from 'lucide-react'
+import { Check, X, Plus, Lock } from 'lucide-react'
 import { api, PRIORITIES, shortDate, type CustomField, type Issue, type Named, type Priority, type Project, type StatusRef } from '../api'
 import { Avatar, Choices, Lozenge, PopButton, Unassigned, useMe, usePeople } from '../ui'
 import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
@@ -86,6 +86,28 @@ export function PersonPicker({ value, onChange, disabled, allowNone = true, labe
           onPick={(p) => {
             close()
             onChange(p?.id ?? null)
+          }}
+        />
+      )}
+    </PopButton>
+  )
+}
+
+/** A button that adds a person to a list (people already in it aren't offered). */
+export function AddPersonButton({ exclude, onAdd, label }: { exclude: string[]; onAdd: (p: Named) => void; label: string }) {
+  const people = (usePeople().data ?? []).filter((p) => !exclude.includes(p.id))
+  return (
+    <PopButton className="btn btn-sm" title={label} width={260} label={<><Plus size={14} aria-hidden /> {label}</>}>
+      {(close) => (
+        <Choices
+          items={people}
+          placeholder={t('Search people…')}
+          selected={() => false}
+          filterText={(p) => p.name}
+          render={(p) => <PersonLabel person={p} />}
+          onPick={(p) => {
+            close()
+            onAdd({ id: p.id, name: p.name })
           }}
         />
       )}
@@ -179,6 +201,23 @@ export function VersionPicker({ project, value, onChange, disabled }: { project:
 
 export function ComponentPicker({ project, value, onChange, disabled }: { project: Project; value: Named | null; onChange: (id: string | null) => void; disabled?: boolean }) {
   return <SimplePicker items={project.components} value={value} onChange={onChange} disabled={disabled} title={t('Component')} none={t('None')} />
+}
+
+/** A private issue's security level: the levels the person may choose (any of them while creating
+ *  an issue — its reporter keeps seeing it). */
+export function SecurityPicker({ project, value, onChange, disabled, creating }: { project: Project; value: Named | null; onChange: (id: string | null) => void; disabled?: boolean; creating?: boolean }) {
+  const items = (project.securityLevels ?? []).filter((l) => creating || project.role === 'admin' || l.mine || l.id === value?.id)
+  return (
+    <SimplePicker
+      items={items}
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
+      title={t('Security level')}
+      none={t('Not private')}
+      icon={() => <Lock size={13} className="faint" style={{ marginInlineEnd: 6 }} aria-hidden />}
+    />
+  )
 }
 
 export function LabelsEditor({ value, onChange, disabled }: { value: string[]; onChange: (l: string[]) => void; disabled?: boolean }) {

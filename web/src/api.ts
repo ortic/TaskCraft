@@ -134,6 +134,8 @@ export interface Issue {
   statusChangedAt: string
   createdAt: string
   updatedAt: string
+  /** a private issue's security level: who sees it besides its reporter, creator and assignee */
+  security?: Named | null
   childCount: number
   childDone: number
   commentCount: number
@@ -250,6 +252,24 @@ export interface Project extends ProjectSummary {
   sprints: Sprint[]
   boards: { id: string; name: string; kind: 'kanban' | 'scrum' }[]
   transitions: { from: string; to: string }[]
+  securityLevels: SecurityLevel[]
+}
+
+/** Who sees the private issues that carry it — besides project admins and each issue's
+ *  reporter, creator and assignee. */
+export interface SecurityLevel {
+  id: string
+  name: string
+  description: string
+  /** everyone with at least this project role; null: only the teams and people listed */
+  minRole: 'viewer' | 'member' | null
+  teams: Named[]
+  users: Named[]
+  /** new issues get it */
+  isDefault: boolean
+  issueCount: number
+  /** the signed-in person belongs to it (and may choose it) */
+  mine: boolean
 }
 
 export interface BoardColumn {
@@ -425,6 +445,7 @@ export const PROJECT_ACTIONS = {
   manageReleases: { default: 'member', nobody: false },
   moderateComments: { default: 'admin', nobody: true },
   logTimeForOthers: { default: 'admin', nobody: true },
+  setSecurity: { default: 'member', nobody: false },
 } as const
 export type ProjectAction = keyof typeof PROJECT_ACTIONS
 

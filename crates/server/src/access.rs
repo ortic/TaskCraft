@@ -53,13 +53,14 @@ impl Role {
 
 /// Project actions whose minimum role each project chooses (`settings.permissions`): the action,
 /// its default, whether "nobody" is allowed, and how a refusal reads.
-pub const ACTIONS: [(&str, Role, bool, &str); 6] = [
+pub const ACTIONS: [(&str, Role, bool, &str); 7] = [
     ("deleteIssues", Role::Member, false, "delete issues"),
     ("moveIssues", Role::Member, false, "move issues to another project"),
     ("manageSprints", Role::Member, false, "plan, start and complete sprints"),
     ("manageReleases", Role::Member, false, "create, change and release releases"),
     ("moderateComments", Role::Admin, true, "edit or delete other people's comments"),
     ("logTimeForOthers", Role::Admin, true, "log or change time for other people"),
+    ("setSecurity", Role::Member, false, "change who sees an issue"),
 ];
 
 /// Checks a project's `permissions` setting: known actions, member / admin (or nobody where allowed).
@@ -131,4 +132,31 @@ pub async fn can_view(state: &AppState, user_id: Uuid, project: Uuid) -> bool {
         .ok()
         .flatten()
         .is_some_and(|r| r >= 1)
+}
+
+/// SQL condition: the person `uid` (a placeholder like `$1`) sees the issue `alias` as far as its
+/// security level goes — no level, a level they're in (project admins are in all of them), or
+/// they reported, created or are assigned the issue. Their role in its project is checked apart.
+pub fn sees_issue(alias: &str, uid: &str) -> String {
+    format!(
+        "({alias}.security_level_id IS NULL OR {alias}.reporter_id = {uid} OR {alias}.assignee_id = {uid} OR {alias}.created_by = {uid} \
+         OR {alias}.security_level_id IN (SELECT tc_visible_levels({uid})))"
+    )
+}
+
+/// The issues among `ids` that a person sees: their project, and their security level.
+pub async fn visible_issues(state: &AppState, user: Uuid, ids: &[Uuid]) -> ApiResult<std::collections::HashSet<Uuid>> {
+    if ids.is_empty() {
+        return Ok(Default::default());
+    }
+    let sql = format!(
+        "SELECT i.id FROM issues i JOIN tc_project_roles($1) r ON r.project_id = i.project_id AND r.rank >= 1 WHERE i.id = ANY($2) AND {}",
+        sees_issue("i", "$1")
+    );
+    Ok(sqlx::query_scalar::<_, Uuid>(sqlx::AssertSqlSafe(sql)).bind(user).bind(ids).fetch_all(&state.db).await?.into_iter().collect())
+}
+
+/// Whether a person sees one issue (its project and its security level) — for notifications.
+pub async fn sees(state: &AppState, user: Uuid, issue: Uuid) -> bool {
+    visible_issues(state, user, &[issue]).await.is_ok_and(|s| s.contains(&issue))
 }

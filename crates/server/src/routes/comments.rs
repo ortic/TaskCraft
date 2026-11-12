@@ -502,15 +502,17 @@ pub async fn timesheet(State(state): State<AppState>, CurrentUser(user): Current
     let days = q.days.unwrap_or(7).clamp(1, 62);
     let to = from + chrono::Duration::days(days - 1);
     let visible = crate::access::visible_projects(&state, &user).await?;
-    let rows: Vec<(Uuid, String, String, NaiveDate, i64)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String, String, NaiveDate, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT i.id, p.key || '-' || i.number, i.title, w.work_date, sum(w.minutes)::bigint FROM worklogs w JOIN issues i ON i.id = w.issue_id JOIN projects p ON p.id = i.project_id
-          WHERE w.user_id = $1 AND w.work_date BETWEEN $2 AND $3 AND i.project_id = ANY($4)
+          WHERE w.user_id = $1 AND w.work_date BETWEEN $2 AND $3 AND i.project_id = ANY($4) AND {}
           GROUP BY i.id, p.key, i.number, i.title, w.work_date ORDER BY p.key, i.number",
-    )
+        crate::access::sees_issue("i", "$5")
+    )))
     .bind(who)
     .bind(from)
     .bind(to)
     .bind(&visible)
+    .bind(user.id)
     .fetch_all(&state.db)
     .await?;
     let mut issues: Vec<Value> = Vec::new();

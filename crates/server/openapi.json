@@ -4,7 +4,7 @@
   "title": "TaskCraft API",
   "version": "0.1.0",
   "summary": "Self-hosted issue and project management",
-  "description": "Everything the TaskCraft web app does, as a REST API with JSON bodies.\n\n## Base paths\n\n`/api/v1` is the versioned base path for integrations; the web app calls the same API under `/api`. The paths in this\ndocument are relative to either, e.g. `GET /api/v1/issues/WEB-12`. The MCP server for AI assistants lives at `/api/mcp`\n(streamable HTTP, not described here).\n\n## Authentication\n\n- **API token**: `Authorization: Bearer tct_…`, a personal token (*Profile & settings → API tokens*) that acts with its\n  owner's permissions. Read-only tokens may only read (GET, plus `POST /query/validate`); anything else answers 403.\n  API tokens, the password, sessions, two-factor and passkey changes, the two-factor policy and the backup import are\n  managed in the browser only and refuse tokens (403).\n- **Browser session**: the `tc_session` cookie that signing in sets. Requests that change something must also send the\n  header `x-taskcraft: 1` (CSRF protection), else 400.\n- **Public operations** have an empty security requirement (`{}`): health and readiness, first-run setup, the sign-in\n  flows, the service desk portal and request forms (the portal has a session cookie of its own, `tc_portal`), the Git\n  and e-mail-in receivers (they check secrets of their own), metrics (a bearer token of its own) and this document.\n- When the workspace requires two-factor authentication, browser sessions of people without a second factor get 403\n  on everything but setting one up.\n\nResults are always limited to what the caller may see; things they may not see answer 404.\n\n## Issues and rich text\n\nIssues are addressed by key (`WEB-12`; keys an issue had before a move or a project rename keep working) or by id;\nprojects by key or id. Descriptions are ProseMirror / Tiptap JSON (`PmNode`, a document is\n`{\"type\": \"doc\", \"content\": [...]}`); where noted, Markdown (`descriptionMarkdown`, comments' `markdown`) or plain text\nis accepted instead. Writing an issue takes the fields of `IssueFields`; only the fields sent change.\n\n## TQL, the query language\n\nSearch (`GET /search?q=`), CSV export, saved filters, dashboards and automation conditions take TQL, e.g.\n`project = WEB and sprint in openSprints() and assignee = me() order by rank` or\n`type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status\ncategory priority assignee reporter creator labels sprint version component parent/epic points estimate spent created\nupdated resolved resolution due start watcher blocked` and custom fields by name (quoted when they contain spaces). Operators\n`= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions\n`me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,\n`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates like `-7d`, `+2w`,\n`-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n`POST /query/validate` checks a query and `GET /query/suggest` completes field names and values.\n\n## Pagination\n\n`GET /search` pages with `limit` (default 100, at most 1,000) and `offset` and answers `{total, issues}`; other\noperations that take `limit` / `offset` say so. Everything else answers a bounded list (e.g. the latest 60 activity\nentries, the latest 200 trashed issues), as each operation describes.\n\n## Errors\n\nErrors answer with a status code and `{\"error\": \"<code>\", \"message\": \"<text>\"}` (schema `Error`): 400 `bad_request`\n(invalid input; the message says what), 401 `unauthorized`, 403 `forbidden`, 404 `not_found`, 409 `conflict`, 413\n`too_large` (uploads above `TASKCRAFT_MAX_UPLOAD_MB`), 429 `too_many_requests`, 503 `unavailable`, 500 `internal`.\nRequests the framework refuses before they reach the API answer plain text instead: a body that isn't valid JSON (400),\na JSON body without `Content-Type: application/json` (415), a typed body with a missing or mistyped field (422), a\nmalformed id in the path (400) and a body above the server's overall size limit (413).\n\n## Rate limits\n\nFailed sign-ins are limited to 10 per e-mail address in 15 minutes and wrong two-factor codes to 5 per sign-in; both\nanswer 400 with a message. The service desk portal answers 429 for sign-in links (10 requests per IP address per\nquarter hour; at most 3 links go out per address, silently), messages from requesters (30 per hour) and request forms\n(20 per IP address and 5 per e-mail address per hour).\n\n## Webhooks\n\nAdmins register endpoints under `/admin/webhooks` for `issue.created`, `issue.updated`, `issue.deleted`,\n`comment.created`, `sprint.started`, `sprint.completed` and `version.released` (all projects or one). Each delivery is\na JSON `POST` with the `WebhookEvent` body and the headers `X-TaskCraft-Event: <event>` and\n`X-TaskCraft-Signature: sha256=<hex>`, the HMAC-SHA256 of the raw body with the webhook's secret (shown once, when the\nwebhook is created); compare it in constant time. A delivery counts when the endpoint answers 2xx within 10 seconds;\nothers are retried up to 7 times with growing pauses (30 seconds, 2 minutes, 8 minutes, … at most 4 hours; about 11 hours in all).\n\n## Live updates\n\n`GET /events` is a Server-Sent Events stream of changes in the caller's projects (`LiveEvent`); refetch what an event\ntouches.",
+  "description": "Everything the TaskCraft web app does, as a REST API with JSON bodies.\n\n## Base paths\n\n`/api/v1` is the versioned base path for integrations; the web app calls the same API under `/api`. The paths in this\ndocument are relative to either, e.g. `GET /api/v1/issues/WEB-12`. The MCP server for AI assistants lives at `/api/mcp`\n(streamable HTTP, not described here).\n\n## Authentication\n\n- **API token**: `Authorization: Bearer tct_…`, a personal token (*Profile & settings → API tokens*) that acts with its\n  owner's permissions. Read-only tokens may only read (GET, plus `POST /query/validate`); anything else answers 403.\n  API tokens, the password, sessions, two-factor and passkey changes, the two-factor policy and the backup import are\n  managed in the browser only and refuse tokens (403).\n- **Browser session**: the `tc_session` cookie that signing in sets. Requests that change something must also send the\n  header `x-taskcraft: 1` (CSRF protection), else 400.\n- **Public operations** have an empty security requirement (`{}`): health and readiness, first-run setup, the sign-in\n  flows, the service desk portal and request forms (the portal has a session cookie of its own, `tc_portal`), the Git\n  and e-mail-in receivers (they check secrets of their own), metrics (a bearer token of its own) and this document.\n- When the workspace requires two-factor authentication, browser sessions of people without a second factor get 403\n  on everything but setting one up.\n\nResults are always limited to what the caller may see; things they may not see answer 404.\n\n## Issues and rich text\n\nIssues are addressed by key (`WEB-12`; keys an issue had before a move or a project rename keep working) or by id;\nprojects by key or id. Descriptions are ProseMirror / Tiptap JSON (`PmNode`, a document is\n`{\"type\": \"doc\", \"content\": [...]}`); where noted, Markdown (`descriptionMarkdown`, comments' `markdown`) or plain text\nis accepted instead. Writing an issue takes the fields of `IssueFields`; only the fields sent change.\n\n## TQL, the query language\n\nSearch (`GET /search?q=`), CSV export, saved filters, dashboards and automation conditions take TQL, e.g.\n`project = WEB and sprint in openSprints() and assignee = me() order by rank` or\n`type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status\ncategory priority assignee reporter creator labels sprint version component parent/epic points estimate spent created\nupdated resolved resolution security due start watcher blocked` and custom fields by name (quoted when they contain spaces). Operators\n`= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions\n`me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,\n`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates like `-7d`, `+2w`,\n`-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n`POST /query/validate` checks a query and `GET /query/suggest` completes field names and values.\n\n## Pagination\n\n`GET /search` pages with `limit` (default 100, at most 1,000) and `offset` and answers `{total, issues}`; other\noperations that take `limit` / `offset` say so. Everything else answers a bounded list (e.g. the latest 60 activity\nentries, the latest 200 trashed issues), as each operation describes.\n\n## Errors\n\nErrors answer with a status code and `{\"error\": \"<code>\", \"message\": \"<text>\"}` (schema `Error`): 400 `bad_request`\n(invalid input; the message says what), 401 `unauthorized`, 403 `forbidden`, 404 `not_found`, 409 `conflict`, 413\n`too_large` (uploads above `TASKCRAFT_MAX_UPLOAD_MB`), 429 `too_many_requests`, 503 `unavailable`, 500 `internal`.\nRequests the framework refuses before they reach the API answer plain text instead: a body that isn't valid JSON (400),\na JSON body without `Content-Type: application/json` (415), a typed body with a missing or mistyped field (422), a\nmalformed id in the path (400) and a body above the server's overall size limit (413).\n\n## Rate limits\n\nFailed sign-ins are limited to 10 per e-mail address in 15 minutes and wrong two-factor codes to 5 per sign-in; both\nanswer 400 with a message. The service desk portal answers 429 for sign-in links (10 requests per IP address per\nquarter hour; at most 3 links go out per address, silently), messages from requesters (30 per hour) and request forms\n(20 per IP address and 5 per e-mail address per hour).\n\n## Webhooks\n\nAdmins register endpoints under `/admin/webhooks` for `issue.created`, `issue.updated`, `issue.deleted`,\n`comment.created`, `sprint.started`, `sprint.completed` and `version.released` (all projects or one). Each delivery is\na JSON `POST` with the `WebhookEvent` body and the headers `X-TaskCraft-Event: <event>` and\n`X-TaskCraft-Signature: sha256=<hex>`, the HMAC-SHA256 of the raw body with the webhook's secret (shown once, when the\nwebhook is created); compare it in constant time. A delivery counts when the endpoint answers 2xx within 10 seconds;\nothers are retried up to 7 times with growing pauses (30 seconds, 2 minutes, 8 minutes, … at most 4 hours; about 11 hours in all).\n\n## Live updates\n\n`GET /events` is a Server-Sent Events stream of changes in the caller's projects (`LiveEvent`); refetch what an event\ntouches.",
   "license": {
    "name": "MIT OR Apache-2.0",
    "identifier": "MIT OR Apache-2.0"
@@ -3587,7 +3587,7 @@
     "tags": [
      "Project configuration"
     ],
-    "summary": "Put statuses, types, fields or versions in order (project admins)",
+    "summary": "Put statuses, types, fields, versions or security levels in order (project admins)",
     "operationId": "reorderProjectItems",
     "parameters": [
      {
@@ -3610,7 +3610,8 @@
         "statuses",
         "types",
         "fields",
-        "versions"
+        "versions",
+        "security-levels"
        ]
       }
      }
@@ -4403,6 +4404,239 @@
       "schema": {
        "type": "string",
        "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/projects/{key}/security-levels": {
+   "post": {
+    "tags": [
+     "Project configuration"
+    ],
+    "summary": "Add a security level for private issues (project admins)",
+    "operationId": "createSecurityLevel",
+    "parameters": [
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "project key (former keys keep working) or project id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string",
+          "description": "unique in the project, at most 60 characters"
+         },
+         "description": {
+          "type": "string"
+         },
+         "minRole": {
+          "type": "string",
+          "enum": [
+           "viewer",
+           "member"
+          ],
+          "nullable": true,
+          "description": "everyone with at least this project role; null: only the teams and people listed"
+         },
+         "teamIds": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "format": "uuid"
+          }
+         },
+         "userIds": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "format": "uuid"
+          }
+         },
+         "isDefault": {
+          "type": "boolean",
+          "description": "new issues get it (the project's previous default stops being one)"
+         }
+        },
+        "required": [
+         "name"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          }
+         },
+         "required": [
+          "id"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/security-levels/{id}": {
+   "patch": {
+    "tags": [
+     "Project configuration"
+    ],
+    "summary": "Change a security level (project admins)",
+    "operationId": "updateSecurityLevel",
+    "description": "Only the fields sent change.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string",
+          "description": "unique in the project, at most 60 characters"
+         },
+         "description": {
+          "type": "string"
+         },
+         "minRole": {
+          "type": "string",
+          "enum": [
+           "viewer",
+           "member"
+          ],
+          "nullable": true,
+          "description": "everyone with at least this project role; null: only the teams and people listed"
+         },
+         "teamIds": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "format": "uuid"
+          }
+         },
+         "userIds": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "format": "uuid"
+          }
+         },
+         "isDefault": {
+          "type": "boolean",
+          "description": "new issues get it (the project's previous default stops being one)"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "Project configuration"
+    ],
+    "summary": "Delete a security level (project admins)",
+    "operationId": "deleteSecurityLevel",
+    "description": "A level that issues carry needs `replaceWith`: another level of the project for them, or `none` to make them public.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "replaceWith",
+      "in": "query",
+      "required": false,
+      "description": "another security level's id, or none",
+      "schema": {
+       "type": "string"
       }
      }
     ],
@@ -6641,7 +6875,7 @@
     ],
     "summary": "Move an issue to another project",
     "operationId": "moveToProject",
-    "description": "Project members of both projects; not into an archived project. The issue gets a new key (the old one keeps working) and its history moves along; type and status are mapped by name (or given), custom fields kept where the target has a field of the same name and kind, sprint, release and component cleared; sub-tasks move along. Sends `issue.updated` with `previousKey`.",
+    "description": "Project members of both projects; not into an archived project. The issue gets a new key (the old one keeps working) and its history moves along; type and status are mapped by name (or given), custom fields kept where the target has a field of the same name and kind, sprint, release and component cleared; sub-tasks move along. A private issue takes the target's security level of the same name (else its default) and doesn't move without one. Sends `issue.updated` with `previousKey`.",
     "parameters": [
      {
       "name": "key",
@@ -12756,6 +12990,17 @@
       ],
       "description": "why a done issue is done (one of the project's resolutions: Done, Won't do, …); null while open"
      },
+     "security": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Named"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "a private issue's security level (see SecurityLevel); null: everyone in the project sees it"
+     },
      "statusChangedAt": {
       "type": "string",
       "format": "date-time"
@@ -13232,6 +13477,14 @@
       ],
       "format": "uuid"
      },
+     "securityLevelId": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "uuid",
+      "description": "make the issue private with one of the project's security levels, or null to make it public. Creating an issue, any level of the project (the default level applies when left out); changing it later, as the project's `setSecurity` permission allows and only to a level you belong to (project admins: any)"
+     },
      "storyPoints": {
       "type": [
        "number",
@@ -13577,6 +13830,63 @@
      "name"
     ]
    },
+   "SecurityLevel": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "name": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "minRole": {
+      "type": "string",
+      "enum": [
+       "viewer",
+       "member"
+      ],
+      "nullable": true,
+      "description": "everyone with at least this project role sees its issues; null: only the teams and people listed"
+     },
+     "teams": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Named"
+      }
+     },
+     "users": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Named"
+      }
+     },
+     "isDefault": {
+      "type": "boolean",
+      "description": "new issues get it unless the person creating one chooses otherwise"
+     },
+     "issueCount": {
+      "type": "integer",
+      "description": "issues that carry it"
+     },
+     "mine": {
+      "type": "boolean",
+      "description": "the caller belongs to it (and may choose it)"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "minRole",
+     "teams",
+     "users",
+     "isDefault"
+    ],
+    "description": "Private issues: an issue with a security level is seen only by those the level lists, project admins and the issue's reporter, creator and assignee. Everyone else doesn't find it anywhere — not by key, in lists, boards, search, reports that name issues, activity, live updates or notifications."
+   },
    "CustomFieldOption": {
     "type": "object",
     "properties": {
@@ -13817,6 +14127,13 @@
         "items": {
          "$ref": "#/components/schemas/CustomField"
         }
+       },
+       "securityLevels": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/SecurityLevel"
+        },
+        "description": "in order"
        },
        "sprints": {
         "type": "array",
@@ -14941,7 +15258,7 @@
         "nobody"
        ]
       },
-      "description": "who may: deleteIssues, moveIssues, manageSprints, manageReleases (member or admin; default member), moderateComments and logTimeForOthers (member, admin or nobody; default admin). Project admins may whatever members may."
+      "description": "who may: deleteIssues, moveIssues, manageSprints, manageReleases (member or admin; default member), setSecurity (member or admin; default member), moderateComments and logTimeForOthers (member, admin or nobody; default admin). Project admins may whatever members may."
      },
      "resolutions": {
       "type": "array",
@@ -17235,6 +17552,13 @@
      "subtasks": {
       "type": "integer",
       "description": "sub-tasks that move along"
+     },
+     "securityLevel": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "the security level a private issue gets there (the one of the same name, else the target's default); a private issue the target has no level for can't move"
      }
     },
     "required": [

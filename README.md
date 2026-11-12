@@ -60,7 +60,7 @@ login timeout                               (bare words search titles and descri
 
 Fields: `project key title text description comment type status category priority assignee
 reporter creator labels sprint version component parent/epic points estimate spent created
-updated resolved resolution due start watcher blocked` and custom fields. Operators `= != ~ !~ > >= < <=`,
+updated resolved resolution security due start watcher blocked` and custom fields. Operators `= != ~ !~ > >= < <=`,
 `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions:
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`,
 `openSprints()`, `futureSprints()`, `closedSprints()`, `releasedVersions()`,
@@ -136,7 +136,10 @@ the user's permissions. See [AI assistants (MCP)](#ai-assistants-mcp).
 
 **Administration**: workspace owner / admins / members / guests; project roles (viewer, member,
 admin) for people and teams, a default role per project; per project, who may delete or move
-issues, plan sprints, manage releases, edit others' comments and log time for others; comments
+issues, plan sprints, manage releases, edit others' comments, log time for others and change
+who sees an issue; **private issues**: security levels per project (by role, teams or people; a
+default for new issues) — an issue with one is seen only by those, project admins and its
+reporter, creator and assignee, and doesn't show up anywhere for anyone else; comments
 restricted to members, project admins or a team; invitations and password-reset links;
 teams; personal API tokens (read-only or read/write); signed webhooks; audit log. With SMTP
 configured, invitations and password-reset links are e-mailed and people can reset a forgotten

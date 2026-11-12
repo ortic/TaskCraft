@@ -21,6 +21,10 @@ The first release.
   webhooks.
 - **E-mail**: invitations, password reset, notification e-mails and digests; e-mail in for
   support projects with requesters.
+- **Permissions**: project roles for people and teams; per project, who may delete or move
+  issues, plan sprints, manage releases, moderate comments, log time for others and change who
+  sees an issue; private issues (security levels); comments restricted to members, project
+  admins or a team.
 - **Sign-in**: passwords, OpenID Connect, GitHub, LDAP / Active Directory, SAML; two-factor
   authentication and passkeys.
 - **Integrations**: WikiCraft, Git (commits, branches, pull requests by key), an MCP server for

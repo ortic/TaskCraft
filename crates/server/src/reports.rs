@@ -181,14 +181,20 @@ async fn keys(state: &AppState, project: Uuid) -> ApiResult<HashMap<Uuid, String
 }
 
 /// Sprint burndown: remaining work over the sprint, with the ideal line and scope changes.
-pub async fn burndown(state: &AppState, sprint_id: Uuid) -> ApiResult<Value> {
+/// A sprint's burndown; with a `viewer`, steps name only the issues they see.
+pub async fn burndown(state: &AppState, sprint_id: Uuid, viewer: Option<Uuid>) -> ApiResult<Value> {
     let s = sprint(state, sprint_id).await?;
     let now = Utc::now();
     let t0 = s.start_at.unwrap_or(now);
     let t_end = s.completed_at.or(s.end_at).unwrap_or(t0 + Duration::days(14));
     let t1 = s.completed_at.unwrap_or(now).min(t_end.max(now));
     let events = sprint_events(state, sprint_id, s.project_id).await?;
-    let r = replay(&events, sprint_id, t0, t1, &keys(state, s.project_id).await?);
+    let mut keys = keys(state, s.project_id).await?;
+    if let Some(v) = viewer {
+        let seen = crate::access::visible_issues(state, v, &keys.keys().copied().collect::<Vec<_>>()).await?;
+        keys.retain(|id, _| seen.contains(id));
+    }
+    let r = replay(&events, sprint_id, t0, t1, &keys);
     Ok(json!({
         "sprint": {"id": s.id, "name": s.name, "state": s.state, "goal": s.goal, "startAt": s.start_at, "endAt": s.end_at, "completedAt": s.completed_at},
         "unit": if r.use_points { "points" } else { "issues" },
@@ -238,7 +244,7 @@ pub async fn velocity(state: &AppState, project: Uuid, count: i64) -> ApiResult<
 
 /// Figures kept on the sprint when it closes (shown in sprint history).
 pub async fn sprint_stats(state: &AppState, sprint_id: Uuid) -> ApiResult<Value> {
-    let b = burndown(state, sprint_id).await?;
+    let b = burndown(state, sprint_id, None).await?;
     Ok(json!({
         "unit": b["unit"], "committed": b["committed"], "completed": b["completed"],
         "committedIssues": b["committedIssues"], "completedIssues": b["completedIssues"], "added": b["added"], "removed": b["removed"]
@@ -304,7 +310,9 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
 
 /// Cycle time (first "in progress" → done) and lead time (created → done) of issues finished
 /// in the last `days` days.
-pub async fn cycle_time(state: &AppState, project: Uuid, days: i64) -> ApiResult<Value> {
+/// Cycle and lead times of the issues resolved in the last `days`; with a `viewer`, the list
+/// names only the issues they see (the figures count all of them).
+pub async fn cycle_time(state: &AppState, project: Uuid, days: i64, viewer: Option<Uuid>) -> ApiResult<Value> {
     let since = Utc::now() - Duration::days(days.clamp(7, 730));
     let done: Vec<(Uuid, String, String, DateTime<Utc>, DateTime<Utc>, String)> = sqlx::query_as(
         "SELECT i.id, p.key || '-' || i.number, i.title, i.created_at, i.resolved_at, it.name FROM issues i JOIN projects p ON p.id = i.project_id
@@ -324,6 +332,10 @@ pub async fn cycle_time(state: &AppState, project: Uuid, days: i64) -> ApiResult
     .fetch_all(&state.db)
     .await?;
     let started: HashMap<Uuid, DateTime<Utc>> = started.into_iter().collect();
+    let seen = match viewer {
+        Some(v) => Some(crate::access::visible_issues(state, v, &ids).await?),
+        None => None,
+    };
     let to_days = |d: Duration| (d.num_minutes() as f64 / 1440.0 * 10.0).round() / 10.0;
     let mut points = Vec::new();
     let mut cycles = Vec::new();
@@ -334,7 +346,9 @@ pub async fn cycle_time(state: &AppState, project: Uuid, days: i64) -> ApiResult
         let lead = to_days(resolved - created);
         cycles.push(cycle);
         leads.push(lead);
-        points.push(json!({"key": key, "title": title, "type": kind, "resolvedAt": resolved, "cycleDays": cycle, "leadDays": lead}));
+        if seen.as_ref().is_none_or(|s| s.contains(&id)) {
+            points.push(json!({"key": key, "title": title, "type": kind, "resolvedAt": resolved, "cycleDays": cycle, "leadDays": lead}));
+        }
     }
     cycles.sort_by(|a, b| a.total_cmp(b));
     leads.sort_by(|a, b| a.total_cmp(b));

@@ -139,3 +139,96 @@ async fn restricted_comments_reach_only_those_they_are_for() {
     let found: serde_json::Value = max.get(app.url("/search")).query(&[("q", "comment ~ \"token X\"")]).send().await.unwrap().json().await.unwrap();
     assert_eq!(found["total"], 0);
 }
+
+#[tokio::test]
+async fn private_issues_are_seen_only_by_those_they_are_for() {
+    let app = spawn().await;
+    let admin = app.setup(false).await;
+    post(&admin, app.url("/projects"), json!({"key": "SEC", "name": "Secrets", "template": "scrum"})).await;
+    post(&admin, app.url("/projects"), json!({"key": "PUB", "name": "Public", "template": "kanban"})).await;
+    let (mia, mia_id) = app.user(&admin, "Mia Member", "mia@example.com", "member").await;
+    let (max, max_id) = app.user(&admin, "Max Member", "max@example.com", "member").await;
+    let (sam, sam_id) = app.user(&admin, "Sam Member", "sam@example.com", "member").await;
+    let sec_team = post(&admin, app.url("/teams"), json!({"name": "Security", "memberIds": [sam_id]})).await;
+
+    // levels: checked, unique, a team's
+    let (s, _) = send(&admin, Method::POST, app.url("/projects/SEC/security-levels"), json!({"name": "x", "minRole": "admin"})).await;
+    assert_eq!(s, 400);
+    assert_eq!(send(&mia, Method::POST, app.url("/projects/SEC/security-levels"), json!({"name": "Mine"})).await.0, 403, "admins only");
+    let team = post(&admin, app.url("/projects/SEC/security-levels"), json!({"name": "Security team", "teamIds": [sec_team["id"]]})).await;
+    let team_id = team["id"].as_str().unwrap().to_string();
+    assert_eq!(send(&admin, Method::POST, app.url("/projects/SEC/security-levels"), json!({"name": "security TEAM"})).await.0, 400);
+    let staff = post(&admin, app.url("/projects/SEC/security-levels"), json!({"name": "Staff", "minRole": "member"})).await;
+    let leads = post(&admin, app.url("/projects/SEC/security-levels"), json!({"name": "Leads", "userIds": [max_id]})).await;
+
+    // Mia files a vulnerability right into the security team's level: she keeps seeing it
+    let key = post(&mia, app.url("/issues"), json!({"projectKey": "SEC", "title": "Token leak in logs", "securityLevelId": team_id})).await["key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let open = post(&mia, app.url("/issues"), json!({"projectKey": "SEC", "title": "Public typo"})).await["key"].as_str().unwrap().to_string();
+    assert_eq!(get(&mia, app.url(&format!("/issues/{key}"))).await["security"]["name"], "Security team");
+    assert_eq!(get(&sam, app.url(&format!("/issues/{key}"))).await["key"], key.as_str(), "the team sees it");
+    assert_eq!(send(&max, Method::GET, app.url(&format!("/issues/{key}")), json!(null)).await.0, 404, "others don't");
+    assert_eq!(send(&max, Method::POST, app.url(&format!("/issues/{key}/comments")), json!({"markdown": "hi"})).await.0, 404);
+    let search = |c: &reqwest::Client, q: &str| {
+        let (c, url, q) = (c.clone(), app.url("/search"), q.to_string());
+        async move {
+            let v: serde_json::Value = c.get(url).query(&[("q", q.as_str())]).send().await.unwrap().json().await.unwrap();
+            v["issues"].as_array().unwrap().iter().map(|i| i["key"].as_str().unwrap().to_string()).collect::<Vec<_>>()
+        }
+    };
+    assert_eq!(search(&max, "project = SEC").await, vec![open.clone()]);
+    assert_eq!(search(&admin, "project = SEC and security = \"Security team\"").await, vec![key.clone()]);
+    assert_eq!(search(&sam, "project = SEC and security is empty").await, vec![open.clone()]);
+    let activity = get(&max, app.url("/activity")).await.to_string();
+    assert!(!activity.contains("Token leak") && activity.contains("Public typo"), "{activity}");
+
+    // a comment notifies only those who see the issue
+    for w in [&max_id, &sam_id] {
+        send(&admin, Method::PUT, app.url(&format!("/issues/{key}/watch")), json!({"watching": true, "userId": w})).await;
+    }
+    post(&admin, app.url(&format!("/issues/{key}/comments")), json!({"markdown": "rotating the token now"})).await;
+    assert!(get(&sam, app.url("/notifications")).await.to_string().contains("rotating"));
+    assert!(!get(&max, app.url("/notifications")).await.to_string().contains("rotating"));
+
+    // changing the level: only to one you're in, and as the project allows
+    let (s, v) = send(&sam, Method::PATCH, app.url(&format!("/issues/{key}")), json!({"securityLevelId": leads["id"]})).await;
+    assert_eq!(s, 403, "Sam isn't one of the leads… {v}");
+    let (s, _) = send(&max, Method::PATCH, app.url(&format!("/issues/{open}")), json!({"securityLevelId": leads["id"]})).await;
+    assert_eq!(s, 200, "…Max is");
+    patch(&admin, app.url("/projects/SEC"), json!({"settings": {"permissions": {"setSecurity": "admin"}}})).await;
+    assert_eq!(send(&max, Method::PATCH, app.url(&format!("/issues/{open}")), json!({"securityLevelId": null})).await.0, 403);
+    patch(&admin, app.url("/projects/SEC"), json!({"settings": {"permissions": {}}})).await;
+    let history = get(&admin, app.url(&format!("/issues/{open}/history"))).await.to_string();
+    assert!(history.contains("security") && history.contains("Leads"), "{history}");
+
+    // a copy is just as private; a default level applies to new issues
+    let copy = post(&sam, app.url(&format!("/issues/{key}/clone")), json!({})).await;
+    assert_eq!(copy["security"]["name"], "Security team");
+    patch(&admin, app.url(&format!("/security-levels/{team_id}")), json!({"isDefault": true})).await;
+    let fresh = post(&max, app.url("/issues"), json!({"projectKey": "SEC", "title": "Default private"})).await;
+    assert_eq!(fresh["security"]["name"], "Security team");
+    assert_eq!(get(&max, app.url(&format!("/issues/{}", fresh["key"].as_str().unwrap()))).await["key"], fresh["key"], "its reporter sees it");
+
+    // moving: the target needs a level of the same name (or a default)
+    let (s, v) = send(&admin, Method::POST, app.url(&format!("/issues/{key}/move-project")), json!({"projectKey": "PUB"})).await;
+    assert_eq!(s, 400, "{v}");
+    post(&admin, app.url("/projects/PUB/security-levels"), json!({"name": "Security Team", "teamIds": [sec_team["id"]]})).await;
+    let moved = post(&admin, app.url(&format!("/issues/{key}/move-project")), json!({"projectKey": "PUB"})).await;
+    assert_eq!(moved["security"]["name"], "Security Team");
+    assert_eq!(send(&max, Method::GET, app.url(&format!("/issues/{}", moved["key"].as_str().unwrap())), json!(null)).await.0, 404);
+
+    // deleting a level in use needs a replacement (or making its issues public)
+    let (s, v) = send(&admin, Method::DELETE, app.url(&format!("/security-levels/{team_id}")), json!(null)).await;
+    assert_eq!(s, 400, "{v}");
+    let (s, _) = send(&admin, Method::DELETE, app.url(&format!("/security-levels/{team_id}?replaceWith={}", staff["id"].as_str().unwrap())), json!(null)).await;
+    assert_eq!(s, 204);
+    assert_eq!(get(&max, app.url(&format!("/issues/{}", copy["key"].as_str().unwrap()))).await["security"]["name"], "Staff");
+    let p = get(&mia, app.url("/projects/SEC")).await;
+    let levels = p["securityLevels"].as_array().unwrap();
+    assert_eq!(levels.len(), 2);
+    assert_eq!((levels[0]["name"].as_str(), levels[0]["mine"].as_bool()), (Some("Staff"), Some(true)), "members are staff");
+    assert_eq!((levels[1]["name"].as_str(), levels[1]["mine"].as_bool()), (Some("Leads"), Some(false)));
+    let _ = mia_id;
+}

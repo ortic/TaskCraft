@@ -140,6 +140,7 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
             .bind(p.id)
             .fetch_all(&state.db)
             .await?;
+    let security_levels = security_levels(&state, &user, p.id).await?;
     let sprints: Vec<(Uuid, String, Option<String>, String, Option<chrono::DateTime<chrono::Utc>>, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
         "SELECT id, name, goal, state, start_at, end_at FROM sprints WHERE project_id = $1 AND state <> 'closed' ORDER BY state = 'active' DESC, position, created_at",
     )
@@ -170,6 +171,7 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
             "versions": versions.iter().map(|(id, n, d, s, sd, rd, ra)| json!({"id": id, "name": n, "description": d, "status": s, "startDate": sd, "releaseDate": rd, "releasedAt": ra})).collect::<Vec<_>>(),
             "components": components.iter().map(|(id, n, d, l)| json!({"id": id, "name": n, "description": d, "leadId": l})).collect::<Vec<_>>(),
             "fields": fields.iter().map(|(id, n, k, o, d)| json!({"id": id, "name": n, "kind": k, "options": o, "description": d})).collect::<Vec<_>>(),
+            "securityLevels": security_levels,
             "sprints": sprints.iter().map(|(id, n, g, s, sa, ea)| json!({"id": id, "name": n, "goal": g, "state": s, "startAt": sa, "endAt": ea})).collect::<Vec<_>>(),
             "boards": boards.iter().map(|(id, n, k)| json!({"id": id, "name": n, "kind": k})).collect::<Vec<_>>(),
             "transitions": transitions.iter().map(|(f, t)| json!({"from": f, "to": t})).collect::<Vec<_>>(),
@@ -784,6 +786,7 @@ pub async fn reorder(
         "types" => "issue_types",
         "fields" => "custom_fields",
         "versions" => "versions",
+        "security-levels" => "security_levels",
         _ => return Err(ApiError::NotFound("list")),
     };
     let ids: Vec<Uuid> = serde_json::from_value(req["ids"].clone())?;
@@ -1103,6 +1106,252 @@ pub async fn update_component(
 pub async fn delete_component(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>) -> ApiResult<StatusCode> {
     let project = status_project(&state, &user, id, "components").await?;
     sqlx::query("DELETE FROM components WHERE id = $1").bind(id).execute(&state.db).await?;
+    changed(&state, &user, project).await;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---- security levels (private issues) ----
+
+/// The project's security levels: who each is for, how many issues carry it and whether the
+/// caller belongs to it (and so may choose it).
+async fn security_levels(state: &AppState, user: &User, project: Uuid) -> ApiResult<Vec<Value>> {
+    #[derive(sqlx::FromRow)]
+    struct L {
+        id: Uuid,
+        name: String,
+        description: String,
+        min_rank: Option<i32>,
+        is_default: bool,
+        teams: Value,
+        users: Value,
+        issues: i64,
+        mine: bool,
+    }
+    let rows: Vec<L> = sqlx::query_as(
+        "SELECT l.id, l.name, l.description, l.min_rank, l.is_default,
+                COALESCE((SELECT json_agg(json_build_object('id', t.id, 'name', t.name) ORDER BY lower(t.name)) FROM teams t WHERE t.id = ANY(l.team_ids)), '[]') AS teams,
+                COALESCE((SELECT json_agg(json_build_object('id', u.id, 'name', u.name) ORDER BY lower(u.name)) FROM users u WHERE u.id = ANY(l.user_ids)), '[]') AS users,
+                (SELECT count(*) FROM issues i WHERE i.security_level_id = l.id AND i.deleted_at IS NULL) AS issues,
+                l.id IN (SELECT tc_visible_levels($2)) AS mine
+           FROM security_levels l WHERE l.project_id = $1 ORDER BY l.position, lower(l.name)",
+    )
+    .bind(project)
+    .bind(user.id)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|l| {
+            let min_role = match l.min_rank {
+                Some(1) => json!("viewer"),
+                Some(2) => json!("member"),
+                _ => Value::Null,
+            };
+            json!({"id": l.id, "name": l.name, "description": l.description, "minRole": min_role, "isDefault": l.is_default,
+                   "teams": l.teams, "users": l.users, "issueCount": l.issues, "mine": l.mine})
+        })
+        .collect())
+}
+
+/// Checks the parts of a security level a request sets.
+struct LevelInput {
+    name: Option<String>,
+    description: Option<String>,
+    min_rank: Option<Option<i32>>,
+    team_ids: Option<Vec<Uuid>>,
+    user_ids: Option<Vec<Uuid>>,
+    is_default: Option<bool>,
+}
+
+async fn level_input(state: &AppState, user: &User, req: &Value) -> ApiResult<LevelInput> {
+    let name = match req.get("name") {
+        None => None,
+        Some(n) => {
+            let n = n.as_str().map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| ApiError::bad("a security level needs a name"))?;
+            if n.chars().count() > 60 {
+                return Err(ApiError::bad("security level names are at most 60 characters"));
+            }
+            Some(n.to_string())
+        }
+    };
+    let min_rank = match req.get("minRole") {
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(r) => Some(Some(match r.as_str() {
+            Some("viewer") => 1,
+            Some("member") => 2,
+            _ => return Err(ApiError::bad("minRole must be viewer, member or null")),
+        })),
+    };
+    let ids = |k: &str| -> ApiResult<Option<Vec<Uuid>>> {
+        match req.get(k) {
+            None => Ok(None),
+            Some(v) => serde_json::from_value::<Vec<Uuid>>(v.clone()).map(Some).map_err(|_| ApiError::bad(format!("{k} must be a list of ids"))),
+        }
+    };
+    let (team_ids, user_ids) = (ids("teamIds")?, ids("userIds")?);
+    if let Some(t) = &team_ids {
+        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM teams WHERE id = ANY($1) AND workspace_id = $2")
+            .bind(t)
+            .bind(user.workspace_id)
+            .fetch_one(&state.db)
+            .await?;
+        if n != t.len() as i64 {
+            return Err(ApiError::bad("unknown team"));
+        }
+    }
+    if let Some(u) = &user_ids {
+        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM users WHERE id = ANY($1) AND workspace_id = $2")
+            .bind(u)
+            .bind(user.workspace_id)
+            .fetch_one(&state.db)
+            .await?;
+        if n != u.len() as i64 {
+            return Err(ApiError::bad("unknown person"));
+        }
+    }
+    let description = match req.get("description") {
+        None => None,
+        Some(Value::Null) => Some(String::new()),
+        Some(d) => Some(d.as_str().ok_or_else(|| ApiError::bad("description must be text"))?.trim().chars().take(500).collect()),
+    };
+    let is_default = match req.get("isDefault") {
+        None => None,
+        Some(d) => Some(d.as_bool().ok_or_else(|| ApiError::bad("isDefault must be true or false"))?),
+    };
+    Ok(LevelInput { name, description, min_rank, team_ids, user_ids, is_default })
+}
+
+fn duplicate_level(e: sqlx::Error) -> ApiError {
+    match &e {
+        sqlx::Error::Database(d) if d.is_unique_violation() => ApiError::bad("the project has a security level of that name"),
+        _ => e.into(),
+    }
+}
+
+async fn save_level(tx: &mut Transaction<'_, Postgres>, id: Uuid, project: Uuid, i: &LevelInput) -> ApiResult<()> {
+    if let Some(n) = &i.name {
+        sqlx::query("UPDATE security_levels SET name = $2 WHERE id = $1").bind(id).bind(n).execute(&mut **tx).await.map_err(duplicate_level)?;
+    }
+    if let Some(d) = &i.description {
+        sqlx::query("UPDATE security_levels SET description = $2 WHERE id = $1").bind(id).bind(d).execute(&mut **tx).await?;
+    }
+    if let Some(r) = i.min_rank {
+        sqlx::query("UPDATE security_levels SET min_rank = $2 WHERE id = $1").bind(id).bind(r).execute(&mut **tx).await?;
+    }
+    if let Some(t) = &i.team_ids {
+        sqlx::query("UPDATE security_levels SET team_ids = $2 WHERE id = $1").bind(id).bind(t).execute(&mut **tx).await?;
+    }
+    if let Some(u) = &i.user_ids {
+        sqlx::query("UPDATE security_levels SET user_ids = $2 WHERE id = $1").bind(id).bind(u).execute(&mut **tx).await?;
+    }
+    if let Some(d) = i.is_default {
+        if d {
+            sqlx::query("UPDATE security_levels SET is_default = false WHERE project_id = $1").bind(project).execute(&mut **tx).await?;
+        }
+        sqlx::query("UPDATE security_levels SET is_default = $2 WHERE id = $1").bind(id).bind(d).execute(&mut **tx).await?;
+    }
+    Ok(())
+}
+
+pub async fn create_security_level(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(key): Path<String>,
+    Json(req): Json<Value>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let (p, _) = by_key(&state, &user, &key, Role::Admin).await?;
+    let input = level_input(&state, &user, &req).await?;
+    let name = input.name.clone().ok_or_else(|| ApiError::bad("a security level needs a name"))?;
+    let id = new_id();
+    let mut tx = state.db.begin().await?;
+    sqlx::query(
+        "INSERT INTO security_levels (id, project_id, name, position) VALUES ($1, $2, $3, (SELECT COALESCE(max(position), 0) + 1 FROM security_levels WHERE project_id = $2))",
+    )
+    .bind(id)
+    .bind(p.id)
+    .bind(&name)
+    .execute(&mut *tx)
+    .await
+    .map_err(duplicate_level)?;
+    save_level(&mut tx, id, p.id, &input).await?;
+    tx.commit().await?;
+    audit(&state, user.workspace_id, Some(user.id), "project.security_level", Some(p.key), json!({"created": name})).await;
+    changed(&state, &user, p.id).await;
+    Ok((StatusCode::CREATED, Json(json!({"id": id}))))
+}
+
+pub async fn update_security_level(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<Value>,
+) -> ApiResult<StatusCode> {
+    let project = status_project(&state, &user, id, "security_levels").await?;
+    let input = level_input(&state, &user, &req).await?;
+    let mut tx = state.db.begin().await?;
+    save_level(&mut tx, id, project, &input).await?;
+    tx.commit().await?;
+    let name: String = sqlx::query_scalar("SELECT name FROM security_levels WHERE id = $1").bind(id).fetch_one(&state.db).await?;
+    audit(&state, user.workspace_id, Some(user.id), "project.security_level", Some(name), json!({"changed": req})).await;
+    changed(&state, &user, project).await;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteLevel {
+    /// what the level's issues get instead: another level's id, or `none` to make them public
+    replace_with: Option<String>,
+}
+
+/// Deletes a security level. Issues that carry it get another level (`replaceWith`) or become
+/// public (`replaceWith=none`); without either, a level in use stays.
+pub async fn delete_security_level(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+    Query(q): Query<DeleteLevel>,
+) -> ApiResult<StatusCode> {
+    let project = status_project(&state, &user, id, "security_levels").await?;
+    let mut tx = state.db.begin().await?;
+    let in_use: i64 = sqlx::query_scalar("SELECT count(*) FROM issues WHERE security_level_id = $1").bind(id).fetch_one(&mut *tx).await?;
+    if in_use > 0 {
+        let to = match q.replace_with.as_deref() {
+            None => {
+                return Err(ApiError::bad(format!(
+                    "{in_use} issue{} carry this level: choose a level to give them instead, or make them public",
+                    if in_use == 1 { "" } else { "s" }
+                )));
+            }
+            Some("none") => None,
+            Some(other) => {
+                let to: Uuid = other.parse().map_err(|_| ApiError::bad("replaceWith must be a security level id or none"))?;
+                let ok: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM security_levels WHERE id = $1 AND project_id = $2 AND id <> $3)")
+                    .bind(to)
+                    .bind(project)
+                    .bind(id)
+                    .fetch_one(&mut *tx)
+                    .await?;
+                if !ok {
+                    return Err(ApiError::bad("unknown security level for this project"));
+                }
+                Some(to)
+            }
+        };
+        sqlx::query("UPDATE issues SET security_level_id = $2 WHERE security_level_id = $1").bind(id).bind(to).execute(&mut *tx).await?;
+    }
+    let name: String = sqlx::query_scalar("DELETE FROM security_levels WHERE id = $1 RETURNING name").bind(id).fetch_one(&mut *tx).await?;
+    tx.commit().await?;
+    audit(
+        &state,
+        user.workspace_id,
+        Some(user.id),
+        "project.security_level",
+        Some(name),
+        json!({"deleted": true, "issues": in_use, "replaceWith": q.replace_with}),
+    )
+    .await;
     changed(&state, &user, project).await;
     Ok(StatusCode::NO_CONTENT)
 }

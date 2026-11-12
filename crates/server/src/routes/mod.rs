@@ -90,6 +90,7 @@ pub fn api() -> Router<AppState> {
         .route("/projects/{key}/versions", post(projects::create_version))
         .route("/projects/{key}/components", post(projects::create_component))
         .route("/projects/{key}/fields", post(projects::create_field))
+        .route("/projects/{key}/security-levels", post(projects::create_security_level))
         .route("/projects/{key}/automation", get(projects::rules).post(projects::create_rule))
         .route("/projects/{key}/boards", post(boards::create))
         .route("/projects/{key}/backlog", get(boards::backlog))
@@ -110,6 +111,7 @@ pub fn api() -> Router<AppState> {
         .route("/versions/{id}/wiki-page", post(integrations::version_page))
         .route("/components/{id}", patch(projects::update_component).delete(projects::delete_component))
         .route("/fields/{id}", patch(projects::update_field).delete(projects::delete_field))
+        .route("/security-levels/{id}", patch(projects::update_security_level).delete(projects::delete_security_level))
         .route("/automation/{id}", patch(projects::update_rule).delete(projects::delete_rule))
         .route("/labels", get(projects::labels))
         // boards and sprints

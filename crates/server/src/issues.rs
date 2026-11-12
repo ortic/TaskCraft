@@ -26,6 +26,7 @@ pub const SELECT: &str = "SELECT i.id, i.number, i.project_id, p.key AS project_
        i.component_id, c.name AS component_name,
        i.story_points, i.estimate_minutes, i.spent_minutes, i.start_date, i.due_date, i.rank, i.custom,
        i.resolved_at, i.resolution, i.status_changed_at, i.created_at, i.updated_at,
+       i.security_level_id, sl.name AS security_level_name, (par.security_level_id IS NOT NULL) AS parent_private,
        COALESCE((SELECT array_agg(l.label ORDER BY l.label) FROM issue_labels l WHERE l.issue_id = i.id), '{}') AS labels,
        (SELECT count(*) FROM issues ch WHERE ch.parent_id = i.id AND ch.deleted_at IS NULL) AS child_count,
        (SELECT count(*) FROM issues ch JOIN statuses chs ON chs.id = ch.status_id WHERE ch.parent_id = i.id AND ch.deleted_at IS NULL AND chs.category = 'done') AS child_done,
@@ -44,7 +45,8 @@ pub const SELECT: &str = "SELECT i.id, i.number, i.project_id, p.key AS project_
   LEFT JOIN issue_types pt ON pt.id = par.type_id
   LEFT JOIN sprints sp ON sp.id = i.sprint_id
   LEFT JOIN versions v ON v.id = i.version_id
-  LEFT JOIN components c ON c.id = i.component_id";
+  LEFT JOIN components c ON c.id = i.component_id
+  LEFT JOIN security_levels sl ON sl.id = i.security_level_id";
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Row {
@@ -92,6 +94,9 @@ pub struct Row {
     pub status_changed_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub security_level_id: Option<Uuid>,
+    pub security_level_name: Option<String>,
+    pub parent_private: Option<bool>,
     pub labels: Vec<String>,
     pub child_count: i64,
     pub child_done: i64,
@@ -183,6 +188,10 @@ pub struct Summary {
     pub status_changed_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// a private issue's security level: who sees it besides its reporter, creator and assignee
+    pub security: Option<Named>,
+    #[serde(skip)]
+    pub parent_private: bool,
     pub child_count: i64,
     pub child_done: i64,
     pub comment_count: i64,
@@ -226,6 +235,8 @@ pub fn summary(state: &AppState, r: Row) -> Summary {
         status_changed_at: r.status_changed_at,
         created_at: r.created_at,
         updated_at: r.updated_at,
+        security: r.security_level_id.map(|id| Named { id, name: r.security_level_name.unwrap_or_default() }),
+        parent_private: r.parent_private.unwrap_or(false),
         child_count: r.child_count,
         child_done: r.child_done,
         comment_count: r.comment_count,
@@ -248,6 +259,26 @@ pub async fn load_many(state: &AppState, ids: &[Uuid]) -> ApiResult<Vec<Summary>
         .fetch_all(&state.db)
         .await?;
     Ok(rows.into_iter().map(|r| summary(state, r)).collect())
+}
+
+/// The issues of `list` a person sees (see [`access::sees_issue`]); the title of a private parent
+/// they don't see is left out.
+pub async fn for_user(state: &AppState, user: Uuid, mut list: Vec<Summary>) -> ApiResult<Vec<Summary>> {
+    let mut ids: Vec<Uuid> = list.iter().map(|s| s.id).collect();
+    ids.extend(list.iter().filter(|s| s.parent_private).filter_map(|s| s.parent.as_ref().map(|p| p.id)));
+    let seen = access::visible_issues(state, user, &ids).await?;
+    list.retain(|s| seen.contains(&s.id));
+    for s in &mut list {
+        if let Some(p) = s.parent.as_mut().filter(|p| s.parent_private && !seen.contains(&p.id)) {
+            p.title = String::new();
+        }
+    }
+    Ok(list)
+}
+
+/// [`load_many`] for a person: only the issues they see.
+pub async fn load_many_for(state: &AppState, user: Uuid, ids: &[Uuid]) -> ApiResult<Vec<Summary>> {
+    for_user(state, user, load_many(state, ids).await?).await
 }
 
 /// Finds an issue by id or key (`WEB-12`, also under a project's former key) that `user` can
@@ -294,6 +325,16 @@ pub async fn resolve(state: &AppState, user: &User, id_or_key: &str, deleted: bo
     let (id, project) = row.ok_or(ApiError::NotFound("issue"))?;
     let role = access::role(state, user, project).await?;
     if role == Role::None {
+        return Err(ApiError::NotFound("issue"));
+    }
+    // a private issue is as good as not there for those it isn't for
+    let sees: bool =
+        sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT COALESCE({}, false) FROM issues i WHERE i.id = $2", access::sees_issue("i", "$1"))))
+            .bind(user.id)
+            .bind(id)
+            .fetch_one(&state.db)
+            .await?;
+    if !sees {
         return Err(ApiError::NotFound("issue"));
     }
     Ok((id, project, role))
@@ -480,8 +521,9 @@ pub async fn create(state: &AppState, actor: &Actor, mut n: NewIssue) -> ApiResu
     let id = new_id();
     let default_assignee = settings["defaultAssignee"].as_str().and_then(|s| s.parse::<Uuid>().ok());
     sqlx::query(
-        "INSERT INTO issues (id, workspace_id, project_id, number, title, description, description_text, type_id, status_id, reporter_id, created_by, rank, assignee_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11, $12)",
+        "INSERT INTO issues (id, workspace_id, project_id, number, title, description, description_text, type_id, status_id, reporter_id, created_by, rank, assignee_id,
+                             security_level_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11, $12, (SELECT id FROM security_levels WHERE project_id = $3 AND is_default LIMIT 1))",
     )
     .bind(id)
     .bind(actor.workspace)
@@ -580,6 +622,23 @@ async fn named(tx: &mut Transaction<'_, Postgres>, table: &str, id: Option<Uuid>
     Ok(json!({"id": id, "name": name}))
 }
 
+/// Whether a person may give an issue the security level `level` (or make it public): as the
+/// project allows (`setSecurity`), and only a level they're in themselves unless they're a
+/// project admin.
+async fn check_security(state: &AppState, tx: &mut Transaction<'_, Postgres>, user: Uuid, project: Uuid, level: Option<Uuid>) -> ApiResult<()> {
+    let rank: Option<i32> =
+        sqlx::query_scalar("SELECT rank FROM tc_project_roles($1) WHERE project_id = $2").bind(user).bind(project).fetch_optional(&mut **tx).await?;
+    let role = Role::from_rank(rank.unwrap_or(0));
+    access::require_action(state, project, role, "setSecurity").await?;
+    if let Some(l) = level.filter(|_| role < Role::Admin) {
+        let mine: bool = sqlx::query_scalar("SELECT $2 IN (SELECT tc_visible_levels($1))").bind(user).bind(l).fetch_one(&mut **tx).await?;
+        if !mine {
+            return Err(ApiError::Denied("you can only choose a security level you belong to".into()));
+        }
+    }
+    Ok(())
+}
+
 /// Applies a change (`{"statusId": …, "assigneeId": …}`) inside a transaction and records
 /// it (unless `quiet`, used while creating). Returns what actually changed.
 pub async fn apply(
@@ -610,10 +669,11 @@ pub async fn apply(
         custom: Value,
         workspace_id: Uuid,
         resolution: Option<String>,
+        security_level_id: Option<Uuid>,
     }
     let cur: Cur = sqlx::query_as(
         "SELECT title, type_id, status_id, priority, assignee_id, reporter_id, parent_id, sprint_id, version_id, component_id, story_points,
-                estimate_minutes, start_date, due_date, custom, workspace_id, resolution FROM issues WHERE id = $1 FOR UPDATE",
+                estimate_minutes, start_date, due_date, custom, workspace_id, resolution, security_level_id FROM issues WHERE id = $1 FOR UPDATE",
     )
     .bind(id)
     .fetch_one(&mut **tx)
@@ -639,6 +699,31 @@ pub async fn apply(
                     Value::String(c) => !c.trim().is_empty(),
                     _ => return Err(ApiError::bad("comment must be text")),
                 };
+            }
+            "securityLevelId" => {
+                let l = opt_uuid(v, k)?;
+                if l != cur.security_level_id {
+                    if let Some(l) = l {
+                        let known: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM security_levels WHERE id = $1 AND project_id = $2)")
+                            .bind(l)
+                            .bind(project)
+                            .fetch_one(&mut **tx)
+                            .await?;
+                        if !known {
+                            return Err(ApiError::bad("unknown security level for this project"));
+                        }
+                    }
+                    // while creating, any of the project's levels (its reporter keeps seeing it)
+                    if let Some(u) = actor.user.filter(|_| !quiet) {
+                        check_security(state, tx, u, project, l).await?;
+                    }
+                    changes.push(Change {
+                        field: "security",
+                        old: named(tx, "security_levels", cur.security_level_id).await?,
+                        new: named(tx, "security_levels", l).await?,
+                    });
+                    sets.push(("security_level_id", SqlVal::Uuid(l)));
+                }
             }
             "title" => {
                 let t = clean_title(v.as_str().ok_or_else(|| ApiError::bad("title must be text"))?)?;

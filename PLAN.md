@@ -75,7 +75,7 @@
 ## Next (round 4): what established trackers have and TaskCraft doesn't
 
 - [x] Workflow rules: per status who may move issues there (everyone, project admins, chosen teams), the fields they need and a comment, with a form asking for what's missing (board, issue, bulk); resolutions per project (Done / Won't do / Duplicate / …) in history, TQL, CSV and both imports
-- [~] Finer permissions: per project who may delete or move issues, plan sprints, manage releases, moderate comments and log time for others (done); comments restricted to members, project admins or a team (done); private issues (security levels) next
+- [x] Finer permissions: per project who may delete or move issues, plan sprints, manage releases, moderate comments, log time for others and change who sees an issue; comments restricted to members, project admins or a team; private issues (security levels by role, teams or people; a default level; enforced in lookups, lists, boards, search, reports that name issues, activity, live updates, notifications, e-mail replies and wiki pages)
 - [ ] Several fix versions, affected versions and components per issue
 - [ ] Time tracking: remaining estimate next to the original, time categories (activity, billable), time reports grouped by person / project / issue / category with export
 - [ ] Fields per issue type: which fields a type shows and which it requires

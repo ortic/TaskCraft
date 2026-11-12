@@ -456,11 +456,12 @@ pub async fn notification_mails(state: &AppState) -> anyhow::Result<usize> {
         let mut projects: HashMap<Uuid, Uuid> = HashMap::new();
         for n in &items {
             let (Some(issue), Some(project)) = (n.issue_id, n.project_id) else { continue };
-            let visible = match access.get(&(user, project)) {
+            // the issue may have turned private since
+            let visible = match access.get(&(user, issue)) {
                 Some(v) => *v,
                 None => {
-                    let v = crate::access::can_view(state, user, project).await;
-                    access.insert((user, project), v);
+                    let v = crate::access::sees(state, user, issue).await;
+                    access.insert((user, issue), v);
                     v
                 }
             };

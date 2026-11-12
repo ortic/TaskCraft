@@ -138,6 +138,26 @@ async fn moving(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> ApiResult<Movin
     .await?)
 }
 
+/// The security level an issue gets in the target project: the one of the same name, else the
+/// target's default. A private issue doesn't turn public by moving: without either, it stays put.
+async fn target_level(tx: &mut Transaction<'_, Postgres>, id: Uuid, target: Uuid) -> ApiResult<Option<Uuid>> {
+    let (to, from): (Option<Uuid>, Option<String>) = sqlx::query_as(
+        "SELECT COALESCE((SELECT t.id FROM security_levels t WHERE t.project_id = $2 AND lower(t.name) = lower(s.name)),
+                         (SELECT d.id FROM security_levels d WHERE d.project_id = $2 AND d.is_default LIMIT 1)), s.name
+           FROM issues i LEFT JOIN security_levels s ON s.id = i.security_level_id WHERE i.id = $1",
+    )
+    .bind(id)
+    .bind(target)
+    .fetch_one(&mut **tx)
+    .await?;
+    match (to, from) {
+        (None, Some(name)) => Err(ApiError::bad(format!(
+            "the issue is private ({name}) and the target project has no security level of that name or a default one: add one there first"
+        ))),
+        (to, _) => Ok(to),
+    }
+}
+
 /// Moves one issue (and, recursively, its sub-tasks) inside a transaction; returns the new keys.
 async fn move_one(
     tx: &mut Transaction<'_, Postgres>,
@@ -159,9 +179,10 @@ async fn move_one(
     let (status_id, category) = target_status(tx, target, status_override, &m.status_name, &m.status_category).await?;
     let (custom, _) = map_custom(&m.custom, &fields(tx, m.project_id).await?, &fields(tx, target).await?);
     let rank = issues::bottom_rank(tx, target).await?;
+    let level = target_level(tx, id, target).await?;
     sqlx::query(
         "UPDATE issues SET project_id = $2, number = $3, type_id = $4, status_id = $5, custom = $6, rank = $7, sprint_id = NULL, version_id = NULL,
-                component_id = NULL, updated_at = now(),
+                component_id = NULL, updated_at = now(), security_level_id = $9,
                 status_changed_at = CASE WHEN status_id <> $5 THEN now() ELSE status_changed_at END,
                 resolved_at = CASE WHEN $8 = 'done' THEN COALESCE(resolved_at, now()) ELSE NULL END
           WHERE id = $1",
@@ -174,6 +195,7 @@ async fn move_one(
     .bind(&custom)
     .bind(rank)
     .bind(&category)
+    .bind(level)
     .execute(&mut **tx)
     .await?;
     sqlx::query("INSERT INTO issue_key_aliases (workspace_id, project_key, number, issue_id) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING")
@@ -235,6 +257,11 @@ pub async fn preview(
     let type_id = target_type(&mut tx, target.id, None, &m.type_name, m.type_level).await?;
     let (status_id, _) = target_status(&mut tx, target.id, None, &m.status_name, &m.status_category).await?;
     let (_, dropped) = map_custom(&m.custom, &fields(&mut tx, m.project_id).await?, &fields(&mut tx, target.id).await?);
+    let level = target_level(&mut tx, id, target.id).await?;
+    let level: Option<String> = match level {
+        Some(l) => sqlx::query_scalar("SELECT name FROM security_levels WHERE id = $1").bind(l).fetch_optional(&mut *tx).await?,
+        None => None,
+    };
     let cleared: (bool, bool, bool) =
         sqlx::query_as("SELECT sprint_id IS NOT NULL, version_id IS NOT NULL, component_id IS NOT NULL FROM issues WHERE id = $1")
             .bind(id)
@@ -260,7 +287,7 @@ pub async fn preview(
     Ok(Json(json!({
         "target": {"key": target.key, "name": target.name},
         "typeId": type_id, "statusId": status_id,
-        "droppedFields": dropped, "cleared": lost, "subtasks": subtasks,
+        "droppedFields": dropped, "cleared": lost, "subtasks": subtasks, "securityLevel": level,
     })))
 }
 

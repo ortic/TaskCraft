@@ -21,7 +21,7 @@ pub struct Range {
 pub async fn burndown(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>) -> ApiResult<Json<Value>> {
     let project = crate::reports::sprint_project(&state, id).await?;
     access::require(&state, &user, project, Role::Viewer).await?;
-    Ok(Json(crate::reports::burndown(&state, id).await?))
+    Ok(Json(crate::reports::burndown(&state, id, Some(user.id)).await?))
 }
 
 pub async fn project_report(
@@ -35,7 +35,7 @@ pub async fn project_report(
     Ok(Json(match report.as_str() {
         "velocity" => crate::reports::velocity(&state, p.id, r.count.unwrap_or(8)).await?,
         "cumulative-flow" => crate::reports::cumulative_flow(&state, p.id, days).await?,
-        "cycle-time" => crate::reports::cycle_time(&state, p.id, r.days.unwrap_or(90)).await?,
+        "cycle-time" => crate::reports::cycle_time(&state, p.id, r.days.unwrap_or(90), Some(user.id)).await?,
         "created-resolved" => crate::reports::created_resolved(&state, p.id, days).await?,
         "workload" => crate::reports::workload(&state, p.id).await?,
         "overview" => crate::reports::overview(&state, p.id).await?,

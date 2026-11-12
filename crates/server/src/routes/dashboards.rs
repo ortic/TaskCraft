@@ -222,7 +222,7 @@ pub async fn portfolio(State(state): State<AppState>, CurrentUser(user): Current
         Option<chrono::NaiveDate>,
         Option<chrono::NaiveDate>,
     );
-    let epics: Vec<Epic> = sqlx::query_as(
+    let epics: Vec<Epic> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT i.id, i.project_id, p.key || '-' || i.number, i.title, it.color, i.start_date, i.due_date, s.category,
                 (SELECT count(*) FROM issues c WHERE c.parent_id = i.id AND c.deleted_at IS NULL),
                 (SELECT count(*) FROM issues c JOIN statuses cs ON cs.id = c.status_id WHERE c.parent_id = i.id AND c.deleted_at IS NULL AND cs.category = 'done'),
@@ -231,10 +231,12 @@ pub async fn portfolio(State(state): State<AppState>, CurrentUser(user): Current
                 (SELECT min(COALESCE(c.start_date, c.due_date)) FROM issues c WHERE c.parent_id = i.id AND c.deleted_at IS NULL),
                 (SELECT max(COALESCE(c.due_date, c.start_date)) FROM issues c WHERE c.parent_id = i.id AND c.deleted_at IS NULL)
            FROM issues i JOIN projects p ON p.id = i.project_id JOIN issue_types it ON it.id = i.type_id JOIN statuses s ON s.id = i.status_id
-          WHERE i.project_id = ANY($1) AND i.deleted_at IS NULL AND it.level = 1 AND (s.category <> 'done' OR i.resolved_at > now() - interval '60 days')
+          WHERE i.project_id = ANY($1) AND i.deleted_at IS NULL AND it.level = 1 AND (s.category <> 'done' OR i.resolved_at > now() - interval '60 days') AND {}
           ORDER BY COALESCE(i.start_date, i.due_date) NULLS LAST, i.rank",
-    )
+        crate::access::sees_issue("i", "$2")
+    )))
     .bind(&ids)
+    .bind(user.id)
     .fetch_all(&state.db)
     .await?;
     type Ver = (Uuid, Uuid, String, String, Option<chrono::NaiveDate>, Option<chrono::NaiveDate>, i64, i64);

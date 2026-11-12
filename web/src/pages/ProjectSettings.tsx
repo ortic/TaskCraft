@@ -12,12 +12,12 @@ import {
 } from 'lucide-react'
 import {
   api, ago, dateTime, PRIORITIES, PROJECT_ACTIONS, type ProjectAction, type Category, type CustomField, type FieldOption, type IssueType, type Named, type Priority, type Project, type Role,
-  type BoardData, type BoardConfig, type BoardColumn, type Status, type StatusRules, type WikiPage,
+  type BoardData, type BoardConfig, type BoardColumn, type Status, type StatusRules, type WikiPage, type SecurityLevel,
 } from '../api'
 import { requirementLabel, resolutionLabel, resolutionsOf } from '../components/Transition'
 import { Avatar, Choices, Confirm, Empty, ErrorBox, Loading, Lozenge, Modal, PopButton, useMe, usePeople, useProject, useToast } from '../ui'
 import { PROJECT_COLORS, PROJECT_ICONS, ProjectIcon, TYPE_ICONS, TypeIcon, priorityLabel } from '../icons'
-import { OptionChip, PersonPicker } from '../components/fields'
+import { AddPersonButton, OptionChip, PersonPicker } from '../components/fields'
 import { useOpenIssue } from '../components/Layout'
 import { ServiceLevelsSection, TemplatesSection } from '../components/TemplateSettings'
 import { ImportSection } from '../components/ImportSettings'
@@ -250,7 +250,12 @@ export default function ProjectSettings() {
             {active.id === 'details' && <DetailsSection />}
             {active.id === 'members' && <MembersSection />}
             {active.id === 'workflow' && <WorkflowSection />}
-            {active.id === 'permissions' && <PermissionsSection />}
+            {active.id === 'permissions' && (
+              <>
+                <PermissionsSection />
+                <SecurityLevelsSection />
+              </>
+            )}
             {active.id === 'types' && <TypesSection />}
             {active.id === 'fields' && <FieldsSection />}
             {active.id === 'boards' && <BoardsSection boardId={sub} />}
@@ -491,7 +496,7 @@ function TqlInput({ value, onChange, placeholder, id, onValidity, small }: { val
 }
 
 /** Delete something whose issues must go somewhere else. */
-function DeleteMoveDialog({ title, body, options, onConfirm, onClose }: { title: string; body: ReactNode; options: { id: string; label: string }[]; onConfirm: (moveTo: string) => Promise<void>; onClose: () => void }) {
+function DeleteMoveDialog({ title, body, options, onConfirm, onClose, label }: { title: string; body: ReactNode; options: { id: string; label: string }[]; onConfirm: (moveTo: string) => Promise<void>; onClose: () => void; label?: string }) {
   const [to, setTo] = useState(options[0]?.id ?? '')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -526,7 +531,7 @@ function DeleteMoveDialog({ title, body, options, onConfirm, onClose }: { title:
     >
       <p className="ps-mt-0">{body}</p>
       <div className="field">
-        <label htmlFor="ps-move-to">{t('Move its issues to')}</label>
+        <label htmlFor="ps-move-to">{label ?? t('Move its issues to')}</label>
         <select id="ps-move-to" className="select" value={to} onChange={(e) => setTo(e.target.value)}>
           {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
@@ -1131,6 +1136,7 @@ const ACTION_LABELS: Record<ProjectAction, () => string> = {
   manageReleases: () => t('Create, change and release releases'),
   moderateComments: () => t('Edit and delete other people’s comments'),
   logTimeForOthers: () => t('Log and change time for other people'),
+  setSecurity: () => t('Change who sees an issue (security level)'),
 }
 
 /** Who may do the sensitive things in this project. */
@@ -1173,6 +1179,179 @@ function PermissionsSection() {
         </tbody>
       </table>
     </Section>
+  )
+}
+
+/** Who a security level is for, in a few words. */
+function levelAudience(l: SecurityLevel): string {
+  const parts: string[] = []
+  if (l.minRole === 'viewer') parts.push(t('everyone in the project'))
+  if (l.minRole === 'member') parts.push(t('members'))
+  parts.push(...l.teams.map((x) => x.name), ...l.users.map((x) => x.name))
+  return parts.length ? parts.join(', ') : t('project admins only')
+}
+
+/** Private issues: who sees the issues of each security level. */
+function SecurityLevelsSection() {
+  const { project, run } = useSettings()
+  const [editing, setEditing] = useState<SecurityLevel | 'new' | null>(null)
+  const [deleting, setDeleting] = useState<SecurityLevel | null>(null)
+  const levels = project.securityLevels ?? []
+  return (
+    <Section
+      title={t('Security levels')}
+      description={t('Make issues private: an issue with a security level is seen only by those the level lists — plus project admins and the issue’s reporter, creator and assignee. For everyone else it doesn’t show up anywhere: not in lists, boards, search, activity or notifications.')}
+      actions={<button className="btn btn-sm" onClick={() => setEditing('new')}><Plus size={14} /> {t('Add level')}</button>}
+    >
+      {levels.length === 0 ? (
+        <p className="faint small ps-mt-0">{t('No security levels yet: every issue is seen by everyone in the project.')}</p>
+      ) : (
+        <Sortable items={levels} onReorder={(ids) => run(() => api.put(`/projects/${project.key}/order/security-levels`, { ids }))} className="ps-list">
+          {(l, grip) => (
+            <div className="ps-row ps-level-row">
+              {grip}
+              <Lock size={15} className="faint" aria-hidden />
+              <span className="ps-level-text">
+                <span className="ps-level-name">
+                  {l.name}
+                  {l.isDefault && <span className="badge">{t('Default')}</span>}
+                </span>
+                <span className="faint small">{t('Seen by {who}', { who: levelAudience(l) })}{l.description ? ` · ${l.description}` : ''}</span>
+              </span>
+              <span className="faint small ps-level-count">{l.issueCount === 1 ? t('1 issue') : t('{n} issues', { n: l.issueCount })}</span>
+              <button className="icon-btn" title={t('Edit')} aria-label={t('Edit {name}', { name: l.name })} onClick={() => setEditing(l)}><Pencil size={15} /></button>
+              <button className="icon-btn" title={t('Delete')} aria-label={t('Delete {name}', { name: l.name })} onClick={() => setDeleting(l)}><Trash size={15} /></button>
+            </div>
+          )}
+        </Sortable>
+      )}
+      {editing && <LevelDialog level={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {deleting && deleting.issueCount === 0 && (
+        <Confirm
+          title={t('Delete security level {name}?', { name: deleting.name })}
+          body={<p>{t('No issue carries it.')}</p>}
+          confirmLabel={t('Delete level')}
+          danger
+          onConfirm={() => run(() => api.del(`/security-levels/${deleting.id}`), t('Security level deleted')).then(() => undefined)}
+          onClose={() => setDeleting(null)}
+        />
+      )}
+      {deleting && deleting.issueCount > 0 && (
+        <DeleteMoveDialog
+          title={t('Delete security level {name}?', { name: deleting.name })}
+          body={deleting.issueCount === 1 ? t('One issue carries this level. Choose what it gets instead.') : t('{n} issues carry this level. Choose what they get instead.', { n: deleting.issueCount })}
+          label={t('Give its issues')}
+          options={[
+            ...levels.filter((l) => l.id !== deleting.id).map((l) => ({ id: l.id, label: t('Security level {name}', { name: l.name }) })),
+            { id: 'none', label: t('No level (public in the project)') },
+          ]}
+          onConfirm={async (to) => {
+            await api.del(`/security-levels/${deleting.id}?replaceWith=${encodeURIComponent(to)}`)
+            await run(async () => undefined, t('Security level deleted'))
+          }}
+          onClose={() => setDeleting(null)}
+        />
+      )}
+    </Section>
+  )
+}
+
+function LevelDialog({ level, onClose }: { level: SecurityLevel | null; onClose: () => void }) {
+  const { project, run } = useSettings()
+  const teams = useQuery({ queryKey: ['teams'], queryFn: () => api.get<{ id: string; name: string }[]>('/teams') })
+  const [name, setName] = useState(level?.name ?? '')
+  const [description, setDescription] = useState(level?.description ?? '')
+  const [minRole, setMinRole] = useState<'' | 'viewer' | 'member'>(level?.minRole ?? '')
+  const [teamIds, setTeamIds] = useState<string[]>(level?.teams.map((x) => x.id) ?? [])
+  const [users, setUsers] = useState<Named[]>(level?.users ?? [])
+  const [isDefault, setIsDefault] = useState(level?.isDefault ?? false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const save = async () => {
+    if (!name.trim()) return setErr(t('A security level needs a name.'))
+    setBusy(true)
+    setErr('')
+    const body = { name: name.trim(), description: description.trim(), minRole: minRole || null, teamIds, userIds: users.map((u) => u.id), isDefault }
+    try {
+      if (level) await api.patch(`/security-levels/${level.id}`, body)
+      else await api.post(`/projects/${project.key}/security-levels`, body)
+      await run(async () => undefined, level ? t('Security level saved') : t('Security level {name} added', { name: name.trim() }))
+      onClose()
+    } catch (e) {
+      setErr(errText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Modal
+      title={level ? t('Edit {name}', { name: level.name }) : t('New security level')}
+      onClose={onClose}
+      width={540}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>{t('Cancel')}</button>
+          <button className="btn btn-primary" disabled={busy} onClick={save}>{t('Save')}</button>
+        </>
+      }
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          save()
+        }}
+      >
+        <div className="field">
+          <label htmlFor="ps-level-name">{t('Name')}</label>
+          <input id="ps-level-name" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Like Security team or Staff only')} autoFocus />
+        </div>
+        <div className="field">
+          <label htmlFor="ps-level-desc">{t('Description')} <span className="faint">{t('(optional)')}</span></label>
+          <input id="ps-level-desc" className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
+        </div>
+        <fieldset className="ps-fieldset">
+          <legend>{t('Who sees its issues')}</legend>
+          <p className="faint small" style={{ margin: '0 0 6px' }}>{t('Project admins and each issue’s reporter, creator and assignee always do.')}</p>
+          <div className="field">
+            <label htmlFor="ps-level-role">{t('By project role')}</label>
+            <select id="ps-level-role" className="select" value={minRole} onChange={(e) => setMinRole(e.target.value as typeof minRole)}>
+              <option value="">{t('Nobody by role — only the teams and people below')}</option>
+              <option value="member">{t('Members (not viewers or guests)')}</option>
+              <option value="viewer">{t('Everyone in the project')}</option>
+            </select>
+          </div>
+          <div className="field">
+            <span className="field-label">{t('Teams')}</span>
+            <div className="ps-rule-teams">
+              {(teams.data ?? []).map((tm) => (
+                <label key={tm.id} className="row small">
+                  <input type="checkbox" checked={teamIds.includes(tm.id)} onChange={() => setTeamIds((x) => (x.includes(tm.id) ? x.filter((y) => y !== tm.id) : [...x, tm.id]))} /> {tm.name}
+                </label>
+              ))}
+              {teams.data?.length === 0 && <span className="faint small">{t('There are no teams yet (People & teams).')}</span>}
+            </div>
+          </div>
+          <div className="field">
+            <span className="field-label">{t('People')}</span>
+            <div className="ps-level-people">
+              {users.map((u) => (
+                <span key={u.id} className="label-chip">
+                  {u.name}
+                  <button type="button" className="icon-btn icon-btn-sm" style={{ width: 16, height: 16 }} aria-label={t('Remove {name}', { name: u.name })} onClick={() => setUsers((x) => x.filter((y) => y.id !== u.id))}>
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+              <AddPersonButton label={t('Add a person')} exclude={users.map((u) => u.id)} onAdd={(p) => setUsers((x) => [...x, p])} />
+            </div>
+          </div>
+        </fieldset>
+        <label className="row small">
+          <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} /> {t('New issues get this level (unless the person creating one chooses otherwise)')}
+        </label>
+        {err && <p className="error-text" role="alert">{err}</p>}
+      </form>
+    </Modal>
   )
 }
 

@@ -268,6 +268,7 @@ schemas = {
             "custom": d(anyobj, "custom field values by field id (see CustomField for the value of each kind)"),
             "resolvedAt": ndt("when it reached a done status"),
             "resolution": ntxt("why a done issue is done (one of the project's resolutions: Done, Won't do, …); null while open"),
+            "security": null(S("Named"), "a private issue's security level (see SecurityLevel); null: everyone in the project sees it"),
             "statusChangedAt": dt,
             "createdAt": dt,
             "updatedAt": dt,
@@ -356,6 +357,7 @@ schemas = {
             "sprintId": nuuid("a future or active sprint of the project; null = the backlog"),
             "versionId": nuuid("fix version"),
             "componentId": nuuid(),
+            "securityLevelId": nuuid("make the issue private with one of the project's security levels, or null to make it public. Creating an issue, any level of the project (the default level applies when left out); changing it later, as the project's `setSecurity` permission allows and only to a level you belong to (project admins: any)"),
             "storyPoints": null(number),
             "estimateMinutes": null(number, "rounded to whole minutes"),
             "startDate": ndate(),
@@ -420,6 +422,21 @@ schemas = {
         "A version (release).",
     ),
     "Component": obj({"id": uuid, "name": txt, "description": ntxt(), "leadId": nuuid()}, ["id", "name"]),
+    "SecurityLevel": obj(
+        {
+            "id": uuid,
+            "name": txt,
+            "description": txt,
+            "minRole": {**enum("viewer", "member"), "nullable": True, "description": "everyone with at least this project role sees its issues; null: only the teams and people listed"},
+            "teams": arr(S("Named")),
+            "users": arr(S("Named")),
+            "isDefault": d(boolean, "new issues get it unless the person creating one chooses otherwise"),
+            "issueCount": d(num, "issues that carry it"),
+            "mine": d(boolean, "the caller belongs to it (and may choose it)"),
+        },
+        ["id", "name", "minRole", "teams", "users", "isDefault"],
+        "Private issues: an issue with a security level is seen only by those the level lists, project admins and the issue's reporter, creator and assignee. Everyone else doesn't find it anywhere — not by key, in lists, boards, search, reports that name issues, activity, live updates or notifications.",
+    ),
     "CustomFieldOption": obj({"id": d(txt, "stable option id (generated when left out)"), "label": txt, "color": ntxt()}, ["label"]),
     "CustomField": obj(
         {
@@ -467,6 +484,7 @@ schemas = {
                     "versions": arr(S("Version")),
                     "components": arr(S("Component")),
                     "fields": arr(S("CustomField")),
+                    "securityLevels": arr(S("SecurityLevel"), "in order"),
                     "sprints": arr(obj({"id": uuid, "name": txt, "goal": ntxt(), "state": enum("future", "active"), "startAt": ndt(), "endAt": ndt()}, ["id", "name", "state"]), "open sprints (the running one first)"),
                     "boards": arr(obj({"id": uuid, "name": txt, "kind": enum("scrum", "kanban")}, ["id", "name", "kind"])),
                     "transitions": arr(S("Transition")),
@@ -980,7 +998,7 @@ schemas["ProjectSettings"] = obj(
         "doneAfterDays": d(number, "stored as given (not used by the server)"),
         "permissions": d(
             {"type": "object", "additionalProperties": enum("member", "admin", "nobody")},
-            "who may: deleteIssues, moveIssues, manageSprints, manageReleases (member or admin; default member), moderateComments and logTimeForOthers (member, admin or nobody; default admin). Project admins may whatever members may.",
+            "who may: deleteIssues, moveIssues, manageSprints, manageReleases (member or admin; default member), setSecurity (member or admin; default member), moderateComments and logTimeForOthers (member, admin or nobody; default admin). Project admins may whatever members may.",
         ),
         "resolutions": arr(txt, "the project's resolutions, 1–20 distinct names (default Done, Won't do, Duplicate, Cannot reproduce); the first is the default"),
         "template": {**enum("scrum", "kanban", "tracker", "business"), "readOnly": True, "description": "the template the project was created from"},
@@ -1216,8 +1234,8 @@ op("patch", "/statuses/{id}", "updateStatus", "Project configuration", "Rename a
    req=body(obj({"name": txt, "category": S("StatusCategory"), "color": ntxt(), "rules": d(S("StatusRules"), "replaces the rules ({} or null: none)")})), res=NO, err="409")
 op("delete", "/statuses/{id}", "deleteStatus", "Project configuration", "Delete a status (project admins)",
    desc="Its issues move to `moveTo`; boards drop it from their columns. A project keeps at least one status.", query=B_MOVE_TO("status"), res=NO)
-op("put", "/projects/{key}/order/{what}", "reorderProjectItems", "Project configuration", "Put statuses, types, fields or versions in order (project admins)",
-   pp={"what": (enum("statuses", "types", "fields", "versions"), "what to reorder")},
+op("put", "/projects/{key}/order/{what}", "reorderProjectItems", "Project configuration", "Put statuses, types, fields, versions or security levels in order (project admins)",
+   pp={"what": (enum("statuses", "types", "fields", "versions", "security-levels"), "what to reorder")},
    req=body(obj({"ids": arr(uuid, "in the new order; ids of other projects are ignored")}, ["ids"])), res=NO)
 op("put", "/projects/{key}/transitions", "setTransitions", "Project configuration", "Set the workflow mode and allowed transitions (project admins)",
    desc="Replaces all transitions. In a restricted workflow issues only move along them; in a free one they're kept for later.",
@@ -1249,6 +1267,21 @@ op("post", "/projects/{key}/components", "createComponent", "Project configurati
 op("patch", "/components/{id}", "updateComponent", "Project configuration", "Change a component (project admins)",
    req=body(obj({"name": txt, "description": ntxt(), "leadId": nuuid()})), res=NO, err="409")
 op("delete", "/components/{id}", "deleteComponent", "Project configuration", "Delete a component (project admins)", desc="Its issues lose the component.", res=NO)
+LEVEL_FIELDS = {
+    "name": d(txt, "unique in the project, at most 60 characters"),
+    "description": txt,
+    "minRole": {**enum("viewer", "member"), "nullable": True, "description": "everyone with at least this project role; null: only the teams and people listed"},
+    "teamIds": arr(uuid),
+    "userIds": arr(uuid),
+    "isDefault": d(boolean, "new issues get it (the project's previous default stops being one)"),
+}
+op("post", "/projects/{key}/security-levels", "createSecurityLevel", "Project configuration", "Add a security level for private issues (project admins)",
+   req=body(obj(LEVEL_FIELDS, ["name"])), res=created(B_ID))
+op("patch", "/security-levels/{id}", "updateSecurityLevel", "Project configuration", "Change a security level (project admins)",
+   desc="Only the fields sent change.", req=body(obj(LEVEL_FIELDS)), res=NO)
+op("delete", "/security-levels/{id}", "deleteSecurityLevel", "Project configuration", "Delete a security level (project admins)",
+   desc="A level that issues carry needs `replaceWith`: another level of the project for them, or `none` to make them public.",
+   query=[q("replaceWith", "another security level's id, or none")], res=NO)
 op("post", "/projects/{key}/fields", "createCustomField", "Project configuration", "Add a custom field (project admins)",
    desc="The name can't be a built-in TQL field; in queries custom fields are used by name.",
    req=body(obj({
@@ -1676,6 +1709,7 @@ schemas["MovePreview"] = obj(
         "droppedFields": arr(txt, "custom fields whose values would be lost (no field of the same name and kind, or no matching option)"),
         "cleared": arr(enum("sprint", "release", "component"), "project-specific fields that would be cleared"),
         "subtasks": d(num, "sub-tasks that move along"),
+        "securityLevel": ntxt("the security level a private issue gets there (the one of the same name, else the target's default); a private issue the target has no level for can't move"),
     },
     ["target", "typeId", "statusId", "droppedFields", "cleared", "subtasks"],
     "What moving an issue to another project would do.",
@@ -1956,7 +1990,7 @@ op(
     "Issues",
     "Move an issue to another project",
     desc="Project members of both projects; not into an archived project. The issue gets a new key (the old one keeps working) and its history moves along; type and status are mapped by name "
-    "(or given), custom fields kept where the target has a field of the same name and kind, sprint, release and component cleared; sub-tasks move along. Sends `issue.updated` with `previousKey`.",
+    "(or given), custom fields kept where the target has a field of the same name and kind, sprint, release and component cleared; sub-tasks move along. A private issue takes the target's security level of the same name (else its default) and doesn't move without one. Sends `issue.updated` with `previousKey`.",
     req=body(obj({"projectKey": d(txt, "the target project"), "typeId": d(uuid, "a type of the target project (default: mapped)"), "statusId": d(uuid, "a status of the target project (default: mapped)")}, ["projectKey"])),
     res=ok(S("IssueSummary"), "Moved"),
 )
@@ -3017,7 +3051,7 @@ Search (`GET /search?q=`), CSV export, saved filters, dashboards and automation 
 `project = WEB and sprint in openSprints() and assignee = me() order by rank` or
 `type = Bug and priority >= high and created > -14d`. Fields: `project key title text description comment type status
 category priority assignee reporter creator labels sprint version component parent/epic points estimate spent created
-updated resolved resolution due start watcher blocked` and custom fields by name (quoted when they contain spaces). Operators
+updated resolved resolution security due start watcher blocked` and custom fields by name (quoted when they contain spaces). Operators
 `= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,
 `futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates like `-7d`, `+2w`,

@@ -83,7 +83,8 @@ pub struct ViewQuery {
 
 pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Query(q): Query<ViewQuery>) -> ApiResult<Json<Value>> {
     let (id, _, role) = issue_for(&state, &user, &key, Role::Viewer).await?;
-    let s = issues::summary(&state, issues::load(&state, id).await?);
+    let s =
+        issues::for_user(&state, user.id, vec![issues::summary(&state, issues::load(&state, id).await?)]).await?.pop().ok_or(ApiError::NotFound("issue"))?;
     let description: Option<Value> = sqlx::query_scalar("SELECT description FROM issues WHERE id = $1").bind(id).fetch_one(&state.db).await?;
     let watchers: Vec<(Uuid, String)> =
         sqlx::query_as("SELECT u.id, u.name FROM issue_watchers w JOIN users u ON u.id = w.user_id WHERE w.issue_id = $1 ORDER BY lower(u.name)")
@@ -96,9 +97,7 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
             .fetch_all(&state.db)
             .await?;
     let other_ids: Vec<Uuid> = links.iter().map(|(_, _, s, t)| if *s == id { *t } else { *s }).collect();
-    let visible = crate::access::visible_projects(&state, &user).await?;
-    let others: std::collections::HashMap<Uuid, Summary> =
-        issues::load_many(&state, &other_ids).await?.into_iter().filter(|o| visible.contains(&o.project_id)).map(|o| (o.id, o)).collect();
+    let others: std::collections::HashMap<Uuid, Summary> = issues::load_many_for(&state, user.id, &other_ids).await?.into_iter().map(|o| (o.id, o)).collect();
     let links: Vec<Value> = links
         .iter()
         .filter_map(|(lid, kind, src, tgt)| {
@@ -117,7 +116,7 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
     .await?;
     let child_ids: Vec<Uuid> =
         sqlx::query_scalar("SELECT id FROM issues WHERE parent_id = $1 AND deleted_at IS NULL ORDER BY rank").bind(id).fetch_all(&state.db).await?;
-    let children = issues::load_many(&state, &child_ids).await?;
+    let children = issues::load_many_for(&state, user.id, &child_ids).await?;
     if q.view.as_deref().is_some_and(|v| v == "1" || v == "true") {
         let _ = sqlx::query("INSERT INTO recent_issues (user_id, issue_id) VALUES ($1, $2) ON CONFLICT (user_id, issue_id) DO UPDATE SET viewed_at = now()")
             .bind(user.id)
@@ -235,11 +234,13 @@ pub async fn restore(State(state): State<AppState>, CurrentUser(user): CurrentUs
 /// Deleted issues of a project (the trash).
 pub async fn trash(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>) -> ApiResult<Json<Value>> {
     let (p, _) = super::projects::by_key(&state, &user, &key, Role::Member).await?;
-    let rows: Vec<(Uuid, i32, String, Option<chrono::DateTime<chrono::Utc>>, Option<String>)> = sqlx::query_as(
+    let rows: Vec<(Uuid, i32, String, Option<chrono::DateTime<chrono::Utc>>, Option<String>)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT i.id, i.number, i.title, i.deleted_at, u.name FROM issues i LEFT JOIN users u ON u.id = i.deleted_by
-          WHERE i.project_id = $1 AND i.deleted_at IS NOT NULL ORDER BY i.deleted_at DESC LIMIT 200",
-    )
+          WHERE i.project_id = $1 AND i.deleted_at IS NOT NULL AND {} ORDER BY i.deleted_at DESC LIMIT 200",
+        crate::access::sees_issue("i", "$2")
+    )))
     .bind(p.id)
+    .bind(user.id)
     .fetch_all(&state.db)
     .await?;
     Ok(Json(json!(
@@ -337,7 +338,7 @@ pub async fn run_search(
     ids.push(" OFFSET ");
     ids.push_bind(offset.max(0));
     let ids: Vec<Uuid> = ids.build_query_scalar().fetch_all(&state.db).await?;
-    let mut found = issues::load_many(state, &ids).await?;
+    let mut found = issues::load_many_for(state, user.id, &ids).await?;
     // keep the query's order
     let pos: std::collections::HashMap<Uuid, usize> = ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
     found.sort_by_key(|s| pos.get(&s.id).copied().unwrap_or(usize::MAX));
@@ -383,6 +384,7 @@ pub async fn search_csv(State(state): State<AppState>, CurrentUser(user): Curren
         "Updated",
         "Resolved",
         "Resolution",
+        "Security",
     ]);
     let h = |m: Option<i32>| m.map(|m| format!("{:.1}", m as f64 / 60.0)).unwrap_or_default();
     for s in r.issues {
@@ -409,6 +411,7 @@ pub async fn search_csv(State(state): State<AppState>, CurrentUser(user): Curren
             s.updated_at.format("%Y-%m-%d %H:%M").to_string(),
             s.resolved_at.map(|d| d.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default(),
             s.resolution.clone().unwrap_or_default(),
+            s.security.as_ref().map(|l| l.name.clone()).unwrap_or_default(),
         ]);
     }
     let body = w.into_inner().map_err(|e| ApiError::Internal(anyhow::anyhow!("csv: {e}")))?;
@@ -467,6 +470,7 @@ pub async fn suggest(
                 "updated",
                 "resolved",
                 "resolution",
+                "security",
                 "due",
                 "start",
                 "watcher",
@@ -541,6 +545,9 @@ pub async fn suggest(
         }
         "component" => {
             sqlx::query_scalar("SELECT DISTINCT name FROM components WHERE project_id = ANY($1) ORDER BY name").bind(&visible).fetch_all(&state.db).await?
+        }
+        "security" => {
+            sqlx::query_scalar("SELECT DISTINCT name FROM security_levels WHERE project_id = ANY($1) ORDER BY name").bind(&visible).fetch_all(&state.db).await?
         }
         "created" | "updated" | "resolved" | "due" | "start" => {
             ["-1d", "-7d", "-30d", "today()", "startOfWeek()", "endOfWeek()", "startOfMonth()", "endOfMonth()", "now()"].iter().map(|s| s.to_string()).collect()
@@ -735,6 +742,8 @@ pub async fn clone_issue(State(state): State<AppState>, CurrentUser(user): Curre
     if let Some(v) = &src.version {
         fields.insert("versionId".into(), json!(v.id));
     }
+    // a copy of a private issue is just as private
+    fields.insert("securityLevelId".into(), json!(src.security.as_ref().map(|l| l.id)));
     if src.custom.as_object().is_some_and(|o| !o.is_empty()) {
         fields.insert("custom".into(), src.custom.clone());
     }
@@ -762,9 +771,7 @@ pub async fn my_work(State(state): State<AppState>, CurrentUser(user): CurrentUs
     .bind(user.id)
     .fetch_all(&state.db)
     .await?;
-    let visible = crate::access::visible_projects(&state, &user).await?;
-    let mut recent = issues::load_many(&state, &recent_ids).await?;
-    recent.retain(|s| visible.contains(&s.project_id));
+    let mut recent = issues::load_many_for(&state, user.id, &recent_ids).await?;
     let pos: std::collections::HashMap<Uuid, usize> = recent_ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
     recent.sort_by_key(|s| pos.get(&s.id).copied().unwrap_or(usize::MAX));
     let logged: Option<i64> =
@@ -796,9 +803,7 @@ pub async fn quick(
 async fn my_recent(state: &AppState, user: &User) -> ApiResult<Json<Value>> {
     let ids: Vec<Uuid> =
         sqlx::query_scalar("SELECT issue_id FROM recent_issues WHERE user_id = $1 ORDER BY viewed_at DESC LIMIT 10").bind(user.id).fetch_all(&state.db).await?;
-    let visible = crate::access::visible_projects(state, user).await?;
-    let mut list = issues::load_many(state, &ids).await?;
-    list.retain(|s| visible.contains(&s.project_id));
+    let mut list = issues::load_many_for(state, user.id, &ids).await?;
     let pos: std::collections::HashMap<Uuid, usize> = ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
     list.sort_by_key(|s| pos.get(&s.id).copied().unwrap_or(usize::MAX));
     Ok(Json(json!(list)))
@@ -816,13 +821,15 @@ pub async fn activity(
         visible = vec![p.id];
     }
     type Row = (Uuid, Option<Uuid>, Option<String>, String, Option<String>, Option<Value>, Option<Value>, chrono::DateTime<chrono::Utc>, String, String, Uuid);
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT e.id, e.actor_id, u.name, e.kind, e.field, e.old_value, e.new_value, e.created_at, p.key || '-' || i.number, i.title, e.issue_id
                FROM issue_events e JOIN issues i ON i.id = e.issue_id JOIN projects p ON p.id = e.project_id LEFT JOIN users u ON u.id = e.actor_id
-              WHERE e.project_id = ANY($1) AND i.deleted_at IS NULL AND (e.field IS NULL OR e.field NOT IN ('description'))
+              WHERE e.project_id = ANY($1) AND i.deleted_at IS NULL AND (e.field IS NULL OR e.field NOT IN ('description')) AND {}
               ORDER BY e.created_at DESC LIMIT 60",
-    )
+        crate::access::sees_issue("i", "$2")
+    )))
     .bind(&visible)
+    .bind(user.id)
     .fetch_all(&state.db)
     .await?;
     let issues: Vec<Uuid> = rows.iter().filter(|r| r.3 == "comment").map(|r| r.10).collect();

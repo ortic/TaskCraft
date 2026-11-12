@@ -5,7 +5,7 @@ import { api, type Issue, type Priority } from '../api'
 import { Modal, useProject, useProjects, useToast } from '../ui'
 import { TypeIcon } from '../icons'
 import { RichText, EMPTY_DOC, isEmptyDoc } from './Editor'
-import { DateValue, LabelsEditor, ParentPicker, PersonPicker, PriorityPicker } from './fields'
+import { DateValue, LabelsEditor, ParentPicker, PersonPicker, PriorityPicker, SecurityPicker } from './fields'
 import { refreshIssues } from './IssueView'
 import type { Template } from './TemplateSettings'
 
@@ -62,6 +62,11 @@ export default function CreateIssue({ defaults, onClose, onCreated }: { defaults
   const [labels, setLabels] = useState<string[]>([])
   const [due, setDue] = useState<string | null>(defaults?.dueDate ?? null)
   const [parent, setParent] = useState<Issue['parent']>(null)
+  // undefined: the project's default level
+  const [security, setSecurity] = useState<{ id: string; name: string } | null | undefined>(undefined)
+  useEffect(() => setSecurity(undefined), [projectKey])
+  const defaultLevel = project?.securityLevels?.find((l) => l.isDefault) ?? null
+  const level = security === undefined ? (defaultLevel ? { id: defaultLevel.id, name: defaultLevel.name } : null) : security
   const [another, setAnother] = useState(false)
   const [busy, setBusy] = useState(false)
   // the type's template fills an untouched description (and follows the type while untouched)
@@ -93,6 +98,7 @@ export default function CreateIssue({ defaults, onClose, onCreated }: { defaults
         description: desc && !isEmptyDoc(desc) ? desc : null,
       }
       if (templateId) body.templateId = templateId
+      if (security !== undefined) body.securityLevelId = security?.id ?? null
       if (parent) body.parentId = parent.id
       else if (defaults?.parentId) body.parentId = defaults.parentId
       if (defaults?.sprintId !== undefined && project.kind === 'scrum') body.sprintId = defaults.sprintId
@@ -228,6 +234,20 @@ export default function CreateIssue({ defaults, onClose, onCreated }: { defaults
             <span className="field-label">{t('Due')}</span>
             <DateValue value={due} onChange={setDue} />
           </div>
+          {(project.securityLevels?.length ?? 0) > 0 && (
+            <div className="field" style={{ minWidth: 180 }}>
+              <span className="field-label">{t('Security')}</span>
+              <SecurityPicker
+                creating
+                project={project}
+                value={level}
+                onChange={(id) => {
+                  const l = project.securityLevels.find((x) => x.id === id)
+                  setSecurity(l ? { id: l.id, name: l.name } : null)
+                }}
+              />
+            </div>
+          )}
           {type && type.level <= 0 && !defaults?.parentId && (
             <div className="field" style={{ minWidth: 220 }}>
               <span className="field-label">{type.level < 0 ? t('Parent') : t('Epic')}</span>

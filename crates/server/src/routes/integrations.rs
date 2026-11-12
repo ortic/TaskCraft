@@ -178,7 +178,7 @@ pub async fn sprint_page(
     access::require(&state, &user, project, Role::Member).await?;
     let (p, _) = by_key(&state, &user, &project.to_string(), Role::Viewer).await?;
     let c = wikicraft::require(&state, &user).await?;
-    let b = crate::reports::burndown(&state, id).await?;
+    let b = crate::reports::burndown(&state, id, Some(user.id)).await?;
     let ids: Vec<Uuid> = sqlx::query_scalar(
         "SELECT DISTINCT e.issue_id FROM issue_events e WHERE e.project_id = $2 AND ((e.field = 'sprint' AND (e.new_value->>'id' = $1::text OR e.old_value->>'id' = $1::text))
             OR (e.kind = 'created' AND e.new_value->'sprint'->>'id' = $1::text))
@@ -188,7 +188,9 @@ pub async fn sprint_page(
     .bind(project)
     .fetch_all(&state.db)
     .await?;
-    let all = issues::load_many(&state, &ids).await?;
+    // wiki pages are read by others: private issues stay out of them
+    let mut all = issues::load_many(&state, &ids).await?;
+    all.retain(|s| s.security.is_none());
     let in_sprint: Vec<&Summary> = all.iter().filter(|s| s.sprint.as_ref().is_some_and(|x| x.id == id)).collect();
     let done: Vec<&&Summary> = in_sprint.iter().filter(|s| s.status.category == "done").collect();
     let open: Vec<&&Summary> = in_sprint.iter().filter(|s| s.status.category != "done").collect();
@@ -252,6 +254,7 @@ pub async fn version_page(
     let c = wikicraft::require(&state, &user).await?;
     let ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM issues WHERE version_id = $1 AND deleted_at IS NULL").bind(id).fetch_all(&state.db).await?;
     let mut list = issues::load_many(&state, &ids).await?;
+    list.retain(|s| s.security.is_none());
     list.sort_by(|a, b| a.kind.name.cmp(&b.kind.name).then(a.number.cmp(&b.number)));
     let title = req.title.clone().filter(|t| !t.trim().is_empty()).unwrap_or_else(|| format!("{} {name} release notes", p.name));
     let mut body = String::new();
@@ -306,7 +309,7 @@ pub async fn linked_issues(State(state): State<AppState>, CurrentUser(user): Cur
             .fetch_all(&state.db)
             .await?,
     };
-    Ok(Json(json!(issues::load_many(&state, &ids).await?)))
+    Ok(Json(json!(issues::load_many_for(&state, user.id, &ids).await?)))
 }
 
 /// Links an existing page to an issue.

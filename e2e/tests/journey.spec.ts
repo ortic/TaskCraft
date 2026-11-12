@@ -375,6 +375,32 @@ test('workflow rules ask for what a status needs', async ({ page }) => {
   })
 })
 
+test('private issues with security levels', async ({ page }) => {
+  await login(page)
+  await page.goto('/projects/WEB/settings/permissions')
+  await page.getByRole('button', { name: 'Add level' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Name').fill('Security team')
+  await dialog.getByLabel('By project role').selectOption('')
+  await a11y(page, '[role=dialog]')
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  await expect(page.locator('.ps-level-row', { hasText: 'Security team' })).toContainText('project admins only')
+  // make an issue private from its side panel
+  const key = await page.evaluate(async () => (await (await fetch('/api/search?q=' + encodeURIComponent('project = WEB order by key'))).json()).issues[0].key as string)
+  await page.goto(`/issues/${key}`)
+  await page.getByRole('button', { name: 'Security level' }).click()
+  await page.getByRole('option', { name: /Security team/ }).click()
+  await expect(page.locator('.badge-private')).toContainText('Security team')
+  await a11y(page)
+  // public again, and the level gone, for the steps after this one
+  await page.evaluate(async (key) => {
+    const h = { 'content-type': 'application/json', 'x-taskcraft': '1' }
+    const p = await (await fetch('/api/projects/WEB')).json()
+    await fetch(`/api/issues/${key}`, { method: 'PATCH', headers: h, body: JSON.stringify({ securityLevelId: null }) })
+    for (const l of p.securityLevels) await fetch(`/api/security-levels/${l.id}?replaceWith=none`, { method: 'DELETE', headers: h })
+  }, key)
+})
+
 test('command palette finds issues', async ({ page }) => {
   await login(page)
   await page.keyboard.press('Control+k')

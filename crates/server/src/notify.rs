@@ -10,7 +10,7 @@ use crate::events::{self, Event};
 use crate::issues::{Actor, Change, Summary};
 
 async fn send(state: &AppState, workspace: Uuid, user: Uuid, s: &Summary, actor: Option<Uuid>, kind: &str, data: Value) {
-    if Some(user) == actor || !crate::access::can_view(state, user, s.project_id).await {
+    if Some(user) == actor || !crate::access::sees(state, user, s.id).await {
         return;
     }
     let (muted, email): (bool, Option<String>) =

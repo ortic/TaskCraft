@@ -35,11 +35,14 @@ pub struct Event {
     /// for kind notification: whose it is (others don't get it)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<Uuid>,
+    /// about a private issue: only those who see it get it (set on publishing)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub private: bool,
 }
 
 impl Event {
     pub fn new(workspace: Uuid, kind: &str) -> Self {
-        Event { workspace, kind: kind.into(), project_id: None, issue_id: None, key: None, actor_id: None, user_id: None }
+        Event { workspace, kind: kind.into(), project_id: None, issue_id: None, key: None, actor_id: None, user_id: None, private: false }
     }
 
     pub fn project(mut self, p: Uuid) -> Self {
@@ -89,7 +92,16 @@ impl Hub {
 
 /// Announces a change to every replica (best effort: a lost event means a browser shows the
 /// change on its next refetch).
-pub async fn publish(state: &AppState, e: Event) {
+pub async fn publish(state: &AppState, mut e: Event) {
+    if let Some(id) = e.issue_id {
+        e.private = sqlx::query_scalar("SELECT security_level_id IS NOT NULL FROM issues WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or(false);
+    }
     let payload = match serde_json::to_string(&Wire { w: e.workspace, e: e.clone() }) {
         Ok(p) => p,
         Err(_) => return,
@@ -160,6 +172,11 @@ pub async fn stream(
                         c.refreshed = Instant::now();
                     }
                     if e.project_id.is_some_and(|p| !c.visible.contains(&p)) {
+                        continue;
+                    }
+                    if let Some(id) = e.issue_id.filter(|_| e.private)
+                        && !crate::access::sees(&c.state, c.user.id, id).await
+                    {
                         continue;
                     }
                     let data = serde_json::to_string(&e).unwrap_or_default();

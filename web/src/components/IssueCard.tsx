@@ -1,5 +1,5 @@
 import { t } from '../i18n'
-import { Ban, Calendar, MessageSquare, CornerDownRight } from 'lucide-react'
+import { Ban, Calendar, MessageSquare, CornerDownRight, Lock } from 'lucide-react'
 import type { Issue } from '../api'
 import { Avatar, Unassigned } from '../ui'
 import { PriorityIcon, TypeIcon } from '../icons'
@@ -58,7 +58,7 @@ export default function IssueCard({
         <div className="row-wrap" style={{ gap: 4 }}>
           {showEpic && issue.parent && issue.type.level === 0 && (
             <span className="ic-epic" style={{ background: `color-mix(in srgb, ${issue.parent.color ?? '#8b5cf6'} 16%, transparent)`, color: 'var(--text)' }} title={issue.parent.title}>
-              {issue.parent.title}
+              {issue.parent.title || issue.parent.key}
             </span>
           )}
           {has('labels') && issue.labels.slice(0, 3).map((l) => <span key={l} className="label-chip" style={{ height: 18, fontSize: 11 }}>{l}</span>)}
@@ -67,6 +67,7 @@ export default function IssueCard({
       <div className="ic-meta">
         <TypeIcon icon={issue.type.icon} color={issue.type.color} size={15} title={issue.type.name} />
         <span className="issue-key" style={{ textDecoration: done ? 'line-through' : undefined }}>{issue.key}</span>
+        {issue.security && <span className="ic-private" title={t('Private ({name})', { name: issue.security.name })}><Lock size={12} aria-label={t('Private ({name})', { name: issue.security.name })} /></span>}
         {issue.blocked && !done && <span className="ic-blocked" title={t('Blocked')}><Ban size={13} /></span>}
         {has('due') && issue.dueDate && (
           <span className="row" style={{ gap: 2 }}>

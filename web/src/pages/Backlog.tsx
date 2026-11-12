@@ -2,7 +2,7 @@ import { t } from '../i18n'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, GripVertical, Ellipsis, Play, Flag, Pencil, Trash, ChevronDown, ChevronRight, Target, Layers, Ban } from 'lucide-react'
+import { Plus, Search, GripVertical, Ellipsis, Play, Flag, Pencil, Trash, ChevronDown, ChevronRight, Target, Layers, Ban, Lock } from 'lucide-react'
 import { api, daysUntil, shortDate, isoDate, type Issue, type Project, type Sprint } from '../api'
 import { Avatar, Confirm, Empty, ErrorBox, Loading, Lozenge, Modal, PopButton, Unassigned, useProject, useToast } from '../ui'
 import { PriorityIcon, TypeIcon } from '../icons'
@@ -138,6 +138,7 @@ function BacklogView({ project, data, velocity }: { project: Project; data: Back
       <TypeIcon icon={i.type.icon} color={i.type.color} title={i.type.name} />
       <span className="issue-key" style={{ minWidth: 62, textDecoration: i.status.category === 'done' ? 'line-through' : undefined }}>{i.key}</span>
       <span className="ir-title">{i.title}</span>
+      {i.security && <span className="ic-private" title={t('Private ({name})', { name: i.security.name })}><Lock size={12} aria-label={t('Private ({name})', { name: i.security.name })} /></span>}
       {i.blocked && i.status.category !== 'done' && <span title={t('Blocked')} style={{ color: 'var(--danger)', display: 'inline-flex' }}><Ban size={13} /></span>}
       {i.parent && (
         <span className="label-chip" style={{ background: `color-mix(in srgb, ${i.parent.color ?? '#8b5cf6'} 16%, transparent)`, color: 'var(--text)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }} title={i.parent.title}>

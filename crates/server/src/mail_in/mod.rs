@@ -512,6 +512,8 @@ async fn reply(state: &AppState, m: &Inbound, from: &str, issue: &issues::Row, p
     let key = issue.key();
     let user = person(state, project.workspace_id, from).await?;
     let role = match &user {
+        // a private issue they don't see is as good as not there
+        Some(u) if !access::sees(state, u.id, issue.id).await => Role::None,
         Some(u) => access::role(state, u, project.id).await.map_err(|e| anyhow::anyhow!("{e:#}"))?,
         None => Role::None,
     };

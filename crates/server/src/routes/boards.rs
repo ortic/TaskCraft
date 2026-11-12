@@ -43,7 +43,7 @@ async fn issues_where(state: &AppState, user: &User, project: Uuid, q: &str, ext
     crate::query::push_order(&mut qb, &ctx, &parsed.order, "i.rank, i.id")?;
     qb.push(" LIMIT 2000");
     let ids: Vec<Uuid> = qb.build_query_scalar().fetch_all(&state.db).await?;
-    let mut list = issues::load_many(state, &ids).await?;
+    let mut list = issues::load_many_for(state, user.id, &ids).await?;
     let pos: std::collections::HashMap<Uuid, usize> = ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
     list.sort_by_key(|s| pos.get(&s.id).copied().unwrap_or(usize::MAX));
     Ok(list)

@@ -443,6 +443,9 @@ impl TaskMcp {
         if let Some(n) = name(&v["component"]) {
             line("Component", n);
         }
+        if let Some(n) = name(&v["security"]) {
+            line("Private", format!("security level {n}"));
+        }
         let labels: Vec<&str> = v["labels"].as_array().into_iter().flatten().filter_map(|l| l.as_str()).collect();
         if !labels.is_empty() {
             line("Labels", labels.join(", "));
@@ -844,7 +847,7 @@ impl TaskMcp {
             sqlx::query_as("SELECT name, goal, state, start_at, end_at, completed_at, stats FROM sprints WHERE id = $1").bind(sid).fetch_one(&st.db).await?;
         let ids: Vec<Uuid> =
             sqlx::query_scalar("SELECT id FROM issues WHERE sprint_id = $1 AND deleted_at IS NULL ORDER BY rank").bind(sid).fetch_all(&st.db).await?;
-        let list = issues::load_many(st, &ids).await?;
+        let list = issues::load_many_for(st, user.id, &ids).await?;
         let mut by_status: BTreeMap<String, usize> = BTreeMap::new();
         let mut by_person: BTreeMap<String, (usize, f64)> = BTreeMap::new();
         let (mut points, mut points_done, mut done) = (0.0, 0.0, 0);
@@ -949,7 +952,7 @@ impl TaskMcp {
             "overview" => crate::reports::overview(st, p.id).await?,
             "velocity" => crate::reports::velocity(st, p.id, a.count.unwrap_or(8)).await?,
             "cumulative-flow" | "cfd" | "flow" => crate::reports::cumulative_flow(st, p.id, days.unwrap_or(30)).await?,
-            "cycle-time" | "lead-time" => crate::reports::cycle_time(st, p.id, days.unwrap_or(90)).await?,
+            "cycle-time" | "lead-time" => crate::reports::cycle_time(st, p.id, days.unwrap_or(90), Some(user.id)).await?,
             "created-resolved" | "created-vs-resolved" => crate::reports::created_resolved(st, p.id, days.unwrap_or(30)).await?,
             "workload" => crate::reports::workload(st, p.id).await?,
             "burndown" | "sprint" => {
@@ -957,7 +960,7 @@ impl TaskMcp {
                 if project != p.id {
                     return bad("that sprint belongs to another project");
                 }
-                crate::reports::burndown(st, sid).await?
+                crate::reports::burndown(st, sid, Some(user.id)).await?
             }
             other => return bad(format!("unknown report {other:?}: overview, burndown, velocity, cumulative-flow, cycle-time, created-resolved or workload")),
         };

@@ -18,7 +18,7 @@ import Development, { describeDevEvent } from './Development'
 import { SlaList } from './SlaBadges'
 import { resolutionLabel, resolutionsOf, useTransition } from './Transition'
 import {
-  ComponentPicker, CustomFieldValue, DateValue, LabelsEditor, NumberValue, ParentPicker, PersonPicker, PriorityPicker, SprintPicker, StatusPicker, TypePicker, VersionPicker,
+  ComponentPicker, CustomFieldValue, DateValue, LabelsEditor, NumberValue, ParentPicker, PersonPicker, PriorityPicker, SecurityPicker, SprintPicker, StatusPicker, TypePicker, VersionPicker,
 } from './fields'
 
 export function useIssue(key: string) {
@@ -135,6 +135,11 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
             <TypeIcon icon={issue.type.icon} color={issue.type.color} size={14} />
             <span className="issue-key">{issue.key}</span>
           </span>
+          {issue.security && (
+            <span className="badge badge-private" title={t('Private: only those the security level {name} lists see this issue (and project admins, its reporter, creator and assignee)', { name: issue.security.name })}>
+              <Lock size={11} aria-hidden /> {issue.security.name}
+            </span>
+          )}
           {inPanel && (
             <Link to={`/issues/${issue.key}`} className="icon-btn icon-btn-sm" title={t('Open as page')} aria-label={t('Open as page')}>
               <ExternalLink size={13} />
@@ -327,6 +332,11 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
         {project.components.length > 0 && (
           <SideField label={t('Component')}>
             <ComponentPicker project={project} value={issue.component} disabled={!can} onChange={(id) => set({ componentId: id })} />
+          </SideField>
+        )}
+        {((project.securityLevels?.length ?? 0) > 0 || issue.security) && (
+          <SideField label={t('Security')}>
+            <SecurityPicker project={project} value={issue.security ?? null} disabled={!can || !may(project, 'setSecurity')} onChange={(id) => set({ securityLevelId: id })} />
           </SideField>
         )}
         <SideField label={t('Labels')}>
@@ -1036,6 +1046,8 @@ export function describeEvent(e: HistoryEvent): React.ReactNode {
       return t('changed the estimate to {time}', { time: e.new == null ? t('none') : duration(e.new) })
     case 'resolution':
       return e.new ? t('set the resolution to {resolution}', { resolution: resolutionLabel(String(e.new)) }) : t('cleared the resolution')
+    case 'security':
+      return e.new ? t('made it private ({level})', { level: name(e.new) }) : t('made it public (no security level)')
     default:
       return t('changed {field} from {a} to {b}', { field: FIELD_LABELS[field]?.() ?? field, a: name(e.old), b: name(e.new) })
   }
@@ -1186,6 +1198,8 @@ interface MovePreview {
   droppedFields: string[]
   cleared: string[]
   subtasks: number
+  /** the security level it gets there (a private issue keeps one) */
+  securityLevel: string | null
 }
 
 /** Moves the issue to another project: pick the project, check the mapped type and status. */
@@ -1268,6 +1282,7 @@ function MoveDialog({ issue, inPanel, onClose }: { issue: IssueDetail; inPanel: 
           <ul className="small muted" style={{ paddingInlineStart: 18, margin: '4px 0 0' }}>
             <li>{t('It gets a new key in {project}; {key} keeps working as a link.', { project: target.name, key: issue.key })}</li>
             {preview.data.subtasks > 0 && <li>{t('Its {count} sub-tasks move along.', { count: preview.data.subtasks })}</li>}
+            {preview.data.securityLevel && <li>{t('It stays private with the security level {level} of {project}.', { level: preview.data.securityLevel, project: target.name })}</li>}
             {cleared.length > 0 && <li>{t('Cleared because they belong to this project: {fields}', { fields: cleared.join(', ') })}</li>}
             {preview.data.droppedFields.length > 0 && <li style={{ color: 'var(--warning)' }}>{t('Values lost (no matching field in {project}): {fields}', { project: target.name, fields: preview.data.droppedFields.join(', ') })}</li>}
             <li>{t('Comments, attachments, links, time logs and history stay with it.')}</li>

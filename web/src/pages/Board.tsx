@@ -97,7 +97,7 @@ function BoardView({ project, data, quick, setQuick, onBoard, onSprint }: { proj
     }
     for (const i of issues) {
       if (lanes === 'assignee') put(i.assignee?.id ?? 'none', i.assignee ? <><Avatar name={i.assignee.name} id={i.assignee.id} size={20} /> {i.assignee.name}</> : <><Unassigned size={20} /> {t('Unassigned')}</>, i)
-      else if (lanes === 'epic') put(i.parent?.id ?? 'none', i.parent ? <><span className="dot" style={{ background: i.parent.color ?? 'var(--accent)' }} /> {i.parent.title} <span className="issue-key">{i.parent.key}</span></> : t('No epic'), i)
+      else if (lanes === 'epic') put(i.parent?.id ?? 'none', i.parent ? <><span className="dot" style={{ background: i.parent.color ?? 'var(--accent)' }} /> {i.parent.title || i.parent.key} {i.parent.title && <span className="issue-key">{i.parent.key}</span>}</> : t('No epic'), i)
       else if (lanes === 'priority') put(i.priority, <PriorityIcon priority={i.priority} withLabel />, i)
       else if (lanes === 'type') put(i.type.id, <><TypeIcon icon={i.type.icon} color={i.type.color} /> {i.type.name}</>, i)
     }

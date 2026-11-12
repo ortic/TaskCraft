@@ -184,7 +184,7 @@ pub async fn sla_queue(State(state): State<AppState>, CurrentUser(user): Current
     .fetch_all(&state.db)
     .await?;
     let goals = crate::sla::for_issues(&state, &ids).await?;
-    let issues = crate::issues::load_many(&state, &goals.keys().copied().collect::<Vec<_>>()).await?;
+    let issues = crate::issues::load_many_for(&state, user.id, &goals.keys().copied().collect::<Vec<_>>()).await?;
     let mut rows: Vec<(chrono::DateTime<Utc>, Value)> = issues
         .into_iter()
         .filter_map(|s| {
