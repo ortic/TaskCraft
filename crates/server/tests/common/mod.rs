@@ -65,6 +65,7 @@ pub async fn spawn_with(tweak: impl FnOnce(&mut Config)) -> TestApp {
         webhook_allow_private: true,
         wikicraft_url: None,
         wikicraft_token: None,
+        sso: Default::default(),
     };
     tweak(&mut config);
     let state = AppState::new(config).await.expect("app state");

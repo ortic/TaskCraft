@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, BookOpen, Check, Contrast, Copy, ExternalLink, KeyRound, Lock, Monitor, Moon, Palette, Sun, Trash, User } from 'lucide-react'
 import { api, ago, shortDate, type Me } from '../api'
 import { Avatar, Confirm, ErrorBox, Loading, useMe, useToast } from '../ui'
+import { providerName, type SignInMethods } from '../components/Sso'
 import './Settings.css'
 
 // ---- small shared pieces (Admin uses them too) ----
@@ -240,6 +241,8 @@ function PasswordSection() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const mismatch = again.length > 0 && next !== again
+  // single sign-on: people without a password (or all, when passwords are off) can't change one
+  const signIn = useQuery({ queryKey: ['me', 'sign-in'], queryFn: () => api.get<SignInMethods & { passwordLogin: boolean }>('/me/sign-in') })
   const save = async (e: FormEvent) => {
     e.preventDefault()
     if (next.length < 8) return setErr(t('The new password must be at least 8 characters.'))
@@ -257,6 +260,17 @@ function PasswordSection() {
     } finally {
       setBusy(false)
     }
+  }
+  if (signIn.data && (!signIn.data.passwordLogin || !signIn.data.password)) {
+    const providers = signIn.data.providers.map(providerName).join(', ')
+    return (
+      <Section id="password" icon={<Lock size={16} />} title={t('Password')}>
+        <p className="muted" style={{ margin: 0 }}>
+          {signIn.data.passwordLogin ? t('Your account has no password.') : t('Password sign-in is turned off for this workspace.')}{' '}
+          {t('You sign in with {providers}.', { providers: providers || t('single sign-on') })}
+        </p>
+      </Section>
+    )
   }
   return (
     <form onSubmit={save}>

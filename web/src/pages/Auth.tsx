@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 import { Logo } from '../ui'
+import { SsoButtons, useSignInOptions } from '../components/Sso'
 
 function go(next?: string | null) {
   location.href = next && next.startsWith('/') && !next.startsWith('//') ? next : '/'
@@ -52,8 +53,13 @@ export function Setup() {
 
 export function Login() {
   const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
+  // single sign-on comes back with `?error=` when it can't sign someone in
+  const [err, setErr] = useState(() => new URLSearchParams(location.search).get('error') ?? '')
   const next = new URLSearchParams(location.search).get('next')
+  const sso = useSignInOptions()
+  // the password form signs in local accounts and directory (LDAP / Active Directory) accounts
+  const directory = !!sso.data?.providers.some((p) => p.type === 'ldap')
+  const passwordForm = sso.data ? sso.data.passwordLogin || directory : true
   return (
     <div className="auth">
       <form
@@ -74,11 +80,17 @@ export function Login() {
       >
         <Logo />
         <h1>{t('Log in')}</h1>
-        <div className="field"><label htmlFor="em">{t('E-mail')}</label><input id="em" name="email" type="email" className="input" required autoFocus autoComplete="username" /></div>
-        <div className="field"><label htmlFor="pw">{t('Password')}</label><input id="pw" name="password" type="password" className="input" required autoComplete="current-password" /></div>
-        {err && <p className="error-text">{err}</p>}
-        <button className="btn btn-primary" style={{ width: '100%' }} disabled={busy}>{t('Log in')}</button>
-        <p className="faint small" style={{ marginBottom: 0 }}>{t('Forgot your password? Ask an administrator for a reset link.')}</p>
+        {sso.data && <SsoButtons options={sso.data} next={next} passwordForm={passwordForm} />}
+        {passwordForm && (
+          <>
+            <div className="field"><label htmlFor="em">{directory ? t('E-mail or username') : t('E-mail')}</label><input id="em" name="email" type={directory ? 'text' : 'email'} className="input" required autoFocus autoComplete="username" /></div>
+            <div className="field"><label htmlFor="pw">{t('Password')}</label><input id="pw" name="password" type="password" className="input" required autoComplete="current-password" /></div>
+          </>
+        )}
+        {sso.data && !passwordForm && sso.data.providers.length === 0 && <p className="muted">{t('Password sign-in is turned off and no single sign-on is set up. Ask an administrator.')}</p>}
+        {err && <p className="error-text" role="alert">{err}</p>}
+        {passwordForm && <button className="btn btn-primary" style={{ width: '100%' }} disabled={busy}>{t('Log in')}</button>}
+        {sso.data?.passwordLogin !== false && <p className="faint small" style={{ marginBottom: 0 }}>{t('Forgot your password? Ask an administrator for a reset link.')}</p>}
       </form>
     </div>
   )
@@ -88,6 +100,7 @@ export function Login() {
 export function Welcome() {
   const token = new URLSearchParams(location.search).get('token') ?? ''
   const info = useQuery({ queryKey: ['link', token], queryFn: () => api.get<{ kind: 'invite' | 'reset'; name: string; email: string; workspace: string }>(`/auth/link?token=${encodeURIComponent(token)}`), retry: false })
+  const sso = useSignInOptions()
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   return (
@@ -114,6 +127,13 @@ export function Welcome() {
             <h1>{t('This link doesn’t work')}</h1>
             <p className="muted">{(info.error as Error).message}</p>
             <a className="btn" href="/login">{t('Go to log in')}</a>
+          </>
+        ) : info.data && sso.data?.passwordLogin === false ? (
+          <>
+            {/* single sign-on only: people join by signing in with their provider */}
+            <h1>{info.data.kind === 'invite' ? t('Join {workspace}', { workspace: info.data.workspace }) : t('Log in')}</h1>
+            <p className="muted">{t('This workspace signs in with single sign-on. Log in with your provider as {email}.', { email: info.data.email })}</p>
+            <a className="btn btn-primary" href="/login">{t('Go to log in')}</a>
           </>
         ) : info.data ? (
           <>

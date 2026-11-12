@@ -11,6 +11,7 @@ import { Avatar, Confirm, Empty, ErrorBox, Loading, Modal, PopButton, Tabs, useM
 import { PROJECT_COLORS } from '../icons'
 import { CopyField, Switch } from './Settings'
 import { DeleteTeam, TeamDialog, TeamMembers, useTeams, type Team } from './People'
+import { SignInBadges, type SignInMethods } from '../components/Sso'
 import './Admin.css'
 
 type Tab = 'overview' | 'users' | 'teams' | 'webhooks' | 'audit'
@@ -206,6 +207,8 @@ interface AdminUser {
   title: string | null
   createdAt: string
   lastLoginAt: string | null
+  /** password and / or single sign-on providers */
+  signIn?: SignInMethods | null
 }
 
 const ROLES: { id: 'admin' | 'member' | 'guest'; label: () => string; desc: () => string }[] = [
@@ -294,6 +297,7 @@ function UsersTab({ me }: { me: Me }) {
                 <th>{t('Person')}</th>
                 <th>{t('Role')}</th>
                 <th>{t('Status')}</th>
+                <th className="adm-hide-sm">{t('Signs in with')}</th>
                 <th className="adm-hide-sm">{t('Last signed in')}</th>
                 <th><span className="sr-only">{t('Actions')}</span></th>
               </tr>
@@ -344,6 +348,7 @@ function UsersTab({ me }: { me: Me }) {
                       )}
                     </td>
                     <td><StatusBadge status={u.status} /></td>
+                    <td className="small adm-hide-sm"><SignInBadges methods={u.signIn} /></td>
                     <td className="small adm-hide-sm" title={u.lastLoginAt ? dateTime(u.lastLoginAt) : undefined}>
                       {u.lastLoginAt ? ago(u.lastLoginAt) : <span className="faint">{u.status === 'invited' ? t('Not yet') : t('Never')}</span>}
                     </td>

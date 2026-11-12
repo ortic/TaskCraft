@@ -1,0 +1,6 @@
+/* single sign-on: login buttons, sign-in badges */
+.sso-buttons { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 4px; }
+.sso-btn { width: 100%; justify-content: center; }
+.sso-divider { display: flex; align-items: center; gap: 10px; margin: 14px 0; text-align: center; }
+.sso-divider::before, .sso-divider::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
+.sso-badges { display: inline-flex; flex-wrap: wrap; gap: 4px; }

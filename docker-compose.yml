@@ -15,6 +15,7 @@ services:
     restart: unless-stopped
 
   taskcraft:
+    # SAML single sign-on needs a build with it:  docker compose build --build-arg FEATURES=saml
     build: .
     image: taskcraft:latest
     depends_on:
@@ -28,6 +29,24 @@ services:
       # documentation next to the work (optional)
       # TASKCRAFT_WIKICRAFT_URL: https://wiki.example.com
       # TASKCRAFT_WIKICRAFT_TOKEN: wct_...
+      # single sign-on (optional, see README "Sign-in"); redirect URIs: <base URL>/api/auth/sso/<id>/callback
+      # TASKCRAFT_GOOGLE_CLIENT_ID: ....apps.googleusercontent.com
+      # TASKCRAFT_GOOGLE_CLIENT_SECRET: ...
+      # TASKCRAFT_GOOGLE_ALLOWED_DOMAINS: example.com
+      # TASKCRAFT_MICROSOFT_CLIENT_ID: ...
+      # TASKCRAFT_MICROSOFT_CLIENT_SECRET: ...
+      # TASKCRAFT_MICROSOFT_TENANT: <directory (tenant) id>
+      # TASKCRAFT_OIDC_ISSUER: https://sso.example.com/realms/acme
+      # TASKCRAFT_OIDC_CLIENT_ID: taskcraft
+      # TASKCRAFT_OIDC_CLIENT_SECRET: ...
+      # TASKCRAFT_OIDC_NAME: Acme SSO
+      # any number of providers (OIDC, GitHub, LDAP / Active Directory, SAML) as JSON:
+      # TASKCRAFT_AUTH_PROVIDERS: >-
+      #   [{"type": "ldap", "id": "ad", "name": "ACME directory", "url": "ldaps://dc1.example.com",
+      #     "bindDn": "CN=taskcraft,OU=Service,DC=example,DC=com", "bindPassword": "...",
+      #     "baseDn": "DC=example,DC=com", "syncGroups": true}]
+      # sign in through the providers only
+      # TASKCRAFT_DISABLE_PASSWORD_LOGIN: "true"
     ports:
       - "8788:8788"
     volumes:

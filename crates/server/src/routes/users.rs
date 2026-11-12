@@ -55,10 +55,13 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser)
             .bind(user.workspace_id)
             .fetch_all(&state.db)
             .await?;
+    // how each person signs in: password and / or single sign-on providers
+    let mut sign_in = crate::sso::sign_in_methods(&state, user.workspace_id).await?;
     Ok(Json(json!(
         rows.into_iter()
             .map(|(id, name, email, role, status, title, created, last)| json!({
-                "id": id, "name": name, "email": email, "role": role, "status": status, "title": title, "createdAt": created, "lastLoginAt": last
+                "id": id, "name": name, "email": email, "role": role, "status": status, "title": title, "createdAt": created, "lastLoginAt": last,
+                "signIn": sign_in.remove(&id),
             }))
             .collect::<Vec<_>>()
     )))

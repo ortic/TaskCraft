@@ -35,7 +35,7 @@
 ## Next
 
 - [ ] E-mail: invitations, password reset, notification digests (SMTP)
-- [ ] Single sign-on: OpenID Connect, SAML, LDAP (reuse WikiCraft's providers)
+- [x] Single sign-on: OpenID Connect (Entra ID, Google, GitLab, any issuer), GitHub, LDAP / Active Directory, SAML (feature `saml`); group → team sync, password sign-in can be turned off
 - [ ] Two-factor authentication and passkeys
 - [ ] Move issues between projects (key change with redirect, field mapping)
 - [ ] CSV import with field mapping; imports from common trackers' exports

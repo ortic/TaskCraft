@@ -143,6 +143,8 @@ pub fn api() -> Router<AppState> {
         .route("/admin/webhooks", get(admin::webhooks).post(admin::create_webhook))
         .route("/admin/webhooks/{id}", patch(admin::update_webhook).delete(admin::delete_webhook))
         .route("/admin/webhooks/{id}/test", post(admin::test_webhook))
+        // single sign-on: /auth/providers, /auth/sso/{id}/…, /me/sign-in
+        .merge(crate::sso::routes())
 }
 
 pub fn router(state: AppState) -> Router {
