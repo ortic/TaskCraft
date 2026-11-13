@@ -276,12 +276,6 @@ pub fn spawn_worker(state: &AppState) {
             {
                 tracing::warn!("notification e-mails: {e:#}");
             }
-            if n.is_multiple_of(720) {
-                let _ = sqlx::query("DELETE FROM mail_outbox WHERE created_at < now() - interval '30 days' AND (sent_at IS NOT NULL OR attempts >= $1)")
-                    .bind(MAX_ATTEMPTS)
-                    .execute(&state.db)
-                    .await;
-            }
             n += 1;
             if let Err(e) = drain(&state).await {
                 tracing::warn!("mail outbox: {e:#}");

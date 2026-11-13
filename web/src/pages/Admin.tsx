@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { BackupImportTab } from './BackupImport'
 import {
-  Archive, ArchiveRestore, Check, ChevronDown, CircleDot, Clock, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, Mail, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, ShieldOff, Trash,
+  Archive, ArchiveRestore, Check, ChevronDown, CircleDot, Clock, Download, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, Mail, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, ShieldOff, Trash,
   UserCheck, UserPlus, UserX, Users, Webhook,
 } from 'lucide-react'
 import { api, ago, dateTime, shortDate, type Me, type TimeCategory } from '../api'
@@ -106,6 +106,7 @@ function Overview({ me }: { me: Me }) {
         <Stat icon={<HardDrive size={16} />} value={s ? formatBytes(s.attachmentBytes) : undefined} label={t('Attachment storage')} />
       </div>
       <WorkspaceForm key={JSON.stringify(me.workspace)} me={me} />
+      <RetentionForm key={`r-${JSON.stringify(me.workspace?.retention ?? {})}`} me={me} />
       <MailCard me={me} />
       <TwoFactorPolicy />
     </>
@@ -280,6 +281,69 @@ function WorkspaceForm({ me }: { me: Me }) {
           </div>
           <span className="field-hint">{t('Used by calendars and timesheets.')}</span>
         </div>
+      </div>
+      <div className="adm-card-foot">
+        {err && <span className="error-text adm-foot-msg" role="alert">{err}</span>}
+        <button type="submit" className="btn btn-primary" disabled={busy || !dirty}>{t('Save changes')}</button>
+      </div>
+    </form>
+  )
+}
+
+/** How long the trash, the audit log, e-mail logs and read notifications are kept. */
+function RetentionForm({ me }: { me: Me }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const r = (me.workspace?.retention ?? {}) as Record<string, number | undefined>
+  const KEYS = [
+    { id: 'trashDays', label: () => t('Deleted issues (the trash)'), hint: () => t('Then they’re gone for good, with their files.') },
+    { id: 'auditDays', label: () => t('Audit log'), hint: () => t('Kept for good when empty.') },
+    { id: 'mailDays', label: () => t('E-mail logs'), hint: () => t('Sent and received e-mails; without a rule 30 and 90 days.') },
+    { id: 'notificationDays', label: () => t('Read notifications'), hint: () => t('Unread ones stay.') },
+  ]
+  const [v, setV] = useState<Record<string, string>>(() => Object.fromEntries(KEYS.map((k) => [k.id, r[k.id] != null ? String(r[k.id]) : ''])))
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const dirty = KEYS.some((k) => (v[k.id] || '') !== (r[k.id] != null ? String(r[k.id]) : ''))
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    const out: Record<string, number | null> = {}
+    for (const k of KEYS) {
+      const s = v[k.id].trim()
+      if (!s) {
+        out[k.id] = null
+        continue
+      }
+      const n = Number(s)
+      if (!Number.isInteger(n) || n < 1 || n > 3650) return setErr(t('{what}: a number of days from 1 to 3650, or empty to keep everything', { what: k.label() }))
+      out[k.id] = n
+    }
+    setBusy(true)
+    setErr('')
+    try {
+      await api.put('/admin/workspace', { retention: out })
+      await qc.invalidateQueries({ queryKey: ['me'] })
+      toast(t('Retention rules saved'))
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <form className="adm-card" onSubmit={save}>
+      <div className="adm-card-head">
+        <h2>{t('Retention')}</h2>
+        <p className="small muted">{t('How many days things are kept; empty keeps them. Checked once an hour.')}</p>
+      </div>
+      <div className="adm-card-body adm-ws-grid">
+        {KEYS.map((k) => (
+          <div className="field" key={k.id}>
+            <label htmlFor={`adm-ret-${k.id}`}>{k.label()}</label>
+            <input id={`adm-ret-${k.id}`} className="input" inputMode="numeric" value={v[k.id]} placeholder={t('Keep')} aria-describedby={`adm-ret-${k.id}-hint`} onChange={(e) => setV((o) => ({ ...o, [k.id]: e.target.value }))} />
+            <span className="field-hint" id={`adm-ret-${k.id}-hint`}>{t('Days.')} {k.hint()}</span>
+          </div>
+        ))}
       </div>
       <div className="adm-card-foot">
         {err && <span className="error-text adm-foot-msg" role="alert">{err}</span>}
@@ -483,6 +547,9 @@ function UsersTab({ me }: { me: Me }) {
                                 <Trash size={15} /> {t('Remove…')}
                               </button>
                             )}
+                            <a className="menu-item" href={`/api/users/${u.id}/export`} download onClick={() => close()}>
+                              <Download size={15} /> {t('Download their data')}
+                            </a>
                             <div className="menu-empty adm-menu-note">{t('Joined {date}', { date: shortDate(u.createdAt) })}</div>
                           </div>
                         )}

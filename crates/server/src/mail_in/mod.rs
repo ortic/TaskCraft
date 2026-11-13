@@ -47,8 +47,6 @@ pub const PER_SENDER_PER_HOUR: i64 = 30;
 const ACKS_PER_HOUR: i64 = 5;
 /// A message whose handling failed this often is given up.
 const MAX_FAILURES: i64 = 3;
-/// How long the log (and with it duplicate detection) goes back.
-const KEEP_DAYS: i32 = 90;
 
 /// Configuration (CLI flags or environment).
 #[derive(Debug, Clone, Default, clap::Args)]
@@ -814,16 +812,11 @@ pub fn spawn(state: &AppState) {
     };
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
-        let mut n: u64 = 0;
         loop {
             tick.tick().await;
             if state.shutting_down.load(std::sync::atomic::Ordering::Relaxed) {
                 return;
             }
-            if n.is_multiple_of(60) {
-                let _ = sqlx::query("DELETE FROM mail_in WHERE received_at < now() - make_interval(days => $1)").bind(KEEP_DAYS).execute(&state.db).await;
-            }
-            n += 1;
             if let Some(t) = &target
                 && let Err(e) = poll_once(&state, t).await
             {

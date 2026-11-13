@@ -602,6 +602,28 @@ paths:
           $ref: '#/components/responses/Forbidden'
       security:
       - session: []
+  /me/export:
+    get:
+      tags:
+      - Auth & account
+      summary: Download everything about yourself
+      operationId: exportMyData
+      description: 'Everything TaskCraft keeps about the person as one JSON document (a download): profile and preferences,
+        teams and project access, the issues they reported, created or are assigned (titles only of those they still see),
+        their comments, time logs, attachments, watches, votes, saved filters, notifications, sign-in sessions and identities,
+        passkeys and API tokens (never secrets), and their entries in the audit log.'
+      responses:
+        '200':
+          description: taskcraft-personal-data.json (attachment)
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /auth/mfa:
     post:
       tags:
@@ -1803,6 +1825,39 @@ paths:
           description: Done (no content)
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /users/{id}/export:
+    get:
+      tags:
+      - People & teams
+      summary: Download everything about one person
+      operationId: exportUserData
+      description: 'Workspace admins (recorded in the audit log). Everything TaskCraft keeps about the person as one JSON
+        document (a download): profile and preferences, teams and project access, the issues they reported, created or are
+        assigned (titles only of those they still see), their comments, time logs, attachments, watches, votes, saved filters,
+        notifications, sign-in sessions and identities, passkeys and API tokens (never secrets), and their entries in the
+        audit log.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: taskcraft-personal-data.json (attachment)
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -8190,6 +8245,30 @@ paths:
                   - sunday
                   - null
                   description: first day of the week in calendars (default monday)
+                retention:
+                  type: object
+                  properties:
+                    trashDays:
+                      type:
+                      - integer
+                      - 'null'
+                      description: deleted issues (with their files) go for good after this many days
+                    auditDays:
+                      type:
+                      - integer
+                      - 'null'
+                      description: audit log entries
+                    mailDays:
+                      type:
+                      - integer
+                      - 'null'
+                      description: sent and received e-mail logs (default 30 and 90)
+                    notificationDays:
+                      type:
+                      - integer
+                      - 'null'
+                      description: read notifications
+                  description: 'how long things are kept, 1–3650 days each; null or left out: kept (applied once an hour)'
       responses:
         '204':
           description: Done (no content)

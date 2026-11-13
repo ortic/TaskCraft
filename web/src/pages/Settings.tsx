@@ -2,7 +2,7 @@ import { t, AVAILABLE, LANGUAGES, chooseLanguage, locale, rememberLanguage } fro
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, BookOpen, Check, Contrast, Copy, ExternalLink, KeyRound, Lock, Monitor, Moon, Palette, ShieldCheck, Sun, Trash, User } from 'lucide-react'
+import { Bell, BookOpen, Check, Contrast, Copy, Download, ExternalLink, KeyRound, Lock, Monitor, Moon, Palette, ShieldCheck, Sun, Trash, User } from 'lucide-react'
 import { api, ago, shortDate, type Me } from '../api'
 import { Avatar, Confirm, ErrorBox, Loading, useMe, useSetup, useToast } from '../ui'
 import { providerName, type SignInMethods } from '../components/Sso'
@@ -73,6 +73,7 @@ const SECTIONS = [
   { id: 'notifications', icon: <Bell size={15} />, label: () => t('Notifications') },
   { id: 'tokens', icon: <KeyRound size={15} />, label: () => t('API tokens') },
   { id: 'wikicraft', icon: <BookOpen size={15} />, label: () => t('WikiCraft') },
+  { id: 'data', icon: <Download size={15} />, label: () => t('Your data') },
 ]
 
 function scrollToSection(id: string) {
@@ -121,6 +122,11 @@ export default function Settings() {
               scrollToSection('tokens')
             }}
           />
+          <Section id="data" icon={<Download size={16} />} title={t('Your data')} desc={t('Everything TaskCraft keeps about you, as one JSON file: your profile, access, issues, comments, time, notifications, devices and tokens (never their secrets) and what you did in the audit log.')}>
+            <a className="btn" href="/api/me/export" download>
+              <Download size={15} /> {t('Download my data')}
+            </a>
+          </Section>
         </div>
       </div>
     </div>

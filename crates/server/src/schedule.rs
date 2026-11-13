@@ -151,6 +151,9 @@ pub async fn tick(state: &AppState) {
     if let Err(e) = run_subscriptions(state).await {
         tracing::warn!(error = %e, "filter subscriptions");
     }
+    if let Err(e) = crate::privacy::purge(state).await {
+        tracing::warn!(error = %e, "retention");
+    }
 }
 
 /// Filter subscriptions: a saved filter's results e-mailed to its subscriber, run as them (they

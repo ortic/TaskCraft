@@ -60,7 +60,7 @@
 - [x] Service desk portal: requesters follow and answer their requests on a small portal (sign-in by e-mailed link), public request forms per project
 - [x] Chat notifications: webhooks for all or one project can send readable messages to Slack-compatible channels (also Mattermost), Microsoft Teams or Google Chat in the workspace's language, and automation rules can post a message of their own; nothing about private issues or restricted comments
 - [x] Filter subscriptions: a saved filter's results e-mailed on a schedule (as the subscriber sees them, in their language; skipped when empty unless asked)
-- [ ] Personal data export (everything about one person) and retention rules for trash, audit log and mail logs
+- [x] Personal data export (everything about one person, from their settings or by an admin) and retention rules for the trash, audit log, mail logs and read notifications
 - [ ] Scale check: a workspace with 100 000 issues — query plans, indexes, timings tracked in CI
 - [ ] Virus scanning of uploads with ClamAV (fail closed or open), blocked file types and an attachment size limit in the workspace settings — uploads now also come from e-mail and the portal
 - [x] Webhook formats for chat channels (Slack / Mattermost, Microsoft Teams, Google Chat) as readable messages, alongside the JSON payload

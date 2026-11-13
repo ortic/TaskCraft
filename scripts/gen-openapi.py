@@ -832,6 +832,10 @@ op("post", "/me/tokens", "createApiToken", "Auth & account", "Create a personal 
    res=created(obj({"id": uuid, "token": d(txt, "the token (tct_…); it is not shown again")}, ["id", "token"])), auth="session")
 op("delete", "/me/tokens/{id}", "deleteApiToken", "Auth & account", "Delete a personal API token",
    desc="Browser sessions only. Answers 204 also for unknown ids.", res=NO, auth="session", err="-404")
+D_EXPORT = ("Everything TaskCraft keeps about the person as one JSON document (a download): profile and preferences, teams and project access, the issues they reported, "
+            "created or are assigned (titles only of those they still see), their comments, time logs, attachments, watches, votes, saved filters, notifications, sign-in "
+            "sessions and identities, passkeys and API tokens (never secrets), and their entries in the audit log.")
+op("get", "/me/export", "exportMyData", "Auth & account", "Download everything about yourself", desc=D_EXPORT, res=raw("application/json", "taskcraft-personal-data.json (attachment)"))
 
 # --- Security
 op("post", "/auth/mfa", "completeSecondStep", "Security", "Complete a sign-in with a code or a passkey",
@@ -983,6 +987,8 @@ op("delete", "/users/{id}", "removeUser", "People & teams", "Remove someone for 
         "\"Former user …\"; everything personal goes (name, e-mail address, password, second factors, sessions, tokens, notifications, private filters and dashboards) "
         "and their open issues become unassigned.",
    res=NO)
+op("get", "/users/{id}/export", "exportUserData", "People & teams", "Download everything about one person",
+   desc="Workspace admins (recorded in the audit log). " + D_EXPORT, res=raw("application/json", "taskcraft-personal-data.json (attachment)"))
 op("post", "/users/{id}/link", "createUserLink", "People & teams", "A new invitation or password-reset link",
    desc="Workspace admins. An invitation for invited people, a password-reset link for everyone else (valid 7 days), to pass on; also e-mailed when outgoing mail is configured. "
         "Reset links need password sign-in to be on.",
@@ -3034,6 +3040,16 @@ op("put", "/admin/workspace", "updateWorkspace", "Administration", "Rename the w
        "accentColor": null(txt, "#rrggbb (null: the built-in colour)"),
        "defaultLanguage": null(txt, "interface language for people who haven't picked one: en, de, fr or it (null: the browser's)"),
        "weekStart": null(enum("monday", "sunday"), "first day of the week in calendars (default monday)"),
+       "retention": obj(
+           {
+               "trashDays": null(num, "deleted issues (with their files) go for good after this many days"),
+               "auditDays": null(num, "audit log entries"),
+               "mailDays": null(num, "sent and received e-mail logs (default 30 and 90)"),
+               "notificationDays": null(num, "read notifications"),
+           },
+           [],
+           "how long things are kept, 1–3650 days each; null or left out: kept (applied once an hour)",
+       ),
    })), res=NO)
 op("get", "/admin/audit", "getAuditLog", "Administration", "The audit log (latest 300 entries)",
    desc="Workspace admins.", res=ok(arr(S("AuditEntry"))))

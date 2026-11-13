@@ -136,6 +136,36 @@ pub struct UserUpdate {
     status: Option<String>,
 }
 
+/// `GET /users/{id}/export` — everything about one person (workspace admins), as a download.
+pub async fn export(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>) -> ApiResult<axum::response::Response> {
+    crate::auth::require_admin(&user)?;
+    let ws: Option<Uuid> = sqlx::query_scalar("SELECT workspace_id FROM users WHERE id = $1").bind(id).fetch_optional(&state.db).await?;
+    if ws != Some(user.workspace_id) {
+        return Err(ApiError::NotFound("person"));
+    }
+    crate::app::audit(&state, user.workspace_id, Some(user.id), "user.exported", Some(id.to_string()), serde_json::json!({})).await;
+    download(crate::privacy::export(&state, id).await?)
+}
+
+/// `GET /me/export` — everything TaskCraft holds about the caller, as a download.
+pub async fn export_me(State(state): State<AppState>, CurrentUser(user): CurrentUser) -> ApiResult<axum::response::Response> {
+    crate::app::audit(&state, user.workspace_id, Some(user.id), "user.exported", Some(user.id.to_string()), serde_json::json!({"self": true})).await;
+    download(crate::privacy::export(&state, user.id).await?)
+}
+
+fn download(v: serde_json::Value) -> ApiResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    let body = serde_json::to_vec_pretty(&v)?;
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, "application/json".to_string()),
+            (axum::http::header::CONTENT_DISPOSITION, "attachment; filename=\"taskcraft-personal-data.json\"".to_string()),
+        ],
+        body,
+    )
+        .into_response())
+}
+
 pub async fn update(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>, Json(req): Json<UserUpdate>) -> ApiResult<StatusCode> {
     require_admin(&user)?;
     let (target_role, removed): (String, bool) = sqlx::query_as("SELECT role, preferences ? 'removed' FROM users WHERE id = $1 AND workspace_id = $2")

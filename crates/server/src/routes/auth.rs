@@ -186,6 +186,7 @@ pub async fn me(
         "workspace": {
             "id": user.workspace_id, "name": ws_name,
             "accentColor": settings["accentColor"], "defaultLanguage": settings["defaultLanguage"], "weekStart": settings["weekStart"],
+            "retention": if user.is_admin() { settings["retention"].clone() } else { Value::Null },
         },
         "wikicraft": {
             "url": crate::wikicraft::base_url(&state),

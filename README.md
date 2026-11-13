@@ -149,7 +149,9 @@ issues, plan sprints, manage releases, edit others' comments, log time for other
 who sees an issue; **private issues**: security levels per project (by role, teams or people; a
 default for new issues) — an issue with one is seen only by those, project admins and its
 reporter, creator and assignee, and doesn't show up anywhere for anyone else; comments
-restricted to members, project admins or a team; invitations and password-reset links;
+restricted to members, project admins or a team; **personal data**: everyone downloads what
+TaskCraft keeps about them (admins for anyone), and **retention** rules for the trash, the audit
+log, e-mail logs and read notifications; invitations and password-reset links;
 teams; personal API tokens (read-only or read/write); signed webhooks, or readable messages for
 chat channels (Slack and compatible ones like Mattermost, Microsoft Teams, Google Chat — never about
 private issues or restricted comments) from webhooks and automation rules; audit log. With SMTP
