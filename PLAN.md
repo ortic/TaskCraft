@@ -53,7 +53,7 @@
 
 ## Next (round 3)
 
-- [~] Releases: container image on GHCR (amd64 + arm64) and Linux binaries on tagged releases, a changelog — the workflow is ready and checked; the first release is a `v0.1.0` tag away
+- [x] Releases: container image on GHCR (amd64 + arm64) and Linux binaries on tagged releases, a changelog — v0.1.0 on 2026-11-13
 - [x] Operations: Prometheus metrics (requests by route with durations, database pool, outboxes, e-mail in, live connections, counts), protected by a token
 - [x] API description: OpenAPI 3.1 document of the REST API (209 operations, generated, a test keeps it complete) and a browsable reference in the app
 - [x] Full migration from another tracker's XML site backup: people, projects, issues with their numbers, comments, time logs, attachments, links, watchers, components and versions, and the status history the reports replay (uploaded, checked and imported in the background from Administration → Import, or `taskcraft import-backup`; a second import skips what's there)

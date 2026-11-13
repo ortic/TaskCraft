@@ -4,7 +4,7 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 `v*` tag, which publishes the container image and the Linux binaries (see
 `.github/workflows/release.yml`).
 
-## [0.1.0] - unreleased
+## [0.1.0] - 2026-11-13
 
 The first release.
 
@@ -39,10 +39,11 @@ The first release.
 - **Import** from CSV and other trackers' exports and APIs, keeping private issues and comments
   private; **backup and restore** in one file; one project exported to another TaskCraft.
 - **Operations**: one binary and PostgreSQL, S3-compatible storage, several replicas, Docker
-  Compose and Kubernetes manifests.
+  Compose and Kubernetes manifests; a scale check with 100 000 issues in CI.
 - **Workspace settings**: logo, default time zone and date format, an announcement banner,
   features turned off for everyone (time tracking, votes, the portal, automation, sharing); profile
   photos.
 - **Share links**: read-only status pages and roadmaps for people without an account, with a
   password and an end date.
 - English, German, French and Italian; light, dark and high-contrast themes; WCAG 2.2 AA checked.
+- Guides for users, administrators, migrating and translating in `docs/`.
