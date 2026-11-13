@@ -989,12 +989,12 @@ impl TaskMcp {
         let (p, _) = routes::projects::by_key(st, &user, &a.project_key, Role::Viewer).await?;
         let days = a.days.map(|d| d.clamp(1, 730));
         let mut v = match a.report.trim().to_lowercase().replace(['_', ' '], "-").as_str() {
-            "overview" => crate::reports::overview(st, p.id).await?,
+            "overview" => crate::reports::overview(st, &[p.id]).await?,
             "velocity" => crate::reports::velocity(st, p.id, a.count.unwrap_or(8)).await?,
             "cumulative-flow" | "cfd" | "flow" => crate::reports::cumulative_flow(st, p.id, days.unwrap_or(30)).await?,
-            "cycle-time" | "lead-time" => crate::reports::cycle_time(st, p.id, days.unwrap_or(90), Some(user.id)).await?,
-            "created-resolved" | "created-vs-resolved" => crate::reports::created_resolved(st, p.id, days.unwrap_or(30)).await?,
-            "workload" => crate::reports::workload(st, p.id).await?,
+            "cycle-time" | "lead-time" => crate::reports::cycle_time(st, &[p.id], days.unwrap_or(90), Some(user.id)).await?,
+            "created-resolved" | "created-vs-resolved" => crate::reports::created_resolved(st, &[p.id], days.unwrap_or(30)).await?,
+            "workload" => crate::reports::workload(st, &[p.id]).await?,
             "burndown" | "sprint" => {
                 let (sid, project) = self.sprint_row(&user, Some(&p.key), a.sprint.as_deref()).await?;
                 if project != p.id {

@@ -308,6 +308,9 @@ pub struct SearchQuery {
     offset: Option<i64>,
     /// a project key: the query is limited to it
     project: Option<String>,
+    /// with `project`: its subprojects too
+    #[serde(default)]
+    subprojects: bool,
     /// default order when the query has none
     order: Option<String>,
 }
@@ -327,11 +330,31 @@ pub async fn run_search(
     offset: i64,
     default_order: &str,
 ) -> ApiResult<SearchResult> {
+    run_search_in(state, user, q, project, false, limit, offset, default_order).await
+}
+
+/// [`run_search`] within a project and (with `subprojects`) the projects below it.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_search_in(
+    state: &AppState,
+    user: &User,
+    q: &str,
+    project: Option<&str>,
+    subprojects: bool,
+    limit: i64,
+    offset: i64,
+    default_order: &str,
+) -> ApiResult<SearchResult> {
     let parsed = crate::query::parse(q)?;
     let mut ctx = crate::query::context(state, user, &parsed).await?;
     if let Some(key) = project.filter(|k| !k.is_empty()) {
         let (p, _) = super::projects::by_key(state, user, key, Role::Viewer).await?;
-        ctx.visible = vec![p.id];
+        ctx.visible = if subprojects {
+            let tree = super::projects::tree(state, p.id).await?;
+            ctx.visible.iter().copied().filter(|v| tree.contains(v)).collect()
+        } else {
+            vec![p.id]
+        };
     }
     let from = " FROM issues i JOIN projects p ON p.id = i.project_id JOIN statuses s ON s.id = i.status_id JOIN issue_types it ON it.id = i.type_id WHERE";
     let mut count: QueryBuilder<sqlx::Postgres> = QueryBuilder::new(format!("SELECT count(*){from}"));
@@ -362,7 +385,17 @@ fn default_order(o: Option<&str>) -> &'static str {
 }
 
 pub async fn search(State(state): State<AppState>, CurrentUser(user): CurrentUser, Query(q): Query<SearchQuery>) -> ApiResult<Json<Value>> {
-    let r = run_search(&state, &user, &q.q, q.project.as_deref(), q.limit.unwrap_or(100), q.offset.unwrap_or(0), default_order(q.order.as_deref())).await?;
+    let r = run_search_in(
+        &state,
+        &user,
+        &q.q,
+        q.project.as_deref(),
+        q.subprojects,
+        q.limit.unwrap_or(100),
+        q.offset.unwrap_or(0),
+        default_order(q.order.as_deref()),
+    )
+    .await?;
     Ok(Json(json!({"total": r.total, "issues": r.issues})))
 }
 
@@ -438,7 +471,7 @@ fn export_row(s: &Summary) -> Vec<Cell> {
 }
 
 pub async fn search_csv(State(state): State<AppState>, CurrentUser(user): CurrentUser, Query(q): Query<SearchQuery>) -> ApiResult<Response> {
-    let r = run_search(&state, &user, &q.q, q.project.as_deref(), 1000, 0, default_order(q.order.as_deref())).await?;
+    let r = run_search_in(&state, &user, &q.q, q.project.as_deref(), q.subprojects, 1000, 0, default_order(q.order.as_deref())).await?;
     let mut w = csv::Writer::from_writer(Vec::new());
     let _ = w.write_record(EXPORT_COLUMNS);
     // a leading = + - @ would make spreadsheets evaluate the cell
@@ -460,7 +493,7 @@ pub async fn search_csv(State(state): State<AppState>, CurrentUser(user): Curren
 /// The same as an Excel workbook: a bold, frozen header row, numbers as numbers, an autofilter.
 pub async fn search_xlsx(State(state): State<AppState>, CurrentUser(user): CurrentUser, Query(q): Query<SearchQuery>) -> ApiResult<Response> {
     use rust_xlsxwriter::{Format, Workbook};
-    let r = run_search(&state, &user, &q.q, q.project.as_deref(), 1000, 0, default_order(q.order.as_deref())).await?;
+    let r = run_search_in(&state, &user, &q.q, q.project.as_deref(), q.subprojects, 1000, 0, default_order(q.order.as_deref())).await?;
     let x = |e: rust_xlsxwriter::XlsxError| ApiError::Internal(anyhow::anyhow!("xlsx: {e}"));
     let mut book = Workbook::new();
     let sheet = book.add_worksheet();

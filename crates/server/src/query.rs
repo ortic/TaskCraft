@@ -311,7 +311,21 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
     match field {
         "project" => {
             let neg = only_eq(field, op)?;
-            let names: Vec<String> = texts(field, values)?.into_iter().map(|s| s.to_lowercase()).collect();
+            // names and keys, and withSubprojects(KEY, …): those projects and every one below them
+            let mut names: Vec<String> = Vec::new();
+            let mut trees: Vec<String> = Vec::new();
+            for v in values {
+                match v {
+                    Value::Function { name, args } if name.eq_ignore_ascii_case("withsubprojects") => {
+                        if args.is_empty() {
+                            return bad("withSubprojects() takes project keys, like withSubprojects(WEB)");
+                        }
+                        trees.extend(texts(field, args)?.into_iter().map(|s| s.to_lowercase()));
+                    }
+                    Value::Function { name, .. } => return bad(format!("project doesn't know {name}(): use withSubprojects(KEY)")),
+                    other => names.push(other.as_text().unwrap_or_default().to_lowercase()),
+                }
+            }
             qb.push(if neg { "NOT " } else { "" });
             qb.push("(lower(p.key) = ANY(");
             qb.push_bind(names.clone());
@@ -321,7 +335,13 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
             qb.push_bind(ctx.workspace);
             qb.push(" AND lower(key) = ANY(");
             qb.push_bind(names);
-            qb.push(")))");
+            qb.push(")) OR i.project_id IN (SELECT tc_project_tree(x.id) FROM projects x WHERE x.workspace_id = ");
+            qb.push_bind(ctx.workspace);
+            qb.push(" AND (lower(x.key) = ANY(");
+            qb.push_bind(trees.clone());
+            qb.push(") OR lower(x.name) = ANY(");
+            qb.push_bind(trees);
+            qb.push("))))");
         }
         "key" | "issue" => {
             let neg = only_eq(field, op)?;

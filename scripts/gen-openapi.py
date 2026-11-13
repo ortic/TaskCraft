@@ -485,6 +485,7 @@ schemas = {
             "color": ntxt(),
             "kind": enum("scrum", "kanban", "tracker", desc="board style: scrum (sprints), kanban or tracker; the template it was made from is settings.template"),
             "leadId": nuuid(),
+            "parentId": nuuid("the project it sits under (subprojects)"),
             "defaultRole": enum("none", "viewer", "member", "admin", desc="role of workspace members without a grant of their own"),
             "settings": S("ProjectSettings"),
             "createdAt": dt,
@@ -1054,6 +1055,7 @@ schemas["ProjectUpdate"] = obj(
         "icon": ntxt(),
         "color": ntxt(),
         "leadId": nuuid(),
+        "parentId": nuuid("make it a subproject of another project the caller sees (not one below it; three levels at most); null: top level"),
         "defaultRole": d(B_ROLE, "role of workspace members without a grant"),
         "settings": S("ProjectSettings"),
     },
@@ -1364,6 +1366,7 @@ op("post", "/projects/{key}/import", "runCsvImport", "Import", "Import issues fr
 E_TQL = "a TQL query (see the description at the top); empty matches every issue the caller can see"
 E_ORDER = q("order", "order when the query has no `order by`: rank, created (newest first), priority (highest first) or updated (default, latest first)", enum("rank", "created", "priority", "updated"))
 E_PROJECT = q("project", "limit the search to this project (key or id)")
+E_SUBPROJECTS = q("subprojects", "with project: the projects below it too", boolean)
 
 schemas["ActivityEntry"] = {
     "description": "A change in the activity stream: an IssueEvent with the issue's key and title.",
@@ -1453,13 +1456,13 @@ op("get", "/my-work", "getMyWork", "Issues", "The caller's work: assigned, repor
 
 op("get", "/search", "searchIssues", "Search & TQL", "Search issues with TQL",
    desc="Only issues of projects the caller can see. Errors in the query answer 400 with a message saying what's wrong.",
-   query=[q("q", E_TQL), *page(100, 1000), E_PROJECT, E_ORDER], res=ok(S("SearchResult")))
+   query=[q("q", E_TQL), *page(100, 1000), E_PROJECT, E_SUBPROJECTS, E_ORDER], res=ok(S("SearchResult")))
 op("get", "/search.csv", "exportIssuesCsv", "Search & TQL", "Search results as CSV (spreadsheet export)",
    desc="The first 1,000 matches with key, title, type, status, priority, assignee, reporter, sprint, releases (fixed in, found in), components, parent, points, original, remaining and spent hours, labels, dates, resolution, security level and votes.",
-   query=[q("q", E_TQL), E_PROJECT, E_ORDER], res=raw("text/csv", "issues.csv (attachment)"))
+   query=[q("q", E_TQL), E_PROJECT, E_SUBPROJECTS, E_ORDER], res=raw("text/csv", "issues.csv (attachment)"))
 op("get", "/search.xlsx", "exportIssuesXlsx", "Search & TQL", "Search results as an Excel workbook",
    desc="The same columns as the CSV export, numbers as numbers, with a frozen header row and a filter.",
-   query=[q("q", E_TQL), E_PROJECT, E_ORDER], res=raw("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "issues.xlsx (attachment)"))
+   query=[q("q", E_TQL), E_PROJECT, E_SUBPROJECTS, E_ORDER], res=raw("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "issues.xlsx (attachment)"))
 op("get", "/quick", "quickSearch", "Search & TQL", "Quick search by key or words (pickers, command palette)",
    desc="Up to 15 issues whose key, title or description match; without `q` the caller's recently viewed issues.",
    query=[q("q", "words or an issue key"), E_PROJECT], res=ok(arr(S("IssueSummary"))))
@@ -2176,6 +2179,7 @@ op(
         q("group", "person (default), project, issue, category, day, week or month"),
         q("then", "a second grouping inside the first (same choices), or none"),
         q("projects", "project keys, comma separated (default: all the caller sees)"),
+        q("subprojects", "with projects: the projects below them too", boolean),
         q("user", "only this person's time", uuid),
         q("category", "a time category's id, or none"),
         q("billable", "only billable (true) or not billable (false) time", boolean),
@@ -2237,6 +2241,7 @@ op(
     query=[
         q("days", "cumulative-flow, created-resolved: days back (default 30, 7–365); cycle-time: issues finished in the last N days (default 90, 7–730)", num),
         q("count", "velocity: how many completed sprints (default 8, 1–24)", num),
+        q("subprojects", "overview, cycle-time, created-resolved, workload: the projects below it too (those the caller sees)", boolean),
     ],
     res=ok(
         {
@@ -3212,7 +3217,7 @@ category priority assignee reporter creator labels sprint version affects compon
 updated resolved resolution security due start remaining watcher voter votes blocked` and custom fields by name (quoted when they contain spaces). Operators
 `= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,
-`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`; relative dates like `-7d`, `+2w`,
+`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`, `withSubprojects(KEY)` (`project in withSubprojects(SHOP)`); relative dates like `-7d`, `+2w`,
 `-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);
 `POST /query/validate` checks a query and `GET /query/suggest` completes field names and values.
 

@@ -2,8 +2,8 @@ import { t } from '../i18n'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Plus, Star, Archive, ArchiveRestore, Kanban, ListTodo, Bug, Briefcase } from 'lucide-react'
-import { api } from '../api'
+import { Plus, Star, Archive, ArchiveRestore, Kanban, ListTodo, Bug, Briefcase, CornerDownRight } from 'lucide-react'
+import { api, type ProjectSummary } from '../api'
 import { Empty, Loading, Modal, useMe, useProjects, useToast } from '../ui'
 import { PROJECT_COLORS, PROJECT_ICONS, ProjectIcon } from '../icons'
 
@@ -15,7 +15,16 @@ export default function Projects() {
   const [archived, setArchived] = useState(false)
   const [q, setQ] = useState('')
   const admin = me?.user?.role === 'owner' || me?.user?.role === 'admin'
-  const list = (projects.data ?? []).filter((p) => (archived ? !!p.archivedAt : !p.archivedAt) && (!q || `${p.name} ${p.key}`.toLowerCase().includes(q.toLowerCase())))
+  const shown = (projects.data ?? []).filter((p) => (archived ? !!p.archivedAt : !p.archivedAt) && (!q || `${p.name} ${p.key}`.toLowerCase().includes(q.toLowerCase())))
+  // subprojects right after their parent (by name otherwise)
+  const byId = new Map((projects.data ?? []).map((p) => [p.id, p]))
+  const list: ProjectSummary[] = []
+  const place = (p: ProjectSummary) => {
+    if (list.includes(p)) return
+    list.push(p)
+    shown.filter((c) => c.parentId === p.id).forEach(place)
+  }
+  shown.filter((p) => !p.parentId || !shown.some((x) => x.id === p.parentId)).forEach(place)
   return (
     <div className="page">
       <div className="page-head">
@@ -66,6 +75,9 @@ export default function Projects() {
                   <Star size={16} fill={p.starred ? 'currentColor' : 'none'} />
                 </button>
               </div>
+              {p.parentId && byId.get(p.parentId) && (
+                <div className="faint small row" style={{ gap: 4 }}><CornerDownRight size={12} aria-hidden /> {t('Part of {name}', { name: byId.get(p.parentId)!.name })}</div>
+              )}
               {p.description && <div className="muted small" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{p.description}</div>}
               <div className="progress"><span className="p-done" style={{ width: `${pct}%` }} /></div>
               <div className="row small faint">

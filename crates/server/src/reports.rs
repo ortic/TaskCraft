@@ -312,14 +312,14 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
 /// in the last `days` days.
 /// Cycle and lead times of the issues resolved in the last `days`; with a `viewer`, the list
 /// names only the issues they see (the figures count all of them).
-pub async fn cycle_time(state: &AppState, project: Uuid, days: i64, viewer: Option<Uuid>) -> ApiResult<Value> {
+pub async fn cycle_time(state: &AppState, projects: &[Uuid], days: i64, viewer: Option<Uuid>) -> ApiResult<Value> {
     let since = Utc::now() - Duration::days(days.clamp(7, 730));
     let done: Vec<(Uuid, String, String, DateTime<Utc>, DateTime<Utc>, String)> = sqlx::query_as(
         "SELECT i.id, p.key || '-' || i.number, i.title, i.created_at, i.resolved_at, it.name FROM issues i JOIN projects p ON p.id = i.project_id
            JOIN issue_types it ON it.id = i.type_id
-          WHERE i.project_id = $1 AND i.deleted_at IS NULL AND i.resolved_at >= $2 ORDER BY i.resolved_at",
+          WHERE i.project_id = ANY($1) AND i.deleted_at IS NULL AND i.resolved_at >= $2 ORDER BY i.resolved_at",
     )
-    .bind(project)
+    .bind(projects)
     .bind(since)
     .fetch_all(&state.db)
     .await?;
@@ -361,16 +361,16 @@ pub async fn cycle_time(state: &AppState, project: Uuid, days: i64, viewer: Opti
 }
 
 /// Issues created and resolved per day.
-pub async fn created_resolved(state: &AppState, project: Uuid, days: i64) -> ApiResult<Value> {
+pub async fn created_resolved(state: &AppState, projects: &[Uuid], days: i64) -> ApiResult<Value> {
     let days = days.clamp(7, 365);
     let rows: Vec<(NaiveDate, i64, i64)> = sqlx::query_as(
         "WITH d AS (SELECT generate_series(current_date - ($2::int - 1), current_date, interval '1 day')::date AS day)
          SELECT d.day,
-                (SELECT count(*) FROM issues i WHERE i.project_id = $1 AND i.deleted_at IS NULL AND i.created_at::date = d.day),
-                (SELECT count(*) FROM issues i WHERE i.project_id = $1 AND i.deleted_at IS NULL AND i.resolved_at::date = d.day)
+                (SELECT count(*) FROM issues i WHERE i.project_id = ANY($1) AND i.deleted_at IS NULL AND i.created_at::date = d.day),
+                (SELECT count(*) FROM issues i WHERE i.project_id = ANY($1) AND i.deleted_at IS NULL AND i.resolved_at::date = d.day)
            FROM d ORDER BY d.day",
     )
-    .bind(project)
+    .bind(projects)
     .bind(days as i32)
     .fetch_all(&state.db)
     .await?;
@@ -378,15 +378,15 @@ pub async fn created_resolved(state: &AppState, project: Uuid, days: i64) -> Api
 }
 
 /// Open work per person.
-pub async fn workload(state: &AppState, project: Uuid) -> ApiResult<Value> {
+pub async fn workload(state: &AppState, projects: &[Uuid]) -> ApiResult<Value> {
     let rows: Vec<(Option<Uuid>, Option<String>, i64, i64, f64, i64)> = sqlx::query_as(
         "SELECT i.assignee_id, u.name, count(*) FILTER (WHERE s.category = 'todo'), count(*) FILTER (WHERE s.category = 'in_progress'),
                 COALESCE(sum(i.story_points), 0)::float8, count(*) FILTER (WHERE i.due_date < current_date)
            FROM issues i JOIN statuses s ON s.id = i.status_id LEFT JOIN users u ON u.id = i.assignee_id
-          WHERE i.project_id = $1 AND i.deleted_at IS NULL AND s.category <> 'done'
+          WHERE i.project_id = ANY($1) AND i.deleted_at IS NULL AND s.category <> 'done'
           GROUP BY i.assignee_id, u.name ORDER BY count(*) DESC",
     )
-    .bind(project)
+    .bind(projects)
     .fetch_all(&state.db)
     .await?;
     Ok(json!({"people": rows.iter().map(|(id, name, todo, doing, pts, overdue)| json!({
@@ -394,34 +394,35 @@ pub async fn workload(state: &AppState, project: Uuid) -> ApiResult<Value> {
     })).collect::<Vec<_>>()}))
 }
 
-/// Counts for the project overview.
-pub async fn overview(state: &AppState, project: Uuid) -> ApiResult<Value> {
+/// Counts for the project overview (several projects: statuses and types by name).
+pub async fn overview(state: &AppState, projects: &[Uuid]) -> ApiResult<Value> {
     let by_cat: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT s.category, count(*) FROM issues i JOIN statuses s ON s.id = i.status_id WHERE i.project_id = $1 AND i.deleted_at IS NULL GROUP BY s.category",
+        "SELECT s.category, count(*) FROM issues i JOIN statuses s ON s.id = i.status_id WHERE i.project_id = ANY($1) AND i.deleted_at IS NULL GROUP BY s.category",
     )
-    .bind(project)
+    .bind(projects)
     .fetch_all(&state.db)
     .await?;
     let by_status: Vec<(Uuid, String, String, Option<String>, i64)> = sqlx::query_as(
-        "SELECT s.id, s.name, s.category, s.color, count(i.id) FROM statuses s LEFT JOIN issues i ON i.status_id = s.id AND i.deleted_at IS NULL
-          WHERE s.project_id = $1 GROUP BY s.id ORDER BY s.position",
+        "SELECT (array_agg(s.id ORDER BY s.position))[1], s.name, s.category, min(s.color), count(i.id)
+           FROM statuses s LEFT JOIN issues i ON i.status_id = s.id AND i.deleted_at IS NULL
+          WHERE s.project_id = ANY($1) GROUP BY s.name, s.category ORDER BY min(s.position), s.name",
     )
-    .bind(project)
+    .bind(projects)
     .fetch_all(&state.db)
     .await?;
     let by_type: Vec<(String, String, String, i64)> = sqlx::query_as(
-        "SELECT it.name, it.icon, it.color, count(i.id) FROM issue_types it LEFT JOIN issues i ON i.type_id = it.id AND i.deleted_at IS NULL
+        "SELECT it.name, min(it.icon), min(it.color), count(i.id) FROM issue_types it LEFT JOIN issues i ON i.type_id = it.id AND i.deleted_at IS NULL
            AND i.status_id IN (SELECT id FROM statuses WHERE category <> 'done')
-          WHERE it.project_id = $1 GROUP BY it.id ORDER BY it.position",
+          WHERE it.project_id = ANY($1) GROUP BY it.name ORDER BY min(it.position), it.name",
     )
-    .bind(project)
+    .bind(projects)
     .fetch_all(&state.db)
     .await?;
     let by_priority: Vec<(i16, i64)> = sqlx::query_as(
-        "SELECT i.priority, count(*) FROM issues i JOIN statuses s ON s.id = i.status_id WHERE i.project_id = $1 AND i.deleted_at IS NULL AND s.category <> 'done'
+        "SELECT i.priority, count(*) FROM issues i JOIN statuses s ON s.id = i.status_id WHERE i.project_id = ANY($1) AND i.deleted_at IS NULL AND s.category <> 'done'
           GROUP BY i.priority ORDER BY i.priority DESC",
     )
-    .bind(project)
+    .bind(projects)
     .fetch_all(&state.db)
     .await?;
     let (overdue, unassigned, created7, resolved7, stale): (i64, i64, i64, i64, i64) = sqlx::query_as(
@@ -430,9 +431,9 @@ pub async fn overview(state: &AppState, project: Uuid) -> ApiResult<Value> {
                 count(*) FILTER (WHERE i.created_at > now() - interval '7 days'),
                 count(*) FILTER (WHERE i.resolved_at > now() - interval '7 days'),
                 count(*) FILTER (WHERE s.category = 'in_progress' AND i.status_changed_at < now() - interval '7 days')
-           FROM issues i JOIN statuses s ON s.id = i.status_id WHERE i.project_id = $1 AND i.deleted_at IS NULL",
+           FROM issues i JOIN statuses s ON s.id = i.status_id WHERE i.project_id = ANY($1) AND i.deleted_at IS NULL",
     )
-    .bind(project)
+    .bind(projects)
     .fetch_one(&state.db)
     .await?;
     Ok(json!({

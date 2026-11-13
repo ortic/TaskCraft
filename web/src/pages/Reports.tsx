@@ -92,10 +92,15 @@ type ReportId = 'overview' | 'burndown' | 'velocity' | 'cumulative-flow' | 'cycl
 
 // ---------- helpers ----------
 
+/** Reports that can include the project's subprojects (`?subprojects=1`). */
+const SUB_REPORTS = ['overview', 'cycle-time', 'created-resolved', 'workload']
+
 function useReport<T>(project: string, report: string, params: Record<string, number> = {}) {
+  const [url] = useSearchParams()
+  const subprojects = SUB_REPORTS.includes(report) && url.get('subprojects') === '1' ? true : undefined
   return useQuery({
-    queryKey: ['report', project, report, params],
-    queryFn: () => api.get<T>(`/projects/${encodeURIComponent(project)}/reports/${report}${qs(params)}`),
+    queryKey: ['report', project, report, params, subprojects],
+    queryFn: () => api.get<T>(`/projects/${encodeURIComponent(project)}/reports/${report}${qs({ ...params, subprojects })}`),
     placeholderData: keepPreviousData,
   })
 }
@@ -208,6 +213,27 @@ export default function Reports() {
       </div>
       <div className="page-head">
         <h1>{t('Reports')}</h1>
+        <span className="spacer" />
+        {(p.subprojects ?? []).length > 0 && SUB_REPORTS.includes(tab) && (
+          <label className="row small" style={{ gap: 6 }}>
+            <input
+              type="checkbox"
+              checked={params.get('subprojects') === '1'}
+              onChange={(e) =>
+                setParams(
+                  (prev) => {
+                    const n = new URLSearchParams(prev)
+                    if (e.target.checked) n.set('subprojects', '1')
+                    else n.delete('subprojects')
+                    return n
+                  },
+                  { replace: true },
+                )
+              }
+            />
+            {t('With subprojects')}
+          </label>
+        )}
       </div>
       <Tabs value={tab} onChange={choose} tabs={tabs} />
       <div role="tabpanel" aria-label={tabs.find((x) => x.id === tab)?.label} className="rp-panel">

@@ -15,7 +15,7 @@ import {
   type BoardData, type BoardConfig, type BoardColumn, type Status, type StatusRules, type WikiPage, type SecurityLevel,
 } from '../api'
 import { requirementLabel, resolutionLabel, resolutionsOf } from '../components/Transition'
-import { Avatar, Choices, Confirm, Empty, ErrorBox, Loading, Lozenge, Modal, PopButton, useMe, usePeople, useProject, useToast } from '../ui'
+import { Avatar, Choices, Confirm, Empty, ErrorBox, Loading, Lozenge, Modal, PopButton, useMe, usePeople, useProject, useProjects, useToast } from '../ui'
 import { PROJECT_COLORS, PROJECT_ICONS, ProjectIcon, TYPE_ICONS, TypeIcon, priorityLabel } from '../icons'
 import { AddPersonButton, OptionChip, PersonPicker } from '../components/fields'
 import { useOpenIssue } from '../components/Layout'
@@ -582,6 +582,7 @@ function DetailsSection() {
       icon: project.icon ?? 'rocket',
       color: project.color ?? PROJECT_COLORS[0],
       leadId: project.leadId,
+      parentId: project.parentId ?? null,
       defaultRole: project.defaultRole,
       estimation: project.settings.estimation ?? 'points',
       defaultAssignee: (project.settings.defaultAssignee as string | undefined) ?? null,
@@ -600,6 +601,7 @@ function DetailsSection() {
   const keyValid = /^[A-Z][A-Z0-9]{1,9}$/.test(f.key)
   const person = (id: string | null): Named | null => (id ? { id, name: people.find((x) => x.id === id)?.name ?? (id === project.leadId ? project.leadName ?? '…' : '…') } : null)
   const wsAdmin = me?.user?.role === 'owner' || me?.user?.role === 'admin'
+  const allProjects = useProjects()
 
   const save = async () => {
     const body: Record<string, unknown> = {}
@@ -610,6 +612,7 @@ function DetailsSection() {
     if (f.icon !== base.icon) body.icon = f.icon
     if (f.color !== base.color) body.color = f.color
     if (f.leadId !== base.leadId) body.leadId = f.leadId
+    if (f.parentId !== base.parentId) body.parentId = f.parentId
     if (f.defaultRole !== base.defaultRole) body.defaultRole = f.defaultRole
     if (f.estimation !== base.estimation) settings.estimation = f.estimation
     if (f.defaultAssignee !== base.defaultAssignee) settings.defaultAssignee = f.defaultAssignee
@@ -693,6 +696,14 @@ function DetailsSection() {
               <PersonPicker className="btn ps-person-btn" label={t('Default assignee')} value={person(f.defaultAssignee)} onChange={(id) => set('defaultAssignee', id)} />
               <span className="field-hint">{t('New issues are assigned to this person unless someone is picked.')}</span>
             </div>
+          </div>
+          <div className="field">
+            <label htmlFor="ps-parent">{t('Part of')}</label>
+            <select id="ps-parent" className="select" value={f.parentId ?? ''} aria-describedby="ps-parent-hint" onChange={(e) => set('parentId', e.target.value || null)}>
+              <option value="">{t('No other project (top level)')}</option>
+              {(allProjects.data ?? []).filter((x) => x.id !== project.id && !x.archivedAt).map((x) => <option key={x.id} value={x.id}>{x.name} ({x.key})</option>)}
+            </select>
+            <span className="field-hint" id="ps-parent-hint">{t('Makes this a subproject: lists, reports and the time report of the other project can include it. Three levels at most.')}</span>
           </div>
           <div className="ps-grid-2">
             <div className="field">

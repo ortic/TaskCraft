@@ -269,6 +269,8 @@ export interface ProjectSummary {
   kind: 'scrum' | 'kanban' | 'tracker'
   leadId: string | null
   leadName?: string | null
+  /** the project it sits under (subprojects) */
+  parentId?: string | null
   defaultRole: Role
   settings: { estimation?: 'points' | 'hours'; workflow?: 'free' | 'restricted'; wikiSpace?: string; template?: string; defaultAssignee?: string; [k: string]: any }
   createdAt: string
@@ -290,6 +292,10 @@ export interface Project extends ProjectSummary {
   boards: { id: string; name: string; kind: 'kanban' | 'scrum' }[]
   transitions: { from: string; to: string }[]
   securityLevels: SecurityLevel[]
+  /** the projects right below it (that the reader sees) */
+  subprojects?: { id: string; key: string; name: string; icon: string | null; color: string | null }[]
+  /** the project it sits under */
+  parent?: { key: string; name: string } | null
 }
 
 /** Who sees the private issues that carry it — besides project admins and each issue's

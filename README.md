@@ -11,10 +11,11 @@ One binary, PostgreSQL, optional S3. Built with the same stack as WikiCraft.
 **Plan and track**
 
 - **Projects from templates**: scrum, kanban, issue tracker and work plan, each with its own
-  workflow, issue types, fields and board
+  workflow, issue types, fields and board; **subprojects** (three levels) whose issues, reports
+  and time the parent project's views can include
 - **Issues**: rich-text descriptions with checklists, `@mentions` and `#issue` references; type
   (epics, stories, tasks, bugs, sub-tasks, your own), status, priority, assignee, reporter, labels,
-  epic / parent, sprint, release, component, story points, estimate and time spent, start and due
+  epic / parent, sprint, releases (fixed in, found in), components, story points, estimate and time spent, start and due
   dates, custom fields (text, number, single and multiple choice, date, person, checkbox, URL)
 - **Links** (blocks / is blocked by, relates, duplicates, clones) — blocked issues are flagged
   everywhere — plus web links, wiki pages and attachments (drag & drop)
@@ -70,7 +71,7 @@ updated resolved resolution security due start remaining watcher voter votes blo
 `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions:
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`,
 `openSprints()`, `futureSprints()`, `closedSprints()`, `releasedVersions()`,
-`unreleasedVersions()`; relative dates like `-7d`, `+2w`, `-1m`. The query bar completes field
+`unreleasedVersions()`, `withSubprojects(KEY)` (`project in withSubprojects(SHOP)`); relative dates like `-7d`, `+2w`, `-1m`. The query bar completes field
 names, operators and values.
 
 **Reports** (replayed from the issues' history, so they're right even when estimates or scope

@@ -161,6 +161,9 @@ pub struct ReportQuery {
     then: Option<String>,
     /// project keys, comma separated
     projects: Option<String>,
+    /// with `projects`: their subprojects too
+    #[serde(default)]
+    subprojects: bool,
     /// a person's id
     user: Option<Uuid>,
     /// a category's id, or `none`
@@ -278,11 +281,13 @@ pub async fn report(State(state): State<AppState>, CurrentUser(user): CurrentUse
     let mut visible = crate::access::visible_projects(&state, &user).await?;
     if let Some(keys) = q.projects.as_deref().filter(|k| !k.trim().is_empty()) {
         let keys: Vec<String> = keys.split(',').map(|k| k.trim().to_uppercase()).filter(|k| !k.is_empty()).collect();
-        let wanted: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM projects WHERE workspace_id = $1 AND upper(key) = ANY($2)")
-            .bind(user.workspace_id)
-            .bind(&keys)
-            .fetch_all(&state.db)
-            .await?;
+        let wanted: Vec<Uuid> =
+            sqlx::query_scalar("SELECT CASE WHEN $3 THEN tc_project_tree(id) ELSE id END FROM projects WHERE workspace_id = $1 AND upper(key) = ANY($2)")
+                .bind(user.workspace_id)
+                .bind(&keys)
+                .bind(q.subprojects)
+                .fetch_all(&state.db)
+                .await?;
         visible.retain(|p| wanted.contains(p));
     }
     let sql = format!(

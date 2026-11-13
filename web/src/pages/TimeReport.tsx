@@ -95,7 +95,19 @@ export default function TimeReport() {
   const [from, to] = period === 'custom' ? [get('from', periodRange('this-month', sunday)[0]), get('to', periodRange('this-month', sunday)[1])] : periodRange(period, sunday)
   const group = get('group', 'person') as Group
   const then = get('then', group === 'issue' ? '' : 'issue')
-  const filters = { from, to, group, then: then || null, projects: get('project') || null, user: get('user') || null, category: get('category') || null, billable: get('billable') || null }
+  const chosen = projects.find((p) => p.key === get('project'))
+  const hasSub = !!chosen && projects.some((p) => p.parentId === chosen.id)
+  const filters = {
+    from,
+    to,
+    group,
+    then: then || null,
+    projects: get('project') || null,
+    subprojects: hasSub && get('subprojects') === '1' ? true : null,
+    user: get('user') || null,
+    category: get('category') || null,
+    billable: get('billable') || null,
+  }
   const report = useQuery({
     queryKey: ['time-report', filters],
     queryFn: () => api.get<Report>(`/time-report${qs(filters)}`),
@@ -175,6 +187,12 @@ export default function TimeReport() {
             {projects.map((p) => <option key={p.id} value={p.key}>{p.name}</option>)}
           </select>
         </label>
+        {hasSub && (
+          <label className="row small" style={{ gap: 6, alignSelf: 'center' }}>
+            <input type="checkbox" checked={get('subprojects') === '1'} onChange={(e) => set({ subprojects: e.target.checked ? '1' : null })} />
+            {t('With subprojects')}
+          </label>
+        )}
         <label className="field">
           <span className="field-label">{t('Person')}</span>
           <select className="select input-sm" value={get('user')} onChange={(e) => set({ user: e.target.value || null })}>

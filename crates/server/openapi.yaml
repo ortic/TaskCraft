@@ -28,22 +28,23 @@ info:
     \ created\nupdated resolved resolution security due start remaining watcher voter votes blocked` and custom fields by\
     \ name (quoted when they contain spaces). Operators\n`= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`,\
     \ `or`, `not`, parentheses; `order by`. Functions\n`me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`,\
-    \ `endOfMonth()`, `openSprints()`,\n`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`;\
-    \ relative dates like `-7d`, `+2w`,\n`-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n\
-    `POST /query/validate` checks a query and `GET /query/suggest` completes field names and values.\n\n## Pagination\n\n\
-    `GET /search` pages with `limit` (default 100, at most 1,000) and `offset` and answers `{total, issues}`; other\noperations\
-    \ that take `limit` / `offset` say so. Everything else answers a bounded list (e.g. the latest 60 activity\nentries, the\
-    \ latest 200 trashed issues), as each operation describes.\n\n## Errors\n\nErrors answer with a status code and `{\"error\"\
-    : \"<code>\", \"message\": \"<text>\"}` (schema `Error`): 400 `bad_request`\n(invalid input; the message says what), 401\
-    \ `unauthorized`, 403 `forbidden`, 404 `not_found`, 409 `conflict`, 413\n`too_large` (uploads above `TASKCRAFT_MAX_UPLOAD_MB`),\
-    \ 429 `too_many_requests`, 503 `unavailable`, 500 `internal`.\nRequests the framework refuses before they reach the API\
-    \ answer plain text instead: a body that isn't valid JSON (400),\na JSON body without `Content-Type: application/json`\
-    \ (415), a typed body with a missing or mistyped field (422), a\nmalformed id in the path (400) and a body above the server's\
-    \ overall size limit (413).\n\n## Rate limits\n\nFailed sign-ins are limited to 10 per e-mail address in 15 minutes and\
-    \ wrong two-factor codes to 5 per sign-in; both\nanswer 400 with a message. The service desk portal answers 429 for sign-in\
-    \ links (10 requests per IP address per\nquarter hour; at most 3 links go out per address, silently), messages from requesters\
-    \ (30 per hour) and request forms\n(20 per IP address and 5 per e-mail address per hour).\n\n## Webhooks\n\nAdmins register\
-    \ endpoints under `/admin/webhooks` for `issue.created`, `issue.updated`, `issue.deleted`,\n`comment.created`, `sprint.started`,\
+    \ `endOfMonth()`, `openSprints()`,\n`futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`,\
+    \ `withSubprojects(KEY)` (`project in withSubprojects(SHOP)`); relative dates like `-7d`, `+2w`,\n`-1m`. Bare words search\
+    \ titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);\n`POST /query/validate`\
+    \ checks a query and `GET /query/suggest` completes field names and values.\n\n## Pagination\n\n`GET /search` pages with\
+    \ `limit` (default 100, at most 1,000) and `offset` and answers `{total, issues}`; other\noperations that take `limit`\
+    \ / `offset` say so. Everything else answers a bounded list (e.g. the latest 60 activity\nentries, the latest 200 trashed\
+    \ issues), as each operation describes.\n\n## Errors\n\nErrors answer with a status code and `{\"error\": \"<code>\",\
+    \ \"message\": \"<text>\"}` (schema `Error`): 400 `bad_request`\n(invalid input; the message says what), 401 `unauthorized`,\
+    \ 403 `forbidden`, 404 `not_found`, 409 `conflict`, 413\n`too_large` (uploads above `TASKCRAFT_MAX_UPLOAD_MB`), 429 `too_many_requests`,\
+    \ 503 `unavailable`, 500 `internal`.\nRequests the framework refuses before they reach the API answer plain text instead:\
+    \ a body that isn't valid JSON (400),\na JSON body without `Content-Type: application/json` (415), a typed body with a\
+    \ missing or mistyped field (422), a\nmalformed id in the path (400) and a body above the server's overall size limit\
+    \ (413).\n\n## Rate limits\n\nFailed sign-ins are limited to 10 per e-mail address in 15 minutes and wrong two-factor\
+    \ codes to 5 per sign-in; both\nanswer 400 with a message. The service desk portal answers 429 for sign-in links (10 requests\
+    \ per IP address per\nquarter hour; at most 3 links go out per address, silently), messages from requesters (30 per hour)\
+    \ and request forms\n(20 per IP address and 5 per e-mail address per hour).\n\n## Webhooks\n\nAdmins register endpoints\
+    \ under `/admin/webhooks` for `issue.created`, `issue.updated`, `issue.deleted`,\n`comment.created`, `sprint.started`,\
     \ `sprint.completed` and `version.released` (all projects or one). Each delivery is\na JSON `POST` with the `WebhookEvent`\
     \ body and the headers `X-TaskCraft-Event: <event>` and\n`X-TaskCraft-Signature: sha256=<hex>`, the HMAC-SHA256 of the\
     \ raw body with the webhook's secret (shown once, when the\nwebhook is created); compare it in constant time. A delivery\
@@ -5175,6 +5176,12 @@ paths:
         description: 'project keys, comma separated (default: all the caller sees)'
         schema:
           type: string
+      - name: subprojects
+        in: query
+        required: false
+        description: 'with projects: the projects below them too'
+        schema:
+          type: boolean
       - name: user
         in: query
         required: false
@@ -5518,6 +5525,12 @@ paths:
         description: limit the search to this project (key or id)
         schema:
           type: string
+      - name: subprojects
+        in: query
+        required: false
+        description: 'with project: the projects below it too'
+        schema:
+          type: boolean
       - name: order
         in: query
         required: false
@@ -5563,6 +5576,12 @@ paths:
         description: limit the search to this project (key or id)
         schema:
           type: string
+      - name: subprojects
+        in: query
+        required: false
+        description: 'with project: the projects below it too'
+        schema:
+          type: boolean
       - name: order
         in: query
         required: false
@@ -5606,6 +5625,12 @@ paths:
         description: limit the search to this project (key or id)
         schema:
           type: string
+      - name: subprojects
+        in: query
+        required: false
+        description: 'with project: the projects below it too'
+        schema:
+          type: boolean
       - name: order
         in: query
         required: false
@@ -5801,6 +5826,12 @@ paths:
         description: 'velocity: how many completed sprints (default 8, 1–24)'
         schema:
           type: integer
+      - name: subprojects
+        in: query
+        required: false
+        description: 'overview, cycle-time, created-resolved, workload: the projects below it too (those the caller sees)'
+        schema:
+          type: boolean
       responses:
         '200':
           description: OK
@@ -10026,6 +10057,12 @@ components:
           - string
           - 'null'
           format: uuid
+        parentId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: the project it sits under (subprojects)
         defaultRole:
           type: string
           enum:
@@ -11008,6 +11045,13 @@ components:
           - string
           - 'null'
           format: uuid
+        parentId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: 'make it a subproject of another project the caller sees (not one below it; three levels at most);
+            null: top level'
         defaultRole:
           type: string
           enum:

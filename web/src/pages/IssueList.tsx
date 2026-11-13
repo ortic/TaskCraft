@@ -84,9 +84,13 @@ export default function IssueList() {
     }
   }, [columns, key])
   const effective = sort && !hasOrder(query) ? `${query} order by ${sort.field} ${sort.desc ? 'desc' : 'asc'}` : query
+  // a project with subprojects: theirs too, when asked for
+  const hasSub = (project.data?.subprojects ?? []).length > 0
+  const withSub = hasSub && params.get('subprojects') === '1'
+  const subprojects = withSub ? true : undefined
   const result = useQuery({
-    queryKey: ['search', key ?? '', effective, limit],
-    queryFn: () => api.get<{ total: number; issues: Issue[] }>(`/search${qs({ q: effective, project: key, limit, order: key ? 'rank' : undefined })}`),
+    queryKey: ['search', key ?? '', effective, limit, withSub],
+    queryFn: () => api.get<{ total: number; issues: Issue[] }>(`/search${qs({ q: effective, project: key, subprojects, limit, order: key ? 'rank' : undefined })}`),
     placeholderData: (prev) => prev,
   })
   const setQuery = (q: string) => {
@@ -113,7 +117,7 @@ export default function IssueList() {
         <QuickFilters query={query} setQuery={setQuery} project={project.data} />
         <span className="spacer" />
         <PopButton className="btn btn-sm" label={<><Rows3 size={14} /> {groupLabel(group)}</>} width={200} align="end">
-          {(close) => GROUPS.filter((g) => key ? g !== 'project' : true).map((g) => <button key={g} className={`menu-item ${g === group ? 'selected' : ''}`} onClick={() => { close(); setGroup(g) }}>{groupLabel(g)}</button>)}
+          {(close) => GROUPS.filter((g) => key && !withSub ? g !== 'project' : true).map((g) => <button key={g} className={`menu-item ${g === group ? 'selected' : ''}`} onClick={() => { close(); setGroup(g) }}>{groupLabel(g)}</button>)}
         </PopButton>
         <PopButton className="btn btn-sm" label={<><Columns3 size={14} /> {t('Columns')}</>} width={240} align="end">
           {() => (
@@ -127,8 +131,23 @@ export default function IssueList() {
             </div>
           )}
         </PopButton>
-        <a className="btn btn-sm" href={`/api/search.csv${qs({ q: effective, project: key })}`} download><Download size={14} /> {t('CSV')}</a>
-        <a className="btn btn-sm" href={`/api/search.xlsx${qs({ q: effective, project: key })}`} download><Download size={14} /> {t('Excel')}</a>
+        {hasSub && (
+          <label className="row small" style={{ gap: 6 }}>
+            <input
+              type="checkbox"
+              checked={withSub}
+              onChange={(e) => {
+                const p = new URLSearchParams(params)
+                if (e.target.checked) p.set('subprojects', '1')
+                else p.delete('subprojects')
+                setParams(p)
+              }}
+            />
+            {t('With subprojects')}
+          </label>
+        )}
+        <a className="btn btn-sm" href={`/api/search.csv${qs({ q: effective, project: key, subprojects })}`} download><Download size={14} /> {t('CSV')}</a>
+        <a className="btn btn-sm" href={`/api/search.xlsx${qs({ q: effective, project: key, subprojects })}`} download><Download size={14} /> {t('Excel')}</a>
         <button className="btn btn-sm" onClick={() => window.print()} title={t('Print the list, or save it as PDF')}><Printer size={14} /> {t('Print')}</button>
         <SaveView query={query} columns={columns} group={group} projectKey={key} current={view} />
       </div>

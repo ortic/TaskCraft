@@ -79,7 +79,7 @@
 - [x] Several fix versions, affected versions and components per issue (TQL, CSV both ways, imports, workflow rules, releasing moves only that release)
 - [x] Time tracking: remaining estimate next to the original (follows the time logged or set by hand; logging reduces, keeps or sets it), time categories with a billable default, time reports grouped by person / project / issue / category / day / week / month (twice), filtered, with a CSV of every log
 - [x] Fields per issue type: which fields a type shows, hides and requires (enforced on create, type change and edits; the create dialog asks for them)
-- [ ] Subprojects: a project hierarchy with views and reports across a project and its subprojects
+- [x] Subprojects: a project hierarchy (three levels) with the issue list, exports, reports (overview, cycle time, created vs resolved, workload), the time report and TQL `withSubprojects()` across a project and its subprojects
 - [x] E-mails in each person's language: their own, else the workspace's default, else their browser's (German, French, Italian; requesters get the workspace's)
 - [x] Voting on issues (TQL `votes`, `voter`, order by votes); issue lists as Excel; a print view of issues and lists (print or save as PDF from the browser)
 - [x] Portal: suggest WikiCraft articles while a requester types, before the request is sent (a space per form, read with the installation's token, that space only)

@@ -451,6 +451,26 @@ test('voting and the list as Excel', async ({ page }) => {
   expect((await download).suggestedFilename()).toBe('issues.xlsx')
 })
 
+test('a subproject in its parent’s list', async ({ page }) => {
+  await login(page)
+  await page.evaluate(async () => {
+    const h = { 'content-type': 'application/json', 'x-taskcraft': '1' }
+    const web = await (await fetch('/api/projects/WEB')).json()
+    await fetch('/api/projects', { method: 'POST', headers: h, body: JSON.stringify({ key: 'MOB', name: 'Mobile app', template: 'kanban' }) })
+    await fetch('/api/issues', { method: 'POST', headers: h, body: JSON.stringify({ projectKey: 'MOB', title: 'Offline mode for the app' }) })
+    await fetch('/api/projects/MOB', { method: 'PATCH', headers: h, body: JSON.stringify({ parentId: web.id }) })
+  })
+  await page.goto('/projects')
+  await expect(page.locator('.project-card', { hasText: 'Mobile app' })).toContainText('Part of Web Platform')
+  await page.goto('/projects/WEB/list')
+  await expect(page.getByText('Offline mode for the app')).toHaveCount(0)
+  // the box follows the address, which the router updates a moment later
+  await page.getByLabel('With subprojects').click()
+  await expect(page.getByLabel('With subprojects')).toBeChecked()
+  await expect(page.getByText('Offline mode for the app')).toBeVisible()
+  await a11y(page)
+})
+
 test('command palette finds issues', async ({ page }) => {
   await login(page)
   await page.keyboard.press('Control+k')

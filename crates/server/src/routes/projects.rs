@@ -27,13 +27,20 @@ pub struct ProjectRow {
     pub color: Option<String>,
     pub kind: String,
     pub lead_id: Option<Uuid>,
+    /// the project it sits under (subprojects)
+    pub parent_id: Option<Uuid>,
     pub default_role: String,
     pub settings: Value,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub archived_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-const PROJECT_COLS: &str = "id, workspace_id, key, name, description, icon, color, kind, lead_id, default_role, settings, created_at, archived_at";
+const PROJECT_COLS: &str = "id, workspace_id, key, name, description, icon, color, kind, lead_id, parent_id, default_role, settings, created_at, archived_at";
+
+/// A project and every project below it (subprojects, theirs, …).
+pub async fn tree(state: &AppState, project: Uuid) -> ApiResult<Vec<Uuid>> {
+    Ok(sqlx::query_scalar("SELECT tc_project_tree($1)").bind(project).fetch_all(&state.db).await?)
+}
 
 /// A project by key (or former key) or id, with the caller's role (at least `min`).
 pub async fn by_key(state: &AppState, user: &User, key: &str, min: Role) -> ApiResult<(ProjectRow, Role)> {
@@ -62,7 +69,7 @@ pub async fn by_key(state: &AppState, user: &User, key: &str, min: Role) -> ApiR
 fn project_json(p: &ProjectRow, role: Role, extra: Value) -> Value {
     let mut v = json!({
         "id": p.id, "key": p.key, "name": p.name, "description": p.description, "icon": p.icon, "color": p.color, "kind": p.kind,
-        "leadId": p.lead_id, "defaultRole": p.default_role, "settings": p.settings, "createdAt": p.created_at, "archivedAt": p.archived_at,
+        "leadId": p.lead_id, "parentId": p.parent_id, "defaultRole": p.default_role, "settings": p.settings, "createdAt": p.created_at, "archivedAt": p.archived_at,
         "role": role.as_str(),
     });
     if let (Some(o), Some(e)) = (v.as_object_mut(), extra.as_object()) {
@@ -86,7 +93,7 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser)
         active_sprint: Option<String>,
     }
     let rows: Vec<ListRow> = sqlx::query_as(
-        "SELECT p.id, p.workspace_id, p.key, p.name, p.description, p.icon, p.color, p.kind, p.lead_id, p.default_role, p.settings, p.created_at, p.archived_at,
+        "SELECT p.id, p.workspace_id, p.key, p.name, p.description, p.icon, p.color, p.kind, p.lead_id, p.parent_id, p.default_role, p.settings, p.created_at, p.archived_at,
                 r.rank, EXISTS (SELECT 1 FROM project_stars s WHERE s.project_id = p.id AND s.user_id = $1) AS starred,
                 (SELECT count(*) FROM issues i JOIN statuses s ON s.id = i.status_id WHERE i.project_id = p.id AND i.deleted_at IS NULL AND s.category <> 'done') AS open_count,
                 (SELECT count(*) FROM issues i JOIN statuses s ON s.id = i.status_id WHERE i.project_id = p.id AND i.deleted_at IS NULL AND s.category = 'done') AS done_count,
@@ -141,6 +148,19 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
             .fetch_all(&state.db)
             .await?;
     let security_levels = security_levels(&state, &user, p.id).await?;
+    // the projects right below it the caller sees, and the one above it
+    let subprojects: Vec<(Uuid, String, String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT p.id, p.key, p.name, p.icon, p.color FROM projects p JOIN tc_project_roles($2) r ON r.project_id = p.id AND r.rank >= 1
+          WHERE p.parent_id = $1 ORDER BY p.archived_at IS NOT NULL, lower(p.name)",
+    )
+    .bind(p.id)
+    .bind(user.id)
+    .fetch_all(&state.db)
+    .await?;
+    let parent: Option<(String, String)> = match p.parent_id {
+        Some(pid) => sqlx::query_as("SELECT key, name FROM projects WHERE id = $1").bind(pid).fetch_optional(&state.db).await?,
+        None => None,
+    };
     let sprints: Vec<(Uuid, String, Option<String>, String, Option<chrono::DateTime<chrono::Utc>>, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
         "SELECT id, name, goal, state, start_at, end_at FROM sprints WHERE project_id = $1 AND state <> 'closed' ORDER BY state = 'active' DESC, position, created_at",
     )
@@ -172,6 +192,8 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
             "components": components.iter().map(|(id, n, d, l)| json!({"id": id, "name": n, "description": d, "leadId": l})).collect::<Vec<_>>(),
             "fields": fields.iter().map(|(id, n, k, o, d)| json!({"id": id, "name": n, "kind": k, "options": o, "description": d})).collect::<Vec<_>>(),
             "securityLevels": security_levels,
+            "subprojects": subprojects.iter().map(|(id, k, n, i, c)| json!({"id": id, "key": k, "name": n, "icon": i, "color": c})).collect::<Vec<_>>(),
+            "parent": parent.map(|(k, n)| json!({"key": k, "name": n})),
             "sprints": sprints.iter().map(|(id, n, g, s, sa, ea)| json!({"id": id, "name": n, "goal": g, "state": s, "startAt": sa, "endAt": ea})).collect::<Vec<_>>(),
             "boards": boards.iter().map(|(id, n, k)| json!({"id": id, "name": n, "kind": k})).collect::<Vec<_>>(),
             "transitions": transitions.iter().map(|(f, t)| json!({"from": f, "to": t})).collect::<Vec<_>>(),
@@ -478,6 +500,43 @@ pub async fn update(
             "leadId" => {
                 let l = v.as_str().and_then(|s| s.parse::<Uuid>().ok());
                 sqlx::query("UPDATE projects SET lead_id = $2 WHERE id = $1").bind(p.id).bind(l).execute(&mut *tx).await?;
+            }
+            // the project it sits under: one the caller sees, not below itself, three levels at most
+            "parentId" => {
+                let parent = match v {
+                    Value::Null => None,
+                    Value::String(s) if s.is_empty() => None,
+                    Value::String(s) => Some(s.parse::<Uuid>().map_err(|_| ApiError::bad("parentId must be a project id"))?),
+                    _ => return Err(ApiError::bad("parentId must be a project id or null")),
+                };
+                if let Some(parent) = parent {
+                    by_key(&state, &user, &parent.to_string(), Role::Viewer).await?;
+                    let below: bool = sqlx::query_scalar("SELECT $2 IN (SELECT tc_project_tree($1))").bind(p.id).bind(parent).fetch_one(&mut *tx).await?;
+                    if below {
+                        return Err(ApiError::bad("a project can't sit under itself or one of its subprojects"));
+                    }
+                    // levels above the new parent, plus this project's own levels below it
+                    let above: i64 = sqlx::query_scalar(
+                        "WITH RECURSIVE up(id, parent_id, n) AS (SELECT id, parent_id, 1 FROM projects WHERE id = $1
+                           UNION ALL SELECT p.id, p.parent_id, up.n + 1 FROM projects p JOIN up ON p.id = up.parent_id WHERE up.n < 10)
+                         SELECT max(n)::bigint FROM up",
+                    )
+                    .bind(parent)
+                    .fetch_one(&mut *tx)
+                    .await?;
+                    let below: i64 = sqlx::query_scalar(
+                        "WITH RECURSIVE down(id, n) AS (SELECT id, 1 FROM projects WHERE id = $1
+                           UNION ALL SELECT p.id, down.n + 1 FROM projects p JOIN down ON p.parent_id = down.id WHERE down.n < 10)
+                         SELECT max(n)::bigint FROM down",
+                    )
+                    .bind(p.id)
+                    .fetch_one(&mut *tx)
+                    .await?;
+                    if above + below > 3 {
+                        return Err(ApiError::bad("projects go three levels deep at most"));
+                    }
+                }
+                sqlx::query("UPDATE projects SET parent_id = $2 WHERE id = $1").bind(p.id).bind(parent).execute(&mut *tx).await?;
             }
             "defaultRole" => {
                 let r = v.as_str().and_then(Role::parse).ok_or_else(|| ApiError::bad("defaultRole must be none, viewer, member or admin"))?;
