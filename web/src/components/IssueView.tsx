@@ -11,7 +11,7 @@ import {
 import {
   api, ago, dateTime, duration, may, shortDate, type Comment, type HistoryEvent, type Issue, type IssueDetail, type Named, type Project, type TimeCategory, type WikiPage, type Worklog,
 } from '../api'
-import { Avatar, BotAvatar, Confirm, Empty, Lozenge, Loading, ErrorBox, Modal, PopButton, Tabs, useMe, usePeople, useProject, useProjects, useToast } from '../ui'
+import { Avatar, BotAvatar, Confirm, Empty, Lozenge, Loading, ErrorBox, Modal, PopButton, Tabs, useFeature, useMe, usePeople, useProject, useProjects, useToast } from '../ui'
 import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
 import { RichText, RichView, EMPTY_DOC, isEmptyDoc } from './Editor'
 import Development, { describeDevEvent } from './Development'
@@ -78,6 +78,8 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
   const [moving, setMoving] = useState(false)
   const [linking, setLinking] = useState(false)
   const [tab, setTab] = useState<'comments' | 'history' | 'work'>('comments')
+  const timeTracking = useFeature('timeTracking')
+  const votes = useFeature('votes')
   const fileRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const upload = async (files: FileList | File[]) => {
@@ -245,12 +247,12 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
             tabs={[
               { id: 'comments', label: <span className="row" style={{ gap: 6 }}><MessageSquare size={14} />{t('Comments')}{issue.commentCount > 0 && <span className="badge">{issue.commentCount}</span>}</span> },
               { id: 'history', label: <span className="row" style={{ gap: 6 }}><Activity size={14} />{t('History')}</span> },
-              { id: 'work', label: <span className="row" style={{ gap: 6 }}><Timer size={14} />{t('Time [[tracking]]')}</span> },
+              ...(timeTracking ? [{ id: 'work' as const, label: <span className="row" style={{ gap: 6 }}><Timer size={14} />{t('Time [[tracking]]')}</span> }] : []),
             ]}
           />
           {tab === 'comments' && <Comments issue={issue} meId={me?.user?.id} />}
           {tab === 'history' && <History issueKey={issue.key} />}
-          {tab === 'work' && <WorkLog issue={issue} project={project} />}
+          {tab === 'work' && timeTracking && <WorkLog issue={issue} project={project} />}
         </div>
       </div>
 
@@ -280,19 +282,23 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
               {issue.watching ? <Eye size={16} /> : <EyeOff size={16} />}
             </button>
             <span className="faint small">{issue.watchers.length}</span>
-            <button
-              className={`icon-btn ${issue.voted ? 'voted' : ''}`}
-              aria-pressed={!!issue.voted}
-              title={(issue.voters ?? []).length ? t('Votes: {names}', { names: (issue.voters ?? []).map((v) => v.name).join(', ') }) : t('Vote for this issue')}
-              aria-label={issue.voted ? t('Take back your vote') : t('Vote for this issue')}
-              onClick={async () => {
-                await api.put(`/issues/${issue.key}/vote`, { voted: !issue.voted })
-                qc.invalidateQueries({ queryKey: ['issue', issue.key] })
-              }}
-            >
-              <ThumbsUp size={16} />
-            </button>
-            <span className="faint small">{issue.votes ?? 0}</span>
+            {votes && (
+              <>
+              <button
+                className={`icon-btn ${issue.voted ? 'voted' : ''}`}
+                aria-pressed={!!issue.voted}
+                title={(issue.voters ?? []).length ? t('Votes: {names}', { names: (issue.voters ?? []).map((v) => v.name).join(', ') }) : t('Vote for this issue')}
+                aria-label={issue.voted ? t('Take back your vote') : t('Vote for this issue')}
+                onClick={async () => {
+                  await api.put(`/issues/${issue.key}/vote`, { voted: !issue.voted })
+                  qc.invalidateQueries({ queryKey: ['issue', issue.key] })
+                }}
+              >
+                <ThumbsUp size={16} />
+              </button>
+              <span className="faint small">{issue.votes ?? 0}</span>
+              </>
+            )}
             <PopButton className="icon-btn" title={t('More')} label={<Ellipsis size={16} />} align="end" width={230}>
               {(close) => (
                 <div>
@@ -396,9 +402,11 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
               </span>
             </SideField>
           )}
-          <SideField label={t('Time spent')}>
-            <TimeBar spent={issue.spentMinutes} estimate={issue.estimateMinutes} remaining={issue.remainingMinutes ?? null} />
-          </SideField>
+          {timeTracking && (
+            <SideField label={t('Time spent')}>
+              <TimeBar spent={issue.spentMinutes} estimate={issue.estimateMinutes} remaining={issue.remainingMinutes ?? null} />
+            </SideField>
+          )}
           <SideField label={t('Start')} field="startDate" filled={!!issue.startDate}>
             <DateValue value={issue.startDate} disabled={!can} onChange={(d) => set({ startDate: d })} />
           </SideField>

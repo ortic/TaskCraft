@@ -351,7 +351,9 @@ WITH pending AS (
            COALESCE(z.name, 'UTC') AS tz
       FROM notifications n
       JOIN users u ON u.id = n.user_id
-      LEFT JOIN pg_timezone_names z ON z.name = u.timezone
+      LEFT JOIN workspaces w ON w.id = u.workspace_id
+      -- the person's time zone, else the workspace's
+      LEFT JOIN pg_timezone_names z ON z.name = COALESCE(NULLIF(u.timezone, ''), w.settings->>'timeZone')
      WHERE n.emailed_at IS NULL
 ),
 due AS (

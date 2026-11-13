@@ -226,6 +226,9 @@ async fn run_rules(state: &AppState) -> anyhow::Result<()> {
         let next = parse(&trigger["schedule"]).map(|s| next_after(&s, Utc::now())).ok();
         sqlx::query("UPDATE automation_rules SET next_run_at = $2, last_run_at = now() WHERE id = $1").bind(id).bind(next).execute(&mut *tx).await?;
         tx.commit().await?;
+        if !crate::features::on(state, workspace, "automation").await {
+            continue;
+        }
         let ids = matching(state, workspace, project, &condition, 200).await.unwrap_or_default();
         let bot = Actor { user: None, workspace, depth: 1 };
         let mut ran = 0;

@@ -2,7 +2,7 @@ import { t, AVAILABLE, LANGUAGES, chooseLanguage, locale, rememberLanguage } fro
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, BookOpen, Check, Contrast, Copy, Download, ExternalLink, KeyRound, Lock, Monitor, Moon, Palette, ShieldCheck, Sun, Trash, User } from 'lucide-react'
+import { Bell, BookOpen, Camera, Check, Contrast, Copy, Download, ExternalLink, KeyRound, Lock, Monitor, Moon, Palette, ShieldCheck, Sun, Trash, User } from 'lucide-react'
 import { api, ago, shortDate, type Me } from '../api'
 import { Avatar, Confirm, ErrorBox, Loading, useMe, useSetup, useToast } from '../ui'
 import { providerName, type SignInMethods } from '../components/Sso'
@@ -135,7 +135,7 @@ export default function Settings() {
 
 // ---- profile ----
 
-function timeZones(current: string): string[] {
+export function timeZones(current: string): string[] {
   let zones: string[] = []
   try {
     zones = Intl.supportedValuesOf('timeZone')
@@ -146,12 +146,78 @@ function timeZones(current: string): string[] {
   return zones
 }
 
-function nowIn(tz: string): string {
+export function nowIn(tz: string): string {
   try {
     return new Intl.DateTimeFormat(locale(), { timeZone: tz || undefined, weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date())
   } catch {
     return ''
   }
+}
+
+/** A square crop of an image, `size` pixels wide (WebP where the browser writes it, else JPEG). */
+async function squareImage(f: File, size: number): Promise<Blob> {
+  const bmp = await createImageBitmap(f)
+  const side = Math.min(bmp.width, bmp.height)
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error(t('This browser can’t prepare the photo.'))
+  ctx.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, size, size)
+  bmp.close()
+  const as = (type: string, q: number) => new Promise<Blob | null>((res) => canvas.toBlob(res, type, q))
+  const webp = await as('image/webp', 0.88)
+  if (webp && webp.type === 'image/webp') return webp
+  const jpeg = await as('image/jpeg', 0.9)
+  if (!jpeg) throw new Error(t('This browser can’t prepare the photo.'))
+  return jpeg
+}
+
+/** Choose or remove the profile photo (cropped to a square in the browser). */
+function PhotoButtons({ photo }: { photo: string | null }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['me'] }), qc.invalidateQueries({ queryKey: ['people'] })])
+  const choose = async (f: File | undefined) => {
+    if (!f) return
+    setErr('')
+    if (!f.type.startsWith('image/')) return setErr(t('Choose an image.'))
+    setBusy(true)
+    try {
+      const blob = await squareImage(f, 256)
+      const r = await fetch('/api/me/photo', { method: 'PUT', headers: { 'x-taskcraft': '1', 'content-type': blob.type }, body: blob })
+      if (!r.ok) throw new Error((await r.json().catch(() => null))?.message ?? r.statusText)
+      await refresh()
+      toast(t('Photo saved'))
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const remove = async () => {
+    setBusy(true)
+    try {
+      await api.del('/me/photo')
+      await refresh()
+      toast(t('Photo removed'))
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="st-photo">
+      <label className="btn btn-sm">
+        <Camera size={14} /> {photo ? t('Change photo') : t('Add a photo')}
+        <input type="file" accept="image/*" className="sr-only" disabled={busy} onChange={(e) => { void choose(e.target.files?.[0]); e.target.value = '' }} />
+      </label>
+      {photo && <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={remove}>{t('Remove photo')}</button>}
+      {err && <span className="error-text small" role="alert">{err}</span>}
+    </div>
+  )
 }
 
 function ProfileSection({ me }: { me: Me }) {
@@ -207,11 +273,12 @@ function ProfileSection({ me }: { me: Me }) {
         }
       >
         <div className="st-identity">
-          <Avatar name={name.trim() || user.name} id={user.id} size={48} />
+          <Avatar name={name.trim() || user.name} id={user.id} size={48} photo={user.photo ?? null} />
           <div className="st-identity-text">
             <div className="st-identity-name">{name.trim() || user.name}</div>
             <div className="faint small">{user.email}</div>
           </div>
+          <PhotoButtons photo={user.photo ?? null} />
         </div>
         <div className="st-grid2">
           <div className="field">
@@ -236,12 +303,12 @@ function ProfileSection({ me }: { me: Me }) {
           <div className="field">
             <label htmlFor="st-tz">{t('Time zone')}</label>
             <select id="st-tz" className="select" value={tz} onChange={(e) => setTz(e.target.value)}>
-              <option value="">{t('Automatic ({zone})', { zone: browserTz })}</option>
+              <option value="">{me.workspace?.timeZone ? t('The workspace’s ({zone})', { zone: me.workspace.timeZone.replace(/_/g, ' ') }) : t('Automatic ({zone})', { zone: browserTz })}</option>
               {zones.map((z) => (
                 <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>
               ))}
             </select>
-            <span className="field-hint">{t('Local time there: {time}', { time: nowIn(tz) })}</span>
+            <span className="field-hint">{t('Local time there: {time}', { time: nowIn(tz || me.workspace?.timeZone || '') })}</span>
           </div>
         </div>
       </Section>

@@ -349,6 +349,7 @@ pub async fn update_worklog(
     Path(id): Path<Uuid>,
     Json(req): Json<Value>,
 ) -> ApiResult<Json<Value>> {
+    crate::features::require(&state, user.workspace_id, "timeTracking").await?;
     let row: Option<(Uuid, Option<Uuid>)> = sqlx::query_as("SELECT issue_id, user_id FROM worklogs WHERE id = $1").bind(id).fetch_optional(&state.db).await?;
     let (issue, owner) = row.ok_or(ApiError::NotFound("work log"))?;
     let (_, project, role) = issue_for(&state, &user, &issue.to_string(), Role::Member).await?;

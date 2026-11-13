@@ -853,6 +853,89 @@
     ]
    }
   },
+  "/me/photo": {
+   "put": {
+    "tags": [
+     "Auth & account"
+    ],
+    "summary": "Set your profile photo",
+    "operationId": "putMyPhoto",
+    "description": "In the browser. The image itself is the body: PNG, JPEG, GIF or WebP up to 1 MB (the web app crops it to a 256 px square first).",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "image/webp": {
+       "schema": {
+        "type": "string",
+        "format": "binary",
+        "description": "the image"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "photo": {
+           "type": "string",
+           "description": "its address"
+          }
+         },
+         "required": [
+          "photo"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    },
+    "security": [
+     {
+      "session": []
+     }
+    ]
+   },
+   "delete": {
+    "tags": [
+     "Auth & account"
+    ],
+    "summary": "Remove your profile photo",
+    "operationId": "deleteMyPhoto",
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    },
+    "security": [
+     {
+      "session": []
+     }
+    ]
+   }
+  },
   "/me/export": {
    "get": {
     "tags": [
@@ -2398,6 +2481,87 @@
      },
      "403": {
       "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/users/{id}/photo": {
+   "get": {
+    "tags": [
+     "People & teams"
+    ],
+    "summary": "A person's profile photo",
+    "operationId": "getPhoto",
+    "description": "Anyone in the workspace (404 without one). Cached: its address changes with each new photo.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "user id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "the image",
+      "content": {
+       "image/webp": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "People & teams"
+    ],
+    "summary": "Take down someone's profile photo",
+    "operationId": "deletePhoto",
+    "description": "Workspace admins (recorded in the audit log).",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "user id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
      }
     }
    }
@@ -12381,6 +12545,76 @@
           },
           "description": "how long things are kept, 1–3650 days each; null or left out: kept (applied once an hour)"
          },
+         "timeZone": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "description": "default time zone (IANA, e.g. Europe/Zurich) for people who haven't picked one: times on screen, digests at 8:00"
+         },
+         "dateFormat": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "enum": [
+           "auto",
+           "dmy",
+           "mdy",
+           "ymd",
+           null
+          ],
+          "description": "how dates are written (auto or null: as the language writes them)"
+         },
+         "announcement": {
+          "type": [
+           "object",
+           "null"
+          ],
+          "properties": {
+           "text": {
+            "type": "string",
+            "description": "up to 500 characters (empty: taken down)"
+           },
+           "tone": {
+            "type": "string",
+            "enum": [
+             "info",
+             "warning"
+            ]
+           },
+           "until": {
+            "type": [
+             "string",
+             "null"
+            ],
+            "format": "date-time",
+            "description": "shown until (null: until taken down)"
+           }
+          },
+          "required": [
+           "text"
+          ],
+          "description": "a message at the top of every page (null: taken down)"
+         },
+         "features": {
+          "type": "object",
+          "properties": {
+           "timeTracking": {
+            "type": "boolean"
+           },
+           "votes": {
+            "type": "boolean"
+           },
+           "portal": {
+            "type": "boolean"
+           },
+           "automation": {
+            "type": "boolean"
+           }
+          },
+          "description": "false turns a part off: it's hidden and the API refuses it (400; the portal answers 404); left out: on"
+         },
          "uploads": {
           "type": "object",
           "properties": {
@@ -12412,6 +12646,103 @@
      },
      "400": {
       "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/admin/workspace/logo": {
+   "put": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "Set the workspace's logo",
+    "operationId": "putWorkspaceLogo",
+    "description": "Workspace admins, in the browser. The image itself is the body: PNG, JPEG, GIF or WebP up to 512 KB (not SVG).",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "image/png": {
+       "schema": {
+        "type": "string",
+        "format": "binary",
+        "description": "the image"
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    },
+    "security": [
+     {
+      "session": []
+     }
+    ]
+   },
+   "delete": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "Remove the logo (TaskCraft's mark again)",
+    "operationId": "deleteWorkspaceLogo",
+    "description": "Workspace admins, in the browser.",
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    },
+    "security": [
+     {
+      "session": []
+     }
+    ]
+   }
+  },
+  "/workspace/logo": {
+   "get": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "The workspace's logo",
+    "operationId": "getWorkspaceLogo",
+    "description": "Anyone in the workspace (404 without one).",
+    "responses": {
+     "200": {
+      "description": "the image (or JPEG, GIF, WebP)",
+      "content": {
+       "image/png": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
      },
      "401": {
       "$ref": "#/components/responses/Unauthorized"
@@ -13894,6 +14225,13 @@
        "deactivated"
       ],
       "description": "account status"
+     },
+     "photo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "the profile photo's address (in /me)"
      }
     },
     "required": [
@@ -15752,6 +16090,91 @@
        "maxUploadMb": {
         "type": "integer",
         "description": "the server's largest upload (TASKCRAFT_MAX_UPLOAD_MB)"
+       },
+       "timeZone": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "default time zone (IANA) for people who haven't picked one"
+       },
+       "dateFormat": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "enum": [
+         "dmy",
+         "mdy",
+         "ymd",
+         null
+        ],
+        "description": "how dates are written (null: as the language writes them)"
+       },
+       "announcement": {
+        "type": [
+         "object",
+         "null"
+        ],
+        "properties": {
+         "id": {
+          "type": "string",
+          "format": "uuid"
+         },
+         "text": {
+          "type": "string"
+         },
+         "tone": {
+          "type": "string",
+          "enum": [
+           "info",
+           "warning"
+          ]
+         },
+         "until": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "date-time",
+          "description": "shown until"
+         },
+         "at": {
+          "type": "string",
+          "format": "date-time"
+         }
+        },
+        "required": [
+         "id",
+         "text",
+         "tone"
+        ],
+        "description": "the announcement for everyone while it's current"
+       },
+       "features": {
+        "type": "object",
+        "properties": {
+         "timeTracking": {
+          "type": "boolean"
+         },
+         "votes": {
+          "type": "boolean"
+         },
+         "portal": {
+          "type": "boolean"
+         },
+         "automation": {
+          "type": "boolean"
+         }
+        },
+        "description": "parts of TaskCraft that are on"
+       },
+       "logo": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "the logo's address (/api/workspace/logo?v=…); null: TaskCraft's mark"
        }
       },
       "required": [
@@ -16306,6 +16729,13 @@
        "null"
       ],
       "description": "job title"
+     },
+     "photo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "the profile photo's address (/api/users/{id}/photo?v=…)"
      }
     },
     "required": [
@@ -16400,6 +16830,13 @@
      "removed": {
       "type": "boolean",
       "description": "removed for good (DELETE /users/{id}); kept as \"Former user …\" for history"
+     },
+     "photo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "the profile photo's address"
      },
      "signIn": {
       "anyOf": [

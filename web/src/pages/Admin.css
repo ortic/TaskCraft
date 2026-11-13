@@ -126,3 +126,10 @@
 .adm-archived .adm-cat-name { color: var(--text-faint); }
 .adm-cat-add { gap: 10px; margin-top: 12px; }
 .adm-cat-add .input { width: 260px; }
+.adm-logo { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-bottom: 14px; }
+.adm-logo-img { height: 40px; width: auto; max-width: 160px; object-fit: contain; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); }
+.adm-logo label.btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.adm-features { display: grid; gap: 12px; padding-bottom: 14px; }
+.adm-feature { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.adm-feature input { margin-top: 3px; }
+.adm-feature > span { display: grid; gap: 2px; }

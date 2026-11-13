@@ -22,6 +22,7 @@ pub async fn put_workspace(State(state): State<AppState>, CurrentUser(user): Cur
     if let Some(r) = req.get("retention") {
         settings["retention"] = crate::privacy::check_retention(r)?;
     }
+    crate::features::check(&req, &mut settings)?;
     for k in ["accentColor", "defaultLanguage", "weekStart"] {
         if let Some(v) = req.get(k) {
             if k == "accentColor" && v.as_str().is_some_and(|c| !(c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|x| x.is_ascii_hexdigit()))) {

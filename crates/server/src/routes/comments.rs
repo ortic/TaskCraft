@@ -441,6 +441,7 @@ pub async fn log_work(
     Path(key): Path<String>,
     Json(req): Json<Value>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
+    crate::features::require(&state, user.workspace_id, "timeTracking").await?;
     let (id, project, role) = issue_for(&state, &user, &key, Role::Member).await?;
     // time for someone else (where the project allows it), else for the caller
     let who: Uuid = match req["userId"].as_str().filter(|s| !s.is_empty()) {

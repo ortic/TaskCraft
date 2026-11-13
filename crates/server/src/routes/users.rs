@@ -13,8 +13,9 @@ use crate::error::{ApiError, ApiResult};
 
 /// Everyone active in the workspace (people pickers, mentions).
 pub async fn people(State(state): State<AppState>, CurrentUser(user): CurrentUser) -> ApiResult<Json<Value>> {
-    let rows: Vec<(Uuid, String, Option<String>, String, Option<String>)> =
-        sqlx::query_as("SELECT id, name, email, role, title FROM users WHERE workspace_id = $1 AND status = 'active' ORDER BY lower(name)")
+    type Row = (Uuid, String, Option<String>, String, Option<String>, Option<chrono::DateTime<chrono::Utc>>);
+    let rows: Vec<Row> =
+        sqlx::query_as("SELECT id, name, email, role, title, photo_at FROM users WHERE workspace_id = $1 AND status = 'active' ORDER BY lower(name)")
             .bind(user.workspace_id)
             .fetch_all(&state.db)
             .await?;
@@ -22,7 +23,9 @@ pub async fn people(State(state): State<AppState>, CurrentUser(user): CurrentUse
     let guest = user.is_guest();
     Ok(Json(json!(
         rows.into_iter()
-            .map(|(id, name, email, role, title)| json!({"id": id, "name": name, "email": if guest { None } else { email }, "role": role, "title": title}))
+            .map(|(id, name, email, role, title, photo)| {
+                json!({"id": id, "name": name, "email": if guest { None } else { email }, "role": role, "title": title, "photo": crate::photos::url(id, photo)})
+            })
             .collect::<Vec<_>>()
     )))
 }
@@ -50,9 +53,11 @@ pub async fn person(State(state): State<AppState>, CurrentUser(user): CurrentUse
 /// All accounts (admins).
 pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser) -> ApiResult<Json<Value>> {
     require_admin(&user)?;
-    type Row = (Uuid, String, Option<String>, String, String, Option<String>, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>, bool);
-    let rows: Vec<Row> =
-        sqlx::query_as("SELECT id, name, email, role, status, title, created_at, last_login_at, preferences ? 'removed' FROM users WHERE workspace_id = $1 ORDER BY lower(name)")
+    type At = Option<chrono::DateTime<chrono::Utc>>;
+    type Row = (Uuid, String, Option<String>, String, String, Option<String>, chrono::DateTime<chrono::Utc>, At, bool, At);
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT id, name, email, role, status, title, created_at, last_login_at, preferences ? 'removed', photo_at FROM users WHERE workspace_id = $1 ORDER BY lower(name)",
+    )
             .bind(user.workspace_id)
             .fetch_all(&state.db)
             .await?;
@@ -60,9 +65,9 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser)
     let mut sign_in = crate::sso::sign_in_methods(&state, user.workspace_id).await?;
     Ok(Json(json!(
         rows.into_iter()
-            .map(|(id, name, email, role, status, title, created, last, removed)| json!({
+            .map(|(id, name, email, role, status, title, created, last, removed, photo)| json!({
                 "id": id, "name": name, "email": email, "role": role, "status": status, "title": title, "createdAt": created, "lastLoginAt": last,
-                "removed": removed,
+                "removed": removed, "photo": crate::photos::url(id, photo),
                 "signIn": sign_in.remove(&id),
             }))
             .collect::<Vec<_>>()
@@ -267,6 +272,7 @@ pub async fn remove(State(state): State<AppState>, CurrentUser(user): CurrentUse
         sqlx::query("DELETE FROM mail_outbox WHERE sent_at IS NULL AND lower(to_address) = lower($1)").bind(email).execute(&mut *tx).await?;
     }
     tx.commit().await?;
+    crate::photos::forget(&state, id).await;
     audit(&state, user.workspace_id, Some(user.id), "user.removed", Some(id.to_string()), json!({"name": name})).await;
     Ok(StatusCode::NO_CONTENT)
 }

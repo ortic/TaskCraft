@@ -63,13 +63,15 @@ export interface User {
   name: string
   role: 'owner' | 'admin' | 'member' | 'guest'
   status: string
+  /** the profile photo's address, when they set one */
+  photo?: string | null
 }
 
 export interface Me {
   user: User | null
   profile?: { title: string | null; locale: string | null; timezone: string | null }
   preferences?: Record<string, any>
-  workspace: { id: string; name: string; accentColor?: string | null; defaultLanguage?: string | null; weekStart?: string | null; retention?: Record<string, number> | null; uploads?: { blockedTypes?: string[]; maxMb?: number | null } | null; virusScanning?: boolean; maxUploadMb?: number } | null
+  workspace: { id: string; name: string; accentColor?: string | null; defaultLanguage?: string | null; weekStart?: string | null; retention?: Record<string, number> | null; uploads?: { blockedTypes?: string[]; maxMb?: number | null } | null; virusScanning?: boolean; maxUploadMb?: number; timeZone?: string | null; dateFormat?: DateFormat | null; announcement?: Announcement | null; features?: Partial<Record<Feature, boolean>>; logo?: string | null } | null
   wikicraft?: { url: string | null; connected: boolean; personal: boolean }
   baseUrl?: string
   /** the workspace requires two-factor authentication and this person hasn't set it up */
@@ -85,6 +87,8 @@ export interface Person extends Named {
   email?: string | null
   role?: string
   title?: string | null
+  /** the profile photo's address, when they set one */
+  photo?: string | null
 }
 
 export interface StatusRef {
@@ -428,20 +432,76 @@ export function userColor(seed: string): string {
   return AVATAR_COLORS[h % AVATAR_COLORS.length]
 }
 
-const dateFmt = () => new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short' })
-const dateYearFmt = () => new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short', year: 'numeric' })
+/** Parts of TaskCraft a workspace can turn off. */
+export type Feature = 'timeTracking' | 'votes' | 'portal' | 'automation'
+export type DateFormat = 'dmy' | 'mdy' | 'ymd'
+export interface Announcement {
+  id: string
+  text: string
+  tone: 'info' | 'warning'
+  until: string | null
+}
+
+// how dates and times are shown: the workspace's date format, the person's (else the workspace's) time zone
+let dateFormat: DateFormat | null = null
+let timeZone: string | undefined
+
+export function setDateSettings(format: string | null | undefined, tz: string | null | undefined) {
+  dateFormat = format === 'dmy' || format === 'mdy' || format === 'ymd' ? format : null
+  try {
+    timeZone = tz ? new Intl.DateTimeFormat('en', { timeZone: tz }).resolvedOptions().timeZone : undefined
+  } catch {
+    timeZone = undefined
+  }
+}
+
+/** The time zone times are shown in (undefined: the browser's). */
+export function displayTimeZone(): string | undefined {
+  return timeZone
+}
+
+const dateFmt = (tz?: string) => new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short', timeZone: tz })
+const dateYearFmt = (tz?: string) => new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short', year: 'numeric', timeZone: tz })
+
+function parts(d: Date, opts: Intl.DateTimeFormatOptions, loc = locale()): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const p of new Intl.DateTimeFormat(loc, opts).formatToParts(d)) out[p.type] = p.value
+  return out
+}
+
+/** A day in the chosen order: `13 Nov 2026`, `Nov 13, 2026`, `2026-11-13`. */
+function orderedDay(d: Date, withYear: boolean, tz?: string): string {
+  if (dateFormat === 'ymd') {
+    const p = parts(d, { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: tz }, 'en-CA')
+    return `${p.year}-${p.month}-${p.day}`
+  }
+  const p = parts(d, { day: 'numeric', month: 'short', year: 'numeric', timeZone: tz })
+  if (dateFormat === 'mdy') return withYear ? `${p.month} ${p.day}, ${p.year}` : `${p.month} ${p.day}`
+  return withYear ? `${p.day} ${p.month} ${p.year}` : `${p.day} ${p.month}`
+}
 
 /** `12 Nov` (this year) or `12 Nov 2025`. */
 export function shortDate(iso: string | null | undefined): string {
   if (!iso) return ''
-  const d = new Date(iso.length === 10 ? iso + 'T00:00:00' : iso)
+  const dayOnly = iso.length === 10
+  const d = new Date(dayOnly ? iso + 'T00:00:00' : iso)
   if (Number.isNaN(d.getTime())) return ''
-  return d.getFullYear() === new Date().getFullYear() ? dateFmt().format(d) : dateYearFmt().format(d)
+  // a day is a day everywhere; a moment is shown where the person is
+  const tz = dayOnly ? undefined : timeZone
+  const thisYear = d.getFullYear() === new Date().getFullYear()
+  if (dateFormat) return orderedDay(d, !thisYear, tz)
+  return thisYear ? dateFmt(tz).format(d) : dateYearFmt(tz).format(d)
 }
 
 export function dateTime(iso: string | null | undefined): string {
   if (!iso) return ''
-  return new Intl.DateTimeFormat(locale(), { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso))
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  if (dateFormat) {
+    const time = new Intl.DateTimeFormat(dateFormat === 'mdy' ? 'en-US' : 'en-GB', { hour: 'numeric', minute: '2-digit', hour12: dateFormat === 'mdy', timeZone }).format(d)
+    return `${orderedDay(d, true, timeZone)}${dateFormat === 'ymd' ? ' ' : ', '}${time}`
+  }
+  return new Intl.DateTimeFormat(locale(), { dateStyle: 'medium', timeStyle: 'short', timeZone }).format(d)
 }
 
 /** "3 minutes ago", "yesterday", … */

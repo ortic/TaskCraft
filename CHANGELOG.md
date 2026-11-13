@@ -40,4 +40,6 @@ The first release.
   private; **backup and restore** in one file; one project exported to another TaskCraft.
 - **Operations**: one binary and PostgreSQL, S3-compatible storage, several replicas, Docker
   Compose and Kubernetes manifests.
+- **Workspace settings**: logo, default time zone and date format, an announcement banner,
+  features turned off for everyone (time tracking, votes, the portal, automation); profile photos.
 - English, German, French and Italian; light, dark and high-contrast themes; WCAG 2.2 AA checked.

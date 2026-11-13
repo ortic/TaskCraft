@@ -230,6 +230,7 @@ schemas = {
             "name": txt,
             "role": enum("owner", "admin", "member", "guest", desc="workspace role"),
             "status": enum("active", "invited", "deactivated", desc="account status"),
+            "photo": null(txt, "the profile photo's address (in /me)"),
         },
         ["id", "workspaceId", "name", "role", "status"],
         "A person with an account.",
@@ -617,6 +618,12 @@ schemas["Me"] = obj(
                     "uploads": d(anyval, "upload rules: {blockedTypes: [file endings], maxMb} (null: none)"),
                     "virusScanning": d(boolean, "uploads are scanned for viruses (shown to admins; false for others)"),
                     "maxUploadMb": d(num, "the server's largest upload (TASKCRAFT_MAX_UPLOAD_MB)"),
+                    "timeZone": null(txt, "default time zone (IANA) for people who haven't picked one"),
+                    "dateFormat": null(enum("dmy", "mdy", "ymd"), "how dates are written (null: as the language writes them)"),
+                    "announcement": null(obj({"id": uuid, "text": txt, "tone": enum("info", "warning"), "until": null(dt, "shown until"), "at": dt}, ["id", "text", "tone"]),
+                                         "the announcement for everyone while it's current"),
+                    "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean}), "parts of TaskCraft that are on"),
+                    "logo": null(txt, "the logo's address (/api/workspace/logo?v=…); null: TaskCraft's mark"),
                 },
                 ["id", "name"],
             ),
@@ -740,7 +747,8 @@ schemas["SecurityPolicy"] = obj(
     "The workspace's two-factor policy and who has a second factor.",
 )
 schemas["Person"] = obj(
-    {"id": uuid, "name": txt, "email": ntxt("null for guests asking"), "role": enum("owner", "admin", "member", "guest"), "title": ntxt("job title")},
+    {"id": uuid, "name": txt, "email": ntxt("null for guests asking"), "role": enum("owner", "admin", "member", "guest"), "title": ntxt("job title"),
+     "photo": null(txt, "the profile photo's address (/api/users/{id}/photo?v=…)")},
     ["id", "name", "role"],
     "Someone active in the workspace (people pickers, mentions).",
 )
@@ -759,6 +767,7 @@ schemas["UserAccount"] = obj(
         "createdAt": dt,
         "lastLoginAt": ndt(),
         "removed": d(boolean, "removed for good (DELETE /users/{id}); kept as \"Former user …\" for history"),
+        "photo": null(txt, "the profile photo's address"),
         "signIn": null(S("SignInMethods")),
     },
     ["id", "name", "role", "status", "createdAt", "removed"],
@@ -839,6 +848,14 @@ op("delete", "/me/tokens/{id}", "deleteApiToken", "Auth & account", "Delete a pe
 D_EXPORT = ("Everything TaskCraft keeps about the person as one JSON document (a download): profile and preferences, teams and project access, the issues they reported, "
             "created or are assigned (titles only of those they still see), their comments, time logs, attachments, watches, votes, saved filters, notifications, sign-in "
             "sessions and identities, passkeys and API tokens (never secrets), and their entries in the audit log.")
+op("put", "/me/photo", "putMyPhoto", "Auth & account", "Set your profile photo",
+   desc="In the browser. The image itself is the body: PNG, JPEG, GIF or WebP up to 1 MB (the web app crops it to a 256 px square first).", auth="session",
+   req=body(d(binary, "the image"), "image/webp"), res=ok(obj({"photo": d(txt, "its address")}, ["photo"])))
+op("delete", "/me/photo", "deleteMyPhoto", "Auth & account", "Remove your profile photo", auth="session", res=NO)
+op("get", "/users/{id}/photo", "getPhoto", "People & teams", "A person's profile photo",
+   desc="Anyone in the workspace (404 without one). Cached: its address changes with each new photo.", pp={"id": (uuid, "user id")}, res=raw("image/webp", "the image"))
+op("delete", "/users/{id}/photo", "deletePhoto", "People & teams", "Take down someone's profile photo",
+   desc="Workspace admins (recorded in the audit log).", pp={"id": (uuid, "user id")}, res=NO)
 op("get", "/me/export", "exportMyData", "Auth & account", "Download everything about yourself", desc=D_EXPORT, res=raw("application/json", "taskcraft-personal-data.json (attachment)"))
 
 # --- Security
@@ -3062,6 +3079,12 @@ op("put", "/admin/workspace", "updateWorkspace", "Administration", "Rename the w
            [],
            "how long things are kept, 1–3650 days each; null or left out: kept (applied once an hour)",
        ),
+       "timeZone": null(txt, "default time zone (IANA, e.g. Europe/Zurich) for people who haven't picked one: times on screen, digests at 8:00"),
+       "dateFormat": null(enum("auto", "dmy", "mdy", "ymd"), "how dates are written (auto or null: as the language writes them)"),
+       "announcement": null(obj({"text": d(txt, "up to 500 characters (empty: taken down)"), "tone": enum("info", "warning"), "until": null(dt, "shown until (null: until taken down)")}, ["text"]),
+                            "a message at the top of every page (null: taken down)"),
+       "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean}),
+                     "false turns a part off: it's hidden and the API refuses it (400; the portal answers 404); left out: on"),
        "uploads": obj(
            {
                "blockedTypes": d(arr(txt), "file endings that can't be uploaded (exe, bat, …; a leading dot and case don't matter)"),
@@ -3071,6 +3094,13 @@ op("put", "/admin/workspace", "updateWorkspace", "Administration", "Rename the w
            "what may be uploaded to issues from the app, the portal and e-mail",
        ),
    })), res=NO)
+op("put", "/admin/workspace/logo", "putWorkspaceLogo", "Administration", "Set the workspace's logo",
+   desc="Workspace admins, in the browser. The image itself is the body: PNG, JPEG, GIF or WebP up to 512 KB (not SVG).", auth="session",
+   req=body(d(binary, "the image"), "image/png"), res=NO)
+op("delete", "/admin/workspace/logo", "deleteWorkspaceLogo", "Administration", "Remove the logo (TaskCraft's mark again)",
+   desc="Workspace admins, in the browser.", auth="session", res=NO)
+op("get", "/workspace/logo", "getWorkspaceLogo", "Administration", "The workspace's logo",
+   desc="Anyone in the workspace (404 without one).", res=raw("image/png", "the image (or JPEG, GIF, WebP)"))
 op("get", "/admin/audit", "getAuditLog", "Administration", "The audit log (latest 300 entries)",
    desc="Workspace admins.", res=ok(arr(S("AuditEntry"))))
 op("get", "/admin/stats", "getWorkspaceStats", "Administration", "Workspace statistics",

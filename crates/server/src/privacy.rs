@@ -126,9 +126,10 @@ pub async fn export(state: &AppState, user: Uuid) -> ApiResult<Value> {
         preferences: Value,
         created_at: chrono::DateTime<chrono::Utc>,
         last_login_at: Option<chrono::DateTime<chrono::Utc>>,
+        photo_at: Option<chrono::DateTime<chrono::Utc>>,
     }
     let p: Profile = sqlx::query_as(
-        "SELECT id, workspace_id, email, name, title, role, status, locale, timezone, preferences, created_at, last_login_at FROM users WHERE id = $1",
+        "SELECT id, workspace_id, email, name, title, role, status, locale, timezone, preferences, created_at, last_login_at, photo_at FROM users WHERE id = $1",
     )
     .bind(user)
     .fetch_optional(db)
@@ -234,6 +235,7 @@ pub async fn export(state: &AppState, user: Uuid) -> ApiResult<Value> {
         "profile": {
             "id": p.id, "workspaceId": p.workspace_id, "name": p.name, "email": p.email, "title": p.title, "role": p.role, "status": p.status,
             "language": p.locale, "timeZone": p.timezone, "preferences": prefs, "createdAt": p.created_at, "lastSignInAt": p.last_login_at,
+            "photo": crate::photos::url(p.id, p.photo_at),
         },
         "teams": list(teams),
         "projectAccess": list(access),

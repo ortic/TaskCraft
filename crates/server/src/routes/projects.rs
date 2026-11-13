@@ -721,6 +721,7 @@ pub async fn create_status(
     Path(key): Path<String>,
     Json(req): Json<Value>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
+    crate::features::require(&state, user.workspace_id, "automation").await?;
     let (p, _) = by_key(&state, &user, &key, Role::Admin).await?;
     let name = req["name"].as_str().map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| ApiError::bad("a status needs a name"))?;
     let cat = category(&req["category"])?;

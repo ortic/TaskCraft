@@ -15,7 +15,7 @@ import {
   type BoardData, type BoardConfig, type BoardColumn, type Status, type StatusRules, type WikiPage, type SecurityLevel,
 } from '../api'
 import { requirementLabel, resolutionLabel, resolutionsOf } from '../components/Transition'
-import { Avatar, Choices, Confirm, Empty, ErrorBox, Loading, Lozenge, Modal, PopButton, useMe, usePeople, useProject, useProjects, useToast } from '../ui'
+import { Avatar, Choices, Confirm, Empty, ErrorBox, Loading, Lozenge, Modal, PopButton, useFeature, useMe, usePeople, useProject, useProjects, useToast } from '../ui'
 import { PROJECT_COLORS, PROJECT_ICONS, ProjectIcon, TYPE_ICONS, TypeIcon, priorityLabel } from '../icons'
 import { AddPersonButton, OptionChip, PersonPicker } from '../components/fields'
 import { useOpenIssue } from '../components/Layout'
@@ -181,6 +181,8 @@ export default function ProjectSettings() {
   const project = useProject(urlKey)
   const qc = useQueryClient()
   const toast = useToast()
+  const automation = useFeature('automation')
+  const portal = useFeature('portal')
   const cacheKey = useMemo(() => ['project', urlKey.toUpperCase()], [urlKey])
   const p = project.data
 
@@ -223,7 +225,9 @@ export default function ProjectSettings() {
         </Empty>
       </div>
     )
-  const active = SECTIONS.find((s) => s.id === tab) ?? SECTIONS[0]
+  // parts the workspace turned off
+  const shown = (id: string) => !(id === 'automation' && !automation) && !(id === 'service-desk' && !portal)
+  const active = SECTIONS.find((s) => s.id === tab && shown(s.id)) ?? SECTIONS[0]
   return (
     <SettingsCtx.Provider value={ctx}>
       <div className="page ps-page">
@@ -239,7 +243,7 @@ export default function ProjectSettings() {
         </div>
         <div className="ps-layout">
           <nav className="ps-nav" aria-label={t('Project settings')}>
-            {SECTIONS.map((s) => (
+            {SECTIONS.filter((s) => shown(s.id)).map((s) => (
               <NavLink key={s.id} to={`/projects/${p.key}/settings/${s.id}`} className={() => `ps-nav-item ${s.id === active.id ? 'active' : ''}`}>
                 <s.icon size={16} aria-hidden />
                 <span>{s.label()}</span>

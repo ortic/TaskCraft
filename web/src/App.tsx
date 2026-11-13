@@ -2,7 +2,7 @@ import { t } from './i18n'
 import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { api } from './api'
+import { api, setDateSettings } from './api'
 import { chooseLanguage, locale, rememberLanguage } from './i18n'
 import { Loading, ToastProvider, useMe, useProject } from './ui'
 import { useLiveUpdates } from './live'
@@ -50,6 +50,7 @@ export default function App() {
     return null
   }
   applyAccent(me.data?.workspace?.accentColor)
+  setDateSettings(me.data?.workspace?.dateFormat, me.data?.profile?.timezone || me.data?.workspace?.timeZone)
   if (loc.pathname === '/welcome') return <Welcome />
   if (!user) {
     if (loc.pathname === '/login') return <Login />

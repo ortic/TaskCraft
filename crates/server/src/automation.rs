@@ -93,6 +93,9 @@ async fn run_inner(state: &AppState, actor: &Actor, s: &Summary, changes: &[Chan
             .fetch_all(&state.db)
             .await
             .unwrap_or_default();
+    if rules.is_empty() || !crate::features::on(state, actor.workspace, "automation").await {
+        return;
+    }
     for rule in rules {
         if !triggered(&rule.trigger, changes, created, commented) || !matches(state, s, actor.workspace, &rule.condition).await {
             continue;

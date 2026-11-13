@@ -27,6 +27,8 @@
 .st-identity { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .st-identity-text { min-width: 0; }
 .st-identity-name { font-weight: 650; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-photo { margin-inline-start: auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.st-photo label.btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* theme choice */
 .st-themes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }

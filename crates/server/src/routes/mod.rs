@@ -69,6 +69,8 @@ pub fn api() -> Router<AppState> {
         .route("/me/tokens", get(auth::list_tokens).post(auth::create_token))
         .route("/me/tokens/{id}", delete(auth::delete_token))
         .route("/me/export", get(users::export_me))
+        .route("/me/photo", put(crate::photos::put).delete(crate::photos::delete_mine))
+        .route("/users/{id}/photo", get(crate::photos::get).delete(crate::photos::delete))
         .route("/my-work", get(issues::my_work))
         .route("/timesheet", get(comments::timesheet))
         .route("/time-report", get(time::report))
@@ -186,20 +188,11 @@ pub fn api() -> Router<AppState> {
         // e-mail in: messages from mail servers, a project's e-mail settings
         .route("/integrations/mail-in", post(mail_in::receive))
         .route("/projects/{key}/mail-in", get(mail_in::settings).put(mail_in::put_settings))
-        // service desk portal (public: requesters sign in by e-mailed links) and request forms
-        .route("/portal", get(portal::info))
-        .route("/portal/sign-in", post(portal::sign_in))
-        .route("/portal/session", post(portal::start_session).delete(portal::end_session))
-        .route("/portal/requests", get(portal::requests))
-        .route("/portal/requests/{key}", get(portal::request))
-        .route("/portal/requests/{key}/comments", post(portal::reply))
-        .route("/portal/requests/{key}/resolve", post(portal::resolve))
-        .route("/portal/attachments/{id}", get(portal::download))
-        .route("/portal/forms/{path}", get(portal::form).post(portal::submit))
-        .route("/portal/forms/{path}/suggest", get(portal::suggest))
         .route("/projects/{key}/portal", get(portal::settings).put(portal::put_settings))
         // administration
         .route("/admin/workspace", put(admin::put_workspace))
+        .route("/admin/workspace/logo", put(crate::features::put_logo).delete(crate::features::delete_logo))
+        .route("/workspace/logo", get(crate::features::logo))
         .route("/admin/audit", get(admin::audit_log))
         .route("/admin/stats", get(admin::stats))
         .route("/admin/mail", get(email::status))
@@ -220,10 +213,27 @@ pub fn api() -> Router<AppState> {
         .merge(security::routes())
 }
 
+/// The service desk portal (public: requesters sign in by e-mailed links) and request forms; off
+/// when the workspace turns the portal off.
+fn portal_routes() -> Router<AppState> {
+    Router::new()
+        .route("/portal", get(portal::info))
+        .route("/portal/sign-in", post(portal::sign_in))
+        .route("/portal/session", post(portal::start_session).delete(portal::end_session))
+        .route("/portal/requests", get(portal::requests))
+        .route("/portal/requests/{key}", get(portal::request))
+        .route("/portal/requests/{key}/comments", post(portal::reply))
+        .route("/portal/requests/{key}/resolve", post(portal::resolve))
+        .route("/portal/attachments/{id}", get(portal::download))
+        .route("/portal/forms/{path}", get(portal::form).post(portal::submit))
+        .route("/portal/forms/{path}/suggest", get(portal::suggest))
+}
+
 pub fn router(state: AppState) -> Router {
     let max_upload = (state.config.max_upload_mb as usize).saturating_mul(1024 * 1024);
     // route_layer: counted under the matched route pattern (unknown paths aren't routes)
     let api = api()
+        .merge(portal_routes().route_layer(axum::middleware::from_fn_with_state(state.clone(), crate::features::portal_switch)))
         .route_layer(axum::middleware::from_fn_with_state(state.clone(), crate::metrics::track))
         .layer(DefaultBodyLimit::max(max_upload.max(2 * 1024 * 1024)));
     let spa = crate::web_assets::service(&state.config.static_dir);

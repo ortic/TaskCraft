@@ -705,6 +705,7 @@ pub async fn history(State(state): State<AppState>, CurrentUser(user): CurrentUs
 
 /// Votes for an issue (`{"voted": true}`) or takes the vote back: anyone who sees it, once.
 pub async fn vote(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>, Json(req): Json<Value>) -> ApiResult<StatusCode> {
+    crate::features::require(&state, user.workspace_id, "votes").await?;
     let (id, project, _) = issue_for(&state, &user, &key, Role::Viewer).await?;
     if req["voted"].as_bool().unwrap_or(true) {
         sqlx::query("INSERT INTO issue_votes (issue_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING").bind(id).bind(user.id).execute(&state.db).await?;

@@ -67,7 +67,7 @@
 - [x] Idle session timeout (`TASKCRAFT_SESSION_IDLE_MINUTES`)
 - [x] Search: stemming in the workspace's language and text inside attachments (PDF, Office, text)
 - [x] Project export that imports into another TaskCraft (one project with its history and files), next to the whole-workspace backup
-- [ ] Workspace settings: logo, default time zone and date format, an announcement banner, feature switches; profile photos
+- [x] Workspace settings: logo, default time zone and date format, an announcement banner, feature switches; profile photos
 - [ ] Public read-only projects and share links (expiry, password) for roadmaps and status pages
 - [ ] AI (optional, with your own model): similar issues and duplicates while typing, summaries of long threads, semantic search
 - [ ] Guides in `docs/`: user guide, admin guide, migrating from another tracker, translating

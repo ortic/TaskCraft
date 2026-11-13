@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffe
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Bot, X } from 'lucide-react'
-import { api, initials, userColor, type Category, type Me, type Person, type Project, type ProjectSummary } from './api'
+import { api, initials, userColor, type Category, type Feature, type Me, type Person, type Project, type ProjectSummary } from './api'
 
 export function useMe() {
   return useQuery({ queryKey: ['me'], queryFn: () => api.get<Me>('/me'), staleTime: 60_000 })
@@ -17,6 +17,11 @@ export function useSetup() {
 export function usePeople() {
   const me = useMe()
   return useQuery({ queryKey: ['people'], queryFn: () => api.get<Person[]>('/people'), enabled: !!me.data?.user, staleTime: 120_000 })
+}
+
+/** Whether a part of TaskCraft is on in the workspace. */
+export function useFeature(f: Feature): boolean {
+  return useMe().data?.workspace?.features?.[f] !== false
 }
 
 export function useProjects() {
@@ -43,7 +48,39 @@ export function Logo({ name }: { name?: string }) {
 }
 
 /** A person's initials on their colour. `decorative` when their name is written next to it. */
-export function Avatar({ name, id, size = 24, decorative }: { name: string; id?: string; size?: number; decorative?: boolean }) {
+const photoMaps = new WeakMap<Person[], Map<string, string>>()
+
+/** The profile photo of a person in the workspace's people list. */
+function photoOf(people: Person[] | undefined, id: string | undefined): string | undefined {
+  if (!people || !id) return undefined
+  let m = photoMaps.get(people)
+  if (!m) {
+    m = new Map(people.filter((p) => p.photo).map((p) => [p.id, p.photo!]))
+    photoMaps.set(people, m)
+  }
+  return m.get(id)
+}
+
+/** A person's photo, else their initials on their colour. */
+export function Avatar({ name, id, size = 24, decorative, photo }: { name: string; id?: string; size?: number; decorative?: boolean; photo?: string | null }) {
+  const people = usePeople()
+  const src = photo !== undefined ? photo : photoOf(people.data, id)
+  const [broken, setBroken] = useState<string | null>(null)
+  if (src && broken !== src) {
+    return (
+      <img
+        className="avatar avatar-photo"
+        src={src}
+        width={size}
+        height={size}
+        alt={decorative ? '' : name}
+        title={decorative ? undefined : name}
+        aria-hidden={decorative || undefined}
+        loading="lazy"
+        onError={() => setBroken(src)}
+      />
+    )
+  }
   return (
     <span
       className="avatar"

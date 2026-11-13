@@ -5,10 +5,10 @@ import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate, useSearchPar
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Search, House, FolderKanban, Plus, Moon, Shield, Menu, LogOut, UserCog, Bell, ListFilter, Timer, Users, Kanban, ListTodo, Table, ChartGantt, Calendar, ChartColumn,
-  Package, BookOpen, Settings, Star, X, ExternalLink, LayoutDashboard, Briefcase,
+  Package, BookOpen, Settings, Star, X, ExternalLink, LayoutDashboard, Briefcase, Megaphone, TriangleAlert,
 } from 'lucide-react'
-import { api, ago, type Notification, type SavedView } from '../api'
-import { Avatar, BotAvatar, Logo, Popover, useMe, useProject, useProjects, useHotkeys } from '../ui'
+import { api, ago, type Announcement, type Notification, type SavedView } from '../api'
+import { Avatar, BotAvatar, Logo, Popover, useFeature, useMe, useProject, useProjects, useHotkeys } from '../ui'
 import { ProjectIcon } from '../icons'
 import CreateIssue, { type CreateDefaults } from './CreateIssue'
 import CommandPalette from './CommandPalette'
@@ -86,6 +86,7 @@ export default function Layout() {
     location.href = '/login'
   }
   const isAdmin = user?.role === 'owner' || user?.role === 'admin'
+  const timeTracking = useFeature('timeTracking')
   const starred = (projects.data ?? []).filter((p) => p.starred && !p.archivedAt)
   const p = project.data
   const pk = p?.key ?? projectKey?.toUpperCase()
@@ -99,7 +100,14 @@ export default function Layout() {
             <Menu size={18} />
           </button>
           <Link to="/" className="logo-link">
-            <Logo />
+            {me.data?.workspace?.logo ? (
+              <span className="logo">
+                <img className="ws-logo" src={me.data.workspace.logo} alt="" />
+                <span className="logo-text">{me.data.workspace.name}</span>
+              </span>
+            ) : (
+              <Logo />
+            )}
           </Link>
           <button className="search-trigger" onClick={() => setPalette(true)}>
             <Search size={15} /> <span className="search-label">{t('Search issues, projects, actions…')}</span> <span className="spacer" /> <span className="kbd">Ctrl K</span>
@@ -144,7 +152,7 @@ export default function Layout() {
               <NavLink to="/search" className="nav-item"><ListFilter size={16} /> <span className="nav-label">{t('Filters')}</span></NavLink>
               <NavLink to="/dashboards" className="nav-item"><LayoutDashboard size={16} /> <span className="nav-label">{t('Dashboards')}</span></NavLink>
               <NavLink to="/portfolio" className="nav-item"><Briefcase size={16} /> <span className="nav-label">{t('Portfolio')}</span></NavLink>
-              <NavLink to="/timesheet" className="nav-item"><Timer size={16} /> <span className="nav-label">{t('Timesheet')}</span></NavLink>
+              {timeTracking && <NavLink to="/timesheet" className="nav-item"><Timer size={16} /> <span className="nav-label">{t('Timesheet')}</span></NavLink>}
               <NavLink to="/people" className="nav-item"><Users size={16} /> <span className="nav-label">{t('People & teams')}</span></NavLink>
               {isAdmin && <NavLink to="/admin" className="nav-item"><Shield size={16} /> <span className="nav-label">{t('Administration')}</span></NavLink>}
             </>
@@ -174,6 +182,7 @@ export default function Layout() {
         </aside>
 
         <main className="main" id="main">
+          <AnnouncementBar announcement={me.data?.workspace?.announcement} />
           <Outlet />
         </main>
 
@@ -227,6 +236,7 @@ function UserMenu({ name, id, email, isAdmin, onLogout }: { name: string; id: st
   const [el, setEl] = useState<HTMLButtonElement | null>(null)
   const [open, setOpen] = useState(false)
   const nav = useNavigate()
+  const timeTracking = useFeature('timeTracking')
   const close = useCallback(() => setOpen(false), [])
   return (
     <>
@@ -241,7 +251,7 @@ function UserMenu({ name, id, email, isAdmin, onLogout }: { name: string; id: st
           </div>
           <div className="divider" />
           <button className="menu-item" onClick={() => { close(); nav('/settings') }}><UserCog size={15} /> {t('Profile & settings')}</button>
-          <button className="menu-item" onClick={() => { close(); nav('/timesheet') }}><Timer size={15} /> {t('My timesheet')}</button>
+          {timeTracking && <button className="menu-item" onClick={() => { close(); nav('/timesheet') }}><Timer size={15} /> {t('My timesheet')}</button>}
           {isAdmin && <button className="menu-item" onClick={() => { close(); nav('/admin') }}><Shield size={15} /> {t('Administration')}</button>}
           <button className="menu-item" onClick={onLogout}><LogOut size={15} /> {t('Log out')}</button>
         </Popover>
@@ -323,5 +333,32 @@ function Notifications() {
         </Popover>
       )}
     </>
+  )
+}
+
+const DISMISSED = 'tc-announcement-closed'
+
+/** The workspace's announcement, until it's over or this person closes it. */
+function AnnouncementBar({ announcement: a }: { announcement?: Announcement | null }) {
+  const [closed, setClosed] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(DISMISSED)
+    } catch {
+      return null
+    }
+  })
+  if (!a || closed === a.id) return null
+  const close = () => {
+    setClosed(a.id)
+    try {
+      localStorage.setItem(DISMISSED, a.id)
+    } catch { /* closed for this visit */ }
+  }
+  return (
+    <div className={`announcement announcement-${a.tone}`} role="region" aria-label={t('Announcement')}>
+      {a.tone === 'warning' ? <TriangleAlert size={16} aria-hidden /> : <Megaphone size={16} aria-hidden />}
+      <p>{a.text}</p>
+      <button className="icon-btn" onClick={close} aria-label={t('Close the announcement')} title={t('Close')}><X size={15} /></button>
+    </div>
   )
 }

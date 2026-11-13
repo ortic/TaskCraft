@@ -149,7 +149,10 @@ helper on every issue. See [Git integration](#git-integration).
 (TQL), read, create and update issues, comment, log time and read sprints, boards and reports with
 the user's permissions. See [AI assistants (MCP)](#ai-assistants-mcp).
 
-**Administration**: workspace owner / admins / members / guests; project roles (viewer, member,
+**Administration**: the workspace's name, logo, accent colour, default language, time zone and
+date format; profile photos (cropped in the browser; admins can take one down); an **announcement** at the top of every page (until a date or until it's taken down);
+**features** a workspace doesn't use — time tracking, votes, the service desk portal, automation —
+turned off for everyone (hidden, and refused by the API); workspace owner / admins / members / guests; project roles (viewer, member,
 admin) for people and teams, a default role per project; per project, who may delete or move
 issues, plan sprints, manage releases, edit others' comments, log time for others and change
 who sees an issue; **private issues**: security levels per project (by role, teams or people; a

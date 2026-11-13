@@ -171,16 +171,19 @@ pub async fn me(
     }
     let (ws_name, settings): (String, Value) =
         sqlx::query_as("SELECT name, settings FROM workspaces WHERE id = $1").bind(user.workspace_id).fetch_one(&state.db).await?;
-    let (title, locale, timezone, prefs): (Option<String>, Option<String>, Option<String>, Value) =
-        sqlx::query_as("SELECT title, locale, timezone, preferences FROM users WHERE id = $1").bind(user.id).fetch_one(&state.db).await?;
+    type Profile = (Option<String>, Option<String>, Option<String>, Value, Option<chrono::DateTime<chrono::Utc>>);
+    let (title, locale, timezone, prefs, photo_at): Profile =
+        sqlx::query_as("SELECT title, locale, timezone, preferences, photo_at FROM users WHERE id = $1").bind(user.id).fetch_one(&state.db).await?;
     let wiki = crate::wikicraft::conn(&state, &user).await;
     let mut prefs = prefs;
     let personal_wiki = prefs.get("wikicraftToken").and_then(|v| v.as_str()).is_some_and(|t| !t.is_empty());
     if let Some(o) = prefs.as_object_mut() {
         o.remove("wikicraftToken");
     }
+    let mut user_json = json!(user);
+    user_json["photo"] = crate::photos::url(user.id, photo_at);
     Ok(Json(json!({
-        "user": user,
+        "user": user_json,
         "profile": {"title": title, "locale": locale, "timezone": timezone},
         "preferences": prefs,
         "workspace": {
@@ -188,6 +191,10 @@ pub async fn me(
             "accentColor": settings["accentColor"], "defaultLanguage": settings["defaultLanguage"], "weekStart": settings["weekStart"],
             "retention": if user.is_admin() { settings["retention"].clone() } else { Value::Null },
             "uploads": settings["uploads"],
+            "timeZone": settings["timeZone"], "dateFormat": settings["dateFormat"],
+            "announcement": crate::features::announcement(&settings),
+            "features": crate::features::all(&settings),
+            "logo": crate::features::logo_url(&settings),
             "virusScanning": user.is_admin() && state.config.clamav_address.as_deref().is_some_and(|a| !a.is_empty()),
             "maxUploadMb": state.config.max_upload_mb,
         },

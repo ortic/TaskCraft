@@ -1,16 +1,16 @@
 import { t, AVAILABLE, LANGUAGES, locale } from '../i18n'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { BackupImportTab } from './BackupImport'
 import {
   Archive, ArchiveRestore, Check, ChevronDown, CircleDot, Clock, Download, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, Mail, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, ShieldOff, Trash,
-  UserCheck, UserPlus, UserX, Users, Webhook,
+  UserCheck, UserPlus, UserX, Users, Webhook, Upload, ImageOff,
 } from 'lucide-react'
-import { api, ago, dateTime, shortDate, type Me, type TimeCategory } from '../api'
-import { Avatar, Confirm, Empty, ErrorBox, Loading, Modal, PopButton, Tabs, useMe, usePeople, useProjects, useSetup, useToast } from '../ui'
+import { api, ago, dateTime, shortDate, type Feature, type Me, type TimeCategory } from '../api'
+import { Avatar, Confirm, Empty, ErrorBox, Loading, Logo, Modal, PopButton, Tabs, useMe, usePeople, useProjects, useSetup, useToast } from '../ui'
 import { PROJECT_COLORS } from '../icons'
-import { CopyField, Switch } from './Settings'
+import { CopyField, Switch, nowIn, timeZones } from './Settings'
 import { DeleteTeam, TeamDialog, TeamMembers, useTeams, type Team } from './People'
 import { SignInBadges, useSignInOptions, type SignInMethods } from '../components/Sso'
 import { ResetTwoFactor, TwoFactorPolicy, canResetTwoFactor, useTwoFactorPolicy } from '../components/Security'
@@ -26,6 +26,7 @@ export default function Admin() {
   const seg = loc.pathname.replace(/^\/admin\/?/, '').split('/')[0] as Tab
   const tab: Tab = TABS.includes(seg) ? seg : 'overview'
   const role = me?.user?.role
+  const timeTracking = me?.workspace?.features?.timeTracking !== false
   if (!me?.user) return <Loading />
   if (role !== 'owner' && role !== 'admin') {
     return (
@@ -49,7 +50,7 @@ export default function Admin() {
           { id: 'overview', label: <><LayoutDashboard size={14} /> {t('Overview')}</> },
           { id: 'users', label: <><Users size={14} /> {t('Users')}</> },
           { id: 'teams', label: <><CircleDot size={14} /> {t('Teams')}</> },
-          { id: 'time', label: <><Clock size={14} /> {t('Time tracking')}</> },
+          ...(timeTracking ? [{ id: 'time' as const, label: <><Clock size={14} /> {t('Time tracking')}</> }] : []),
           { id: 'webhooks', label: <><Webhook size={14} /> {t('Webhooks')}</> },
           { id: 'import', label: <><ArchiveRestore size={14} /> {t('Import')}</> },
           { id: 'audit', label: <><ScrollText size={14} /> {t('Audit log')}</> },
@@ -108,6 +109,9 @@ function Overview({ me }: { me: Me }) {
       <WorkspaceForm key={JSON.stringify(me.workspace)} me={me} />
       <RetentionForm key={`r-${JSON.stringify(me.workspace?.retention ?? {})}`} me={me} />
       <UploadsForm key={`u-${JSON.stringify(me.workspace?.uploads ?? {})}`} me={me} />
+      <LogoCard me={me} />
+      <AnnouncementForm key={`a-${me.workspace?.announcement?.id ?? ''}`} me={me} />
+      <FeaturesForm key={`f-${JSON.stringify(me.workspace?.features ?? {})}`} me={me} />
       <MailCard me={me} />
       <TwoFactorPolicy />
     </>
@@ -220,10 +224,15 @@ function WorkspaceForm({ me }: { me: Me }) {
   const [accent, setAccent] = useState(ws.accentColor ?? '')
   const [lang, setLang] = useState(ws.defaultLanguage ?? '')
   const [weekStart, setWeekStart] = useState<'monday' | 'sunday'>(ws.weekStart === 'sunday' ? 'sunday' : 'monday')
+  const [tz, setTz] = useState(ws.timeZone ?? '')
+  const [dateFormat, setDateFormat] = useState<string>(ws.dateFormat ?? '')
+  const zones = useMemo(() => timeZones(ws.timeZone ?? ''), [ws.timeZone])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const accentOk = !accent || HEX.test(accent)
-  const dirty = name.trim() !== ws.name || accent !== (ws.accentColor ?? '') || lang !== (ws.defaultLanguage ?? '') || weekStart !== (ws.weekStart === 'sunday' ? 'sunday' : 'monday')
+  const dirty =
+    name.trim() !== ws.name || accent !== (ws.accentColor ?? '') || lang !== (ws.defaultLanguage ?? '') || weekStart !== (ws.weekStart === 'sunday' ? 'sunday' : 'monday') ||
+    tz !== (ws.timeZone ?? '') || dateFormat !== (ws.dateFormat ?? '')
   const save = async (e: FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return setErr(t('The workspace needs a name.'))
@@ -231,7 +240,7 @@ function WorkspaceForm({ me }: { me: Me }) {
     setBusy(true)
     setErr('')
     try {
-      await api.put('/admin/workspace', { name: name.trim(), accentColor: accent ? accent.toLowerCase() : null, defaultLanguage: lang || null, weekStart })
+      await api.put('/admin/workspace', { name: name.trim(), accentColor: accent ? accent.toLowerCase() : null, defaultLanguage: lang || null, weekStart, timeZone: tz || null, dateFormat: dateFormat || null })
       await qc.invalidateQueries({ queryKey: ['me'] })
       toast(t('Workspace settings saved'))
     } catch (e) {
@@ -282,6 +291,206 @@ function WorkspaceForm({ me }: { me: Me }) {
           </div>
           <span className="field-hint">{t('Used by calendars and timesheets.')}</span>
         </div>
+        <div className="field">
+          <label htmlFor="adm-ws-tz">{t('Default time zone')}</label>
+          <select id="adm-ws-tz" className="select" value={tz} onChange={(e) => setTz(e.target.value)}>
+            <option value="">{t('Each person’s browser time zone')}</option>
+            {zones.map((z) => <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>)}
+          </select>
+          <span className="field-hint">{tz ? t('Local time there: {time}', { time: nowIn(tz) }) : t('For people who haven’t picked one in their profile: times on screen, digests at 8:00.')}</span>
+        </div>
+        <div className="field">
+          <label htmlFor="adm-ws-date">{t('Date format')}</label>
+          <select id="adm-ws-date" className="select" value={dateFormat} onChange={(e) => setDateFormat(e.target.value)}>
+            <option value="">{t('As the language writes them')}</option>
+            <option value="dmy">{t('Day month year (13 Nov 2026, 14:30)')}</option>
+            <option value="mdy">{t('Month day year (Nov 13, 2026, 2:30 PM)')}</option>
+            <option value="ymd">{t('Year-month-day (2026-11-13 14:30)')}</option>
+          </select>
+        </div>
+      </div>
+      <div className="adm-card-foot">
+        {err && <span className="error-text adm-foot-msg" role="alert">{err}</span>}
+        <button type="submit" className="btn btn-primary" disabled={busy || !dirty}>{t('Save changes')}</button>
+      </div>
+    </form>
+  )
+}
+
+/** The logo in the top bar instead of TaskCraft's mark. */
+function LogoCard({ me }: { me: Me }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const logo = me.workspace?.logo
+  const upload = async (f: File | undefined) => {
+    if (!f) return
+    setErr('')
+    if (!/^image\/(png|jpeg|gif|webp)$/.test(f.type)) return setErr(t('Choose a PNG, JPEG, GIF or WebP image.'))
+    if (f.size > 512 * 1024) return setErr(t('The logo is 512 KB at most.'))
+    setBusy(true)
+    try {
+      const r = await fetch('/api/admin/workspace/logo', { method: 'PUT', headers: { 'x-taskcraft': '1', 'content-type': f.type }, body: f })
+      if (!r.ok) throw new Error((await r.json().catch(() => null))?.message ?? r.statusText)
+      await qc.invalidateQueries({ queryKey: ['me'] })
+      toast(t('Logo saved'))
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const remove = async () => {
+    setBusy(true)
+    try {
+      await api.del('/admin/workspace/logo')
+      await qc.invalidateQueries({ queryKey: ['me'] })
+      toast(t('Logo removed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="adm-card">
+      <div className="adm-card-head">
+        <h2>{t('Logo')}</h2>
+        <p className="small muted">{t('Shown in the top bar next to the workspace’s name. A PNG, JPEG, GIF or WebP image up to 512 KB, best square.')}</p>
+      </div>
+      <div className="adm-card-body adm-logo">
+        {logo ? <img src={logo} alt={t('The workspace’s logo')} className="adm-logo-img" /> : <Logo name={me.workspace?.name} />}
+        <label className="btn">
+          <Upload size={14} /> {logo ? t('Choose another image') : t('Choose an image')}
+          <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="sr-only" disabled={busy} onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = '' }} />
+        </label>
+        {logo && <button className="btn btn-ghost" disabled={busy} onClick={remove}><Trash size={14} /> {t('Use TaskCraft’s mark')}</button>}
+        {err && <span className="error-text" role="alert">{err}</span>}
+      </div>
+    </div>
+  )
+}
+
+/** A message at the top of every page, until a moment or until it's taken down. */
+function AnnouncementForm({ me }: { me: Me }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const a = me.workspace?.announcement
+  const [text, setText] = useState(a?.text ?? '')
+  const [tone, setTone] = useState<'info' | 'warning'>(a?.tone ?? 'info')
+  const [until, setUntil] = useState(a?.until ? toLocalInput(a.until) : '')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setErr('')
+    try {
+      await api.put('/admin/workspace', { announcement: text.trim() ? { text: text.trim(), tone, until: until ? new Date(until).toISOString() : null } : null })
+      await qc.invalidateQueries({ queryKey: ['me'] })
+      toast(text.trim() ? t('Announcement published') : t('Announcement taken down'))
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const takeDown = async () => {
+    setText('')
+    setBusy(true)
+    try {
+      await api.put('/admin/workspace', { announcement: null })
+      await qc.invalidateQueries({ queryKey: ['me'] })
+      toast(t('Announcement taken down'))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <form className="adm-card" onSubmit={save}>
+      <div className="adm-card-head">
+        <h2>{t('Announcement')}</h2>
+        <p className="small muted">{t('A message at the top of every page for everyone, e.g. planned maintenance. People can close it; a new one shows again.')}</p>
+      </div>
+      <div className="adm-card-body">
+        <div className="field">
+          <label htmlFor="adm-ann-text">{t('Message')}</label>
+          <textarea id="adm-ann-text" className="input" rows={2} maxLength={500} value={text} onChange={(e) => setText(e.target.value)} />
+        </div>
+        <div className="adm-ws-grid">
+          <div className="field">
+            <span className="field-label" id="adm-ann-tone">{t('Kind')}</span>
+            <div className="seg adm-seg" role="radiogroup" aria-labelledby="adm-ann-tone">
+              <button type="button" role="radio" aria-checked={tone === 'info'} className={tone === 'info' ? 'active' : ''} onClick={() => setTone('info')}>{t('Information')}</button>
+              <button type="button" role="radio" aria-checked={tone === 'warning'} className={tone === 'warning' ? 'active' : ''} onClick={() => setTone('warning')}>{t('Warning')}</button>
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="adm-ann-until">{t('Shown until')}</label>
+            <input id="adm-ann-until" type="datetime-local" className="input" value={until} onChange={(e) => setUntil(e.target.value)} />
+            <span className="field-hint">{t('Empty: until you take it down.')}</span>
+          </div>
+        </div>
+      </div>
+      <div className="adm-card-foot">
+        {err && <span className="error-text adm-foot-msg" role="alert">{err}</span>}
+        {a && <button type="button" className="btn" disabled={busy} onClick={takeDown}>{t('Take down')}</button>}
+        <button type="submit" className="btn btn-primary" disabled={busy || !text.trim()}>{a ? t('Publish again') : t('Publish')}</button>
+      </div>
+    </form>
+  )
+}
+
+function toLocalInput(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** Parts of TaskCraft the workspace doesn't use. */
+function FeaturesForm({ me }: { me: Me }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const FEATURES: { id: Feature; label: () => string; hint: () => string }[] = [
+    { id: 'timeTracking', label: () => t('Time tracking'), hint: () => t('Time logs, the timesheet and the time report. Estimates stay.') },
+    { id: 'votes', label: () => t('Votes'), hint: () => t('People vote for issues they want.') },
+    { id: 'portal', label: () => t('Service desk portal'), hint: () => t('Request forms and the portal where requesters follow their requests. E-mail in keeps working.') },
+    { id: 'automation', label: () => t('Automation'), hint: () => t('Rules that act on changes and on schedules. Existing rules are kept, but don’t run.') },
+  ]
+  const saved = me.workspace?.features ?? {}
+  const [on, setOn] = useState<Record<string, boolean>>(() => Object.fromEntries(FEATURES.map((f) => [f.id, saved[f.id] !== false])))
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const dirty = FEATURES.some((f) => on[f.id] !== (saved[f.id] !== false))
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setErr('')
+    try {
+      await api.put('/admin/workspace', { features: Object.fromEntries(FEATURES.filter((f) => !on[f.id]).map((f) => [f.id, false])) })
+      await qc.invalidateQueries({ queryKey: ['me'] })
+      toast(t('Features saved'))
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <form className="adm-card" onSubmit={save}>
+      <div className="adm-card-head">
+        <h2>{t('Features')}</h2>
+        <p className="small muted">{t('Turn off what the workspace doesn’t use: it disappears for everyone, and the API refuses it.')}</p>
+      </div>
+      <div className="adm-card-body adm-features">
+        {FEATURES.map((f) => (
+          <label key={f.id} className="adm-feature">
+            <input type="checkbox" checked={on[f.id]} onChange={(e) => setOn((o) => ({ ...o, [f.id]: e.target.checked }))} aria-describedby={`adm-feat-${f.id}`} />
+            <span>
+              <span className="ps-strong">{f.label()}</span>
+              <span className="faint small" id={`adm-feat-${f.id}`}>{f.hint()}</span>
+            </span>
+          </label>
+        ))}
       </div>
       <div className="adm-card-foot">
         {err && <span className="error-text adm-foot-msg" role="alert">{err}</span>}
@@ -439,6 +648,7 @@ interface AdminUser {
   signIn?: SignInMethods | null
   /** removed for good (anonymized; the history stays) */
   removed?: boolean
+  photo?: string | null
 }
 
 const ROLES: { id: 'admin' | 'member' | 'guest'; label: () => string; desc: () => string }[] = [
@@ -616,6 +826,19 @@ function UsersTab({ me }: { me: Me }) {
                             {!self && u.role !== 'owner' && (u.role !== 'admin' || me.user?.role === 'owner') && (
                               <button type="button" className="menu-item danger" onClick={() => { close(); setRemoving(u) }}>
                                 <Trash size={15} /> {t('Remove…')}
+                              </button>
+                            )}
+                            {u.photo && (
+                              <button
+                                className="menu-item"
+                                onClick={async () => {
+                                  close()
+                                  await api.del(`/users/${u.id}/photo`)
+                                  await Promise.all([qc.invalidateQueries({ queryKey: ['admin', 'users'] }), qc.invalidateQueries({ queryKey: ['people'] })])
+                                  toast(t('Photo removed'))
+                                }}
+                              >
+                                <ImageOff size={15} /> {t('Remove their photo')}
                               </button>
                             )}
                             <a className="menu-item" href={`/api/users/${u.id}/export`} download onClick={() => close()}>
