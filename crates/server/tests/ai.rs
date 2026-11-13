@@ -200,6 +200,7 @@ async fn a_model_of_your_own() {
     let (first, headers) = &s.requests[0];
     assert_eq!(first["model"], "llama3.1");
     assert_eq!(first["messages"][0]["role"], "system");
+    assert!(first.get("temperature").is_none() && first.get("max_tokens").is_none(), "models disagree on both: {first}");
     assert_eq!(headers[0].1, "", "no key, no authorization");
     let asked: Vec<bool> = s.requests[1..].iter().map(|(b, _)| b.get("response_format").is_some()).collect();
     assert_eq!(asked, [true, false], "a server without JSON schemas is asked again without one");

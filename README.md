@@ -761,6 +761,8 @@ search it asks for a JSON answer with a schema; servers that don't take one are 
 plain JSON, and the reasoning some models write first (`<think>…</think>`) is left out. Smaller
 local models answer more slowly and write simpler queries: give them time
 (`TASKCRAFT_AI_TIMEOUT_SECS`) and check the query they wrote — it stays in the search field.
+A thread is summarized whole, so give a local model a long context: Ollama's default can be
+short and cuts longer prompts without a word (e.g. `OLLAMA_CONTEXT_LENGTH=32768`).
 *Administration → Overview → Features* shows which model is set up and whether it runs in your
 own network; the workspace can turn AI off there.
 

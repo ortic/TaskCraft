@@ -218,7 +218,9 @@ async fn anthropic(state: &AppState, s: &Setup, a: &Ask<'_>) -> ApiResult<String
 async fn openai_compatible(state: &AppState, s: &Setup, a: &Ask<'_>) -> ApiResult<String> {
     let mut messages = vec![json!({"role": "system", "content": a.system})];
     messages.extend(a.messages.iter().map(|(role, text)| json!({"role": role, "content": text})));
-    let mut body = json!({"model": s.model, "messages": messages, "max_tokens": 4096, "temperature": 0.2, "stream": false});
+    // no max_tokens or temperature: servers and models disagree on both (some reject any
+    // temperature but the default), and their defaults let the answer finish
+    let mut body = json!({"model": s.model, "messages": messages, "stream": false});
     if let Some(schema) = &a.schema {
         body["response_format"] = json!({"type": "json_schema", "json_schema": {"name": "answer", "strict": true, "schema": schema}});
     }
@@ -251,14 +253,20 @@ async fn openai_compatible(state: &AppState, s: &Setup, a: &Ask<'_>) -> ApiResul
     Err(ApiError::bad("the AI service answered with an error"))
 }
 
-/// Without the reasoning some models write before their answer (`<think>…</think>`).
+/// Without the reasoning some models write before their answer (`<think>…</think>`; also when
+/// the opening tag was part of the prompt template, or the answer stopped while thinking).
 fn strip_thinking(text: &str) -> String {
     let mut out = text.to_string();
-    while let (Some(a), Some(b)) = (out.find("<think>"), out.find("</think>")) {
-        if b < a {
-            break;
+    if let Some(end) = out.find("</think>")
+        && !out[..end].contains("<think>")
+    {
+        out.replace_range(..end + "</think>".len(), "");
+    }
+    while let Some(a) = out.find("<think>") {
+        match out[a..].find("</think>") {
+            Some(b) => out.replace_range(a..a + b + "</think>".len(), ""),
+            None => out.truncate(a),
         }
-        out.replace_range(a..b + "</think>".len(), "");
     }
     out
 }
@@ -490,6 +498,8 @@ mod tests {
     #[test]
     fn answers_are_tidied() {
         assert_eq!(strip_thinking("<think>let me see</think>\nThe answer"), "\nThe answer");
+        assert_eq!(strip_thinking("let me see</think>The answer"), "The answer");
+        assert_eq!(strip_thinking("A<think>x</think>B<think>still thinking"), "AB");
         assert_eq!(json_object("Sure!\n```json\n{\"tql\": \"x\"}\n```"), Some("{\"tql\": \"x\"}".into()));
         assert!(local("http://localhost:11434/v1") && local("http://ollama:11434/v1") && local("http://192.168.1.20:8000/v1"));
         assert!(!local("https://api.anthropic.com") && !local("https://models.example.com/v1"));
