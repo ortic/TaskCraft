@@ -27,7 +27,7 @@ pub async fn upload(
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let (issue, project, _) = issue_for(&state, &user, &key, Role::Member).await?;
     let max = state.config.max_upload_mb.saturating_mul(1024 * 1024);
-    let mut out = Vec::new();
+    let mut files = Vec::new();
     while let Some(field) = mp.next_field().await.map_err(|e| ApiError::bad(format!("upload: {e}")))? {
         let Some(name) = field.file_name().map(|n| n.replace(['/', '\\', '\0'], "_")).filter(|n| !n.trim().is_empty()) else { continue };
         let name: String = name.chars().take(200).collect();
@@ -40,16 +40,24 @@ pub async fn upload(
                 return Err(ApiError::TooLarge);
             }
         }
-        out.push(store(&state, issue, project, Some(user.id), None, &name, &mime, data).await?);
+        files.push((name, mime, data));
     }
-    if out.is_empty() {
+    if files.is_empty() {
         return Err(ApiError::bad("no file in the upload"));
+    }
+    // all or none: blocked types, the workspace's size limit, a virus scan
+    for (name, _, data) in &files {
+        crate::files::check(&state, user.workspace_id, name, data).await?;
+    }
+    let mut out = Vec::new();
+    for (name, mime, data) in files {
+        out.push(store(&state, issue, project, Some(user.id), None, &name, &mime, data).await?);
     }
     events::publish(&state, Event::new(user.workspace_id, "issue").project(project).actor(user.id)).await;
     Ok((StatusCode::CREATED, Json(json!(out))))
 }
 
-/// Stores a file on an issue (the caller checked the permission and size) with a history
+/// Stores a file on an issue (the caller checked the permission, the size and `files::check`) with a history
 /// entry; `by` names an uploader without an account (the issue's requester, writing by e-mail,
 /// on the request form or in the portal): their files are the ones they see in the portal.
 pub async fn store(

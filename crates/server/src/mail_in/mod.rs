@@ -474,9 +474,21 @@ async fn attach(state: &AppState, m: &Inbound, issue: &Summary, uploader: Option
     let max = (state.config.max_upload_mb as usize).saturating_mul(1024 * 1024);
     let mut notes = Vec::new();
     let mut stored = 0;
+    let workspace: Option<Uuid> =
+        sqlx::query_scalar("SELECT workspace_id FROM projects WHERE id = $1").bind(issue.project_id).fetch_optional(&state.db).await.ok().flatten();
     for a in &m.attachments {
         if a.data.len() > max {
             notes.push(format!("{} is larger than {} MB and was left out", a.name, state.config.max_upload_mb));
+            continue;
+        }
+        // blocked types, the workspace's size limit, a virus scan
+        if let Some(w) = workspace
+            && let Err(e) = crate::files::check(state, w, &a.name, &a.data).await
+        {
+            notes.push(match e {
+                crate::error::ApiError::BadRequest(why) => why,
+                _ => format!("{} couldn't be stored", a.name),
+            });
             continue;
         }
         match crate::routes::attachments::store(state, issue.id, issue.project_id, uploader, by, &a.name, &a.mime, a.data.clone()).await {
@@ -490,12 +502,10 @@ async fn attach(state: &AppState, m: &Inbound, issue: &Summary, uploader: Option
     if m.skipped_files > 0 {
         notes.push(format!("{} more files were left out", m.skipped_files));
     }
-    if stored > 0 {
-        let workspace: Option<Uuid> =
-            sqlx::query_scalar("SELECT workspace_id FROM projects WHERE id = $1").bind(issue.project_id).fetch_optional(&state.db).await.ok().flatten();
-        if let Some(w) = workspace {
-            crate::events::publish(state, crate::events::Event::new(w, "issue").project(issue.project_id).issue(issue.id, &issue.key)).await;
-        }
+    if stored > 0
+        && let Some(w) = workspace
+    {
+        crate::events::publish(state, crate::events::Event::new(w, "issue").project(issue.project_id).issue(issue.id, &issue.key)).await;
     }
     notes
 }

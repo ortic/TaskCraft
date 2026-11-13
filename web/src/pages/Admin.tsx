@@ -107,6 +107,7 @@ function Overview({ me }: { me: Me }) {
       </div>
       <WorkspaceForm key={JSON.stringify(me.workspace)} me={me} />
       <RetentionForm key={`r-${JSON.stringify(me.workspace?.retention ?? {})}`} me={me} />
+      <UploadsForm key={`u-${JSON.stringify(me.workspace?.uploads ?? {})}`} me={me} />
       <MailCard me={me} />
       <TwoFactorPolicy />
     </>
@@ -344,6 +345,76 @@ function RetentionForm({ me }: { me: Me }) {
             <span className="field-hint" id={`adm-ret-${k.id}-hint`}>{t('Days.')} {k.hint()}</span>
           </div>
         ))}
+      </div>
+      <div className="adm-card-foot">
+        {err && <span className="error-text adm-foot-msg" role="alert">{err}</span>}
+        <button type="submit" className="btn btn-primary" disabled={busy || !dirty}>{t('Save changes')}</button>
+      </div>
+    </form>
+  )
+}
+
+/** Which files may be uploaded: blocked endings, a size limit, and whether a virus scanner checks them. */
+function UploadsForm({ me }: { me: Me }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const u = me.workspace?.uploads ?? {}
+  const serverMax = me.workspace?.maxUploadMb ?? 256
+  const initialTypes = (u.blockedTypes ?? []).join(', ')
+  const initialMax = u.maxMb != null ? String(u.maxMb) : ''
+  const [types, setTypes] = useState(initialTypes)
+  const [max, setMax] = useState(initialMax)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const dirty = types !== initialTypes || max !== initialMax
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    const blockedTypes = types
+      .split(/[\s,;]+/)
+      .map((x) => x.trim().replace(/^\./, '').toLowerCase())
+      .filter(Boolean)
+    const bad = blockedTypes.find((x) => !/^[a-z0-9]{1,20}$/.test(x))
+    if (bad) return setErr(t('“{ending}” isn’t a file ending; write them like exe, bat, docm', { ending: bad }))
+    let maxMb: number | null = null
+    if (max.trim()) {
+      const n = Number(max.trim())
+      if (!Number.isInteger(n) || n < 1 || n > serverMax) return setErr(t('The size limit is a number of megabytes from 1 to {max}, or empty', { max: serverMax }))
+      maxMb = n
+    }
+    setBusy(true)
+    setErr('')
+    try {
+      await api.put('/admin/workspace', { uploads: { blockedTypes, maxMb } })
+      await qc.invalidateQueries({ queryKey: ['me'] })
+      toast(t('Upload rules saved'))
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <form className="adm-card" onSubmit={save}>
+      <div className="adm-card-head">
+        <h2>{t('Uploads')}</h2>
+        <p className="small muted">{t('For files on issues from the app, the portal and e-mail.')}</p>
+      </div>
+      <div className="adm-card-body adm-ws-grid">
+        <div className="field">
+          <label htmlFor="adm-up-types">{t('Blocked file types')}</label>
+          <input id="adm-up-types" className="input" value={types} placeholder="exe, bat, cmd, scr, js, vbs" aria-describedby="adm-up-types-hint" onChange={(e) => setTypes(e.target.value)} />
+          <span className="field-hint" id="adm-up-types-hint">{t('File endings, separated by commas.')}</span>
+        </div>
+        <div className="field">
+          <label htmlFor="adm-up-max">{t('Largest file')}</label>
+          <input id="adm-up-max" className="input" inputMode="numeric" value={max} placeholder={String(serverMax)} aria-describedby="adm-up-max-hint" onChange={(e) => setMax(e.target.value)} />
+          <span className="field-hint" id="adm-up-max-hint">{t('Megabytes; at most {max}, the server’s limit.', { max: serverMax })}</span>
+        </div>
+      </div>
+      <div className="adm-card-body adm-card-note">
+        <p className="small" role="status">
+          {me.workspace?.virusScanning ? t('Every file is checked by a virus scanner before it’s stored.') : t('No virus scanner is set up. The server’s administrator can connect ClamAV with TASKCRAFT_CLAMAV_ADDRESS.')}
+        </p>
       </div>
       <div className="adm-card-foot">
         {err && <span className="error-text adm-foot-msg" role="alert">{err}</span>}

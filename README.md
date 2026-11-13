@@ -151,7 +151,8 @@ default for new issues) — an issue with one is seen only by those, project adm
 reporter, creator and assignee, and doesn't show up anywhere for anyone else; comments
 restricted to members, project admins or a team; **personal data**: everyone downloads what
 TaskCraft keeps about them (admins for anyone), and **retention** rules for the trash, the audit
-log, e-mail logs and read notifications; invitations and password-reset links;
+log, e-mail logs and read notifications; **upload rules**: blocked file types, a size limit and
+virus scanning with ClamAV for files from the app, the portal and e-mail; invitations and password-reset links;
 teams; personal API tokens (read-only or read/write); signed webhooks, or readable messages for
 chat channels (Slack and compatible ones like Mattermost, Microsoft Teams, Google Chat — never about
 private issues or restricted comments) from webhooks and automation rules; audit log. With SMTP
@@ -553,6 +554,8 @@ set it under `images:` in `kustomization.yaml`.
 | `TASKCRAFT_STATIC_DIR` | `./web/dist` | built frontend; the binary's embedded copy is used when this holds no build |
 | `TASKCRAFT_S3_BUCKET` / `_ENDPOINT` / `_REGION` / `_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY` | — | attachments in S3-compatible storage |
 | `TASKCRAFT_MAX_UPLOAD_MB` | `256` | largest attachment |
+| `TASKCRAFT_CLAMAV_ADDRESS` | — | scan uploads with ClamAV: clamd's TCP address (`clamav:3310`) |
+| `TASKCRAFT_CLAMAV_FAIL_OPEN` | `false` | `true` stores files when the scanner can't be reached (default: they're refused) |
 | `TASKCRAFT_SECURE_COOKIES` | `false` | `true` behind HTTPS (an `https://` base URL also enables HSTS) |
 | `TASKCRAFT_SESSION_DAYS` | `30` | session lifetime |
 | `TASKCRAFT_SESSION_IDLE_MINUTES` | `0` | sign people out after this many minutes without a request (`0`: never; at least 10) |
@@ -819,6 +822,13 @@ with backoff for about 11 hours (30 s, 2 min, 8 min, … then every 4 hours; 8 a
   credentials and keep working.
 - **Sessions**: *Where you're signed in* lists browsers with their last activity; sign out one or
   everywhere else. Changing the password also signs out everywhere else.
+- **Uploads** (*Administration → Overview → Uploads*): blocked file endings and a size limit below
+  `TASKCRAFT_MAX_UPLOAD_MB`, for files on issues from the app, the portal and e-mail. With
+  `TASKCRAFT_CLAMAV_ADDRESS` every such file is sent to clamd (`INSTREAM`) before it's stored;
+  infected ones are refused and recorded in the audit log (`file.infected`), and in an upload with
+  several files none is stored. When the scanner can't be reached files are refused, unless
+  `TASKCRAFT_CLAMAV_FAIL_OPEN=true`. E-mailed files that are refused are left out, and the
+  reason is noted. Imports and backups aren't scanned: they are the admin's own data.
 - **Lost phone**: admins reset someone's second factor (*Administration → Users*; only the owner
   resets admins). That removes the app and passkeys, signs the person out everywhere and deletes
   their API tokens; they sign in with their password and set up a new second factor.

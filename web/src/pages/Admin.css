@@ -16,6 +16,8 @@
 .adm-card-head h2 { margin: 0; font-size: 15.5px; }
 .adm-card-head p { margin: 4px 0 0; }
 .adm-card-body { padding: 14px 18px 6px; }
+.adm-card-body.adm-card-note { padding-top: 0; }
+.adm-card-note p { margin: 0 0 12px; }
 .adm-card-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 10px 18px; border-top: 1px solid var(--border); background: var(--bg-soft); border-radius: 0 0 12px 12px; flex-wrap: wrap; }
 .adm-foot-msg { margin-inline-end: auto; align-self: center; }
 .adm-ws-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 20px; }

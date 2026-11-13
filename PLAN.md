@@ -62,7 +62,7 @@
 - [x] Filter subscriptions: a saved filter's results e-mailed on a schedule (as the subscriber sees them, in their language; skipped when empty unless asked)
 - [x] Personal data export (everything about one person, from their settings or by an admin) and retention rules for the trash, audit log, mail logs and read notifications
 - [ ] Scale check: a workspace with 100 000 issues — query plans, indexes, timings tracked in CI
-- [ ] Virus scanning of uploads with ClamAV (fail closed or open), blocked file types and an attachment size limit in the workspace settings — uploads now also come from e-mail and the portal
+- [x] Virus scanning of uploads with ClamAV (fail closed or open), blocked file types and an attachment size limit in the workspace settings — uploads now also come from e-mail and the portal
 - [x] Webhook formats for chat channels (Slack / Mattermost, Microsoft Teams, Google Chat) as readable messages, alongside the JSON payload
 - [x] Idle session timeout (`TASKCRAFT_SESSION_IDLE_MINUTES`)
 - [ ] Search: stemming in the workspace's language and text inside attachments (PDF, Office, text)

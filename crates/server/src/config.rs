@@ -51,6 +51,14 @@ pub struct Config {
     #[arg(long, env = "TASKCRAFT_MAX_UPLOAD_MB", default_value_t = 256)]
     pub max_upload_mb: u64,
 
+    /// Scan uploads with ClamAV: clamd's address (`host:3310`).
+    #[arg(long, env = "TASKCRAFT_CLAMAV_ADDRESS")]
+    pub clamav_address: Option<String>,
+
+    /// Store files when the scanner can't be reached (default: refuse them).
+    #[arg(long, env = "TASKCRAFT_CLAMAV_FAIL_OPEN", default_value_t = false)]
+    pub clamav_fail_open: bool,
+
     /// Mark session cookies `Secure` (enable behind HTTPS).
     #[arg(long, env = "TASKCRAFT_SECURE_COOKIES", default_value_t = false)]
     pub secure_cookies: bool,

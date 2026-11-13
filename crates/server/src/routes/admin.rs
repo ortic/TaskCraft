@@ -16,6 +16,9 @@ pub async fn put_workspace(State(state): State<AppState>, CurrentUser(user): Cur
         sqlx::query("UPDATE workspaces SET name = $2 WHERE id = $1").bind(user.workspace_id).bind(n).execute(&state.db).await?;
     }
     let mut settings: Value = sqlx::query_scalar("SELECT settings FROM workspaces WHERE id = $1").bind(user.workspace_id).fetch_one(&state.db).await?;
+    if let Some(u) = req.get("uploads") {
+        settings["uploads"] = crate::files::check_settings(u, state.config.max_upload_mb)?;
+    }
     if let Some(r) = req.get("retention") {
         settings["retention"] = crate::privacy::check_retention(r)?;
     }

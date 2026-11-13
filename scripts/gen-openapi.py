@@ -613,6 +613,10 @@ schemas["Me"] = obj(
                     "accentColor": null(txt, "#rrggbb"),
                     "defaultLanguage": null(txt, "interface language for people who haven't chosen one"),
                     "weekStart": d(anyval, "first day of the week as an administrator set it (null: by language)"),
+                    "retention": d(anyval, "retention rules (admins only; null for others)"),
+                    "uploads": d(anyval, "upload rules: {blockedTypes: [file endings], maxMb} (null: none)"),
+                    "virusScanning": d(boolean, "uploads are scanned for viruses (shown to admins; false for others)"),
+                    "maxUploadMb": d(num, "the server's largest upload (TASKCRAFT_MAX_UPLOAD_MB)"),
                 },
                 ["id", "name"],
             ),
@@ -2215,7 +2219,10 @@ op(
     "uploadAttachments",
     "Attachments",
     "Attach files to an issue",
-    desc="Project members. Every multipart part with a file name is stored (names up to 200 characters); each file may be up to TASKCRAFT_MAX_UPLOAD_MB (413 otherwise).",
+    desc="Project members. Every multipart part with a file name is stored (names up to 200 characters); each file may be up to TASKCRAFT_MAX_UPLOAD_MB (413 otherwise). "
+    "The workspace's upload rules apply (400: a blocked file type or larger than its limit), and with TASKCRAFT_CLAMAV_ADDRESS every file is scanned first: "
+    "400 when it looks infected (recorded as file.infected in the audit log) or the scanner can't be reached (unless TASKCRAFT_CLAMAV_FAIL_OPEN). "
+    "When one file is refused, none is stored.",
     req=multipart({"file": d(arr(binary), "one or more files (any part name works)")}, ["file"]),
     res=created(arr(S("IssueAttachment")), "Stored, in upload order"),
     err="413",
@@ -3049,6 +3056,14 @@ op("put", "/admin/workspace", "updateWorkspace", "Administration", "Rename the w
            },
            [],
            "how long things are kept, 1–3650 days each; null or left out: kept (applied once an hour)",
+       ),
+       "uploads": obj(
+           {
+               "blockedTypes": d(arr(txt), "file endings that can't be uploaded (exe, bat, …; a leading dot and case don't matter)"),
+               "maxMb": null(num, "largest file in megabytes, 1 to TASKCRAFT_MAX_UPLOAD_MB (null: the server's limit)"),
+           },
+           [],
+           "what may be uploaded to issues from the app, the portal and e-mail",
        ),
    })), res=NO)
 op("get", "/admin/audit", "getAuditLog", "Administration", "The audit log (latest 300 entries)",

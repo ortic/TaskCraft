@@ -292,6 +292,9 @@ pub async fn reply(
     }
     let by = f.name.clone().unwrap_or_else(|| email.clone());
     let names: Vec<String> = files.iter().map(|(n, _, _)| n.clone()).collect();
+    for (name, _, data) in &files {
+        crate::files::check(&state, f.workspace_id, name, data).await?;
+    }
     for (name, mime, data) in files {
         super::attachments::store(&state, f.id, f.project_id, None, Some(&by), &name, &mime, data).await?;
     }

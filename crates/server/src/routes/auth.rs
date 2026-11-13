@@ -187,6 +187,9 @@ pub async fn me(
             "id": user.workspace_id, "name": ws_name,
             "accentColor": settings["accentColor"], "defaultLanguage": settings["defaultLanguage"], "weekStart": settings["weekStart"],
             "retention": if user.is_admin() { settings["retention"].clone() } else { Value::Null },
+            "uploads": settings["uploads"],
+            "virusScanning": user.is_admin() && state.config.clamav_address.as_deref().is_some_and(|a| !a.is_empty()),
+            "maxUploadMb": state.config.max_upload_mb,
         },
         "wikicraft": {
             "url": crate::wikicraft::base_url(&state),

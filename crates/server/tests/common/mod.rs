@@ -62,6 +62,8 @@ pub async fn spawn_with(tweak: impl FnOnce(&mut Config)) -> TestApp {
         secure_cookies: false,
         session_days: 30,
         session_idle_minutes: 0,
+        clamav_address: None,
+        clamav_fail_open: false,
         log_format: "text".into(),
         metrics_token: None,
         webhook_allow_private: true,

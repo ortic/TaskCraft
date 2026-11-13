@@ -11,6 +11,7 @@ pub mod demo;
 pub mod doc;
 pub mod error;
 pub mod events;
+pub mod files;
 pub mod git;
 pub mod i18n;
 pub mod importer;

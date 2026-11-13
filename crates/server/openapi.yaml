@@ -5435,8 +5435,11 @@ paths:
       - Attachments
       summary: Attach files to an issue
       operationId: uploadAttachments
-      description: Project members. Every multipart part with a file name is stored (names up to 200 characters); each file
-        may be up to TASKCRAFT_MAX_UPLOAD_MB (413 otherwise).
+      description: 'Project members. Every multipart part with a file name is stored (names up to 200 characters); each file
+        may be up to TASKCRAFT_MAX_UPLOAD_MB (413 otherwise). The workspace''s upload rules apply (400: a blocked file type
+        or larger than its limit), and with TASKCRAFT_CLAMAV_ADDRESS every file is scanned first: 400 when it looks infected
+        (recorded as file.infected in the audit log) or the scanner can''t be reached (unless TASKCRAFT_CLAMAV_FAIL_OPEN).
+        When one file is refused, none is stored.'
       parameters:
       - name: key
         in: path
@@ -8269,6 +8272,20 @@ paths:
                       - 'null'
                       description: read notifications
                   description: 'how long things are kept, 1–3650 days each; null or left out: kept (applied once an hour)'
+                uploads:
+                  type: object
+                  properties:
+                    blockedTypes:
+                      type: array
+                      items:
+                        type: string
+                      description: file endings that can't be uploaded (exe, bat, …; a leading dot and case don't matter)
+                    maxMb:
+                      type:
+                      - integer
+                      - 'null'
+                      description: 'largest file in megabytes, 1 to TASKCRAFT_MAX_UPLOAD_MB (null: the server''s limit)'
+                  description: what may be uploaded to issues from the app, the portal and e-mail
       responses:
         '204':
           description: Done (no content)
@@ -10600,6 +10617,16 @@ components:
               description: interface language for people who haven't chosen one
             weekStart:
               description: 'first day of the week as an administrator set it (null: by language)'
+            retention:
+              description: retention rules (admins only; null for others)
+            uploads:
+              description: 'upload rules: {blockedTypes: [file endings], maxMb} (null: none)'
+            virusScanning:
+              type: boolean
+              description: uploads are scanned for viruses (shown to admins; false for others)
+            maxUploadMb:
+              type: integer
+              description: the server's largest upload (TASKCRAFT_MAX_UPLOAD_MB)
           required:
           - id
           - name

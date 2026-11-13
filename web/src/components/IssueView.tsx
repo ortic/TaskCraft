@@ -81,6 +81,14 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
   const fileRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const upload = async (files: FileList | File[]) => {
+    // the workspace's rules, checked before sending (the server checks again and scans)
+    const rules = me?.workspace?.uploads ?? {}
+    const limit = rules.maxMb ?? me?.workspace?.maxUploadMb
+    for (const f of Array.from(files)) {
+      const ending = f.name.includes('.') ? f.name.split('.').pop()!.toLowerCase() : ''
+      if (ending && rules.blockedTypes?.includes(ending)) return toast(t('{name}: .{ending} files can’t be uploaded here', { name: f.name, ending }))
+      if (limit && f.size > limit * 1024 * 1024) return toast(t('{name} is larger than {max} MB, the most files may be here', { name: f.name, max: limit }))
+    }
     const form = new FormData()
     Array.from(files).forEach((f) => form.append('file', f))
     try {
