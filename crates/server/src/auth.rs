@@ -140,10 +140,16 @@ async fn user_from_session(state: &AppState, token: &str) -> Result<Option<(User
         "SELECT u.id, u.workspace_id, u.email, u.name, u.role, u.status,
                 u.totp_enabled_at IS NULL AND NOT EXISTS (SELECT 1 FROM passkeys pk WHERE pk.user_id = u.id) AND {} AS must_enroll
            FROM sessions s JOIN users u ON u.id = s.user_id JOIN workspaces w ON w.id = u.workspace_id
-          WHERE s.token_hash = $1 AND s.expires_at > now() AND u.status = 'active'",
+          WHERE s.token_hash = $1 AND s.expires_at > now() AND u.status = 'active'
+            AND ($2 <= 0 OR s.last_seen_at > now() - make_interval(mins => $2))",
         crate::mfa::POLICY_APPLIES_SQL
     )))
     .bind(token_hash(token))
+    // an idle session ends (last seen is kept to five minutes, hence ten at least)
+    .bind(match state.config.session_idle_minutes {
+        m if m <= 0 => 0,
+        m => m.max(10) as i32,
+    })
     .fetch_optional(&state.db)
     .await?;
     let user = row.map(|(id, workspace_id, email, name, role, status, must_enroll)| (User { id, workspace_id, email, name, role, status }, must_enroll));

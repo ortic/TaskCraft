@@ -555,6 +555,7 @@ set it under `images:` in `kustomization.yaml`.
 | `TASKCRAFT_MAX_UPLOAD_MB` | `256` | largest attachment |
 | `TASKCRAFT_SECURE_COOKIES` | `false` | `true` behind HTTPS (an `https://` base URL also enables HSTS) |
 | `TASKCRAFT_SESSION_DAYS` | `30` | session lifetime |
+| `TASKCRAFT_SESSION_IDLE_MINUTES` | `0` | sign people out after this many minutes without a request (`0`: never; at least 10) |
 | `TASKCRAFT_LOG_FORMAT` | `text` | `json` for log shippers |
 | `TASKCRAFT_METRICS_TOKEN` | — | bearer token for Prometheus at `/api/metrics` (off without one) |
 | `TASKCRAFT_WEBHOOK_ALLOW_PRIVATE` | `false` | let webhooks call private / loopback addresses |

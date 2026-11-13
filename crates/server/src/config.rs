@@ -59,6 +59,10 @@ pub struct Config {
     #[arg(long, env = "TASKCRAFT_SESSION_DAYS", default_value_t = 30)]
     pub session_days: i64,
 
+    /// Sign people out after this many minutes without a request (0: never; at least 10).
+    #[arg(long, env = "TASKCRAFT_SESSION_IDLE_MINUTES", default_value_t = 0)]
+    pub session_idle_minutes: i64,
+
     /// Log format: `text` or `json`.
     #[arg(long, env = "TASKCRAFT_LOG_FORMAT", default_value = "text")]
     pub log_format: String,

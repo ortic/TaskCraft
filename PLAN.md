@@ -64,7 +64,7 @@
 - [ ] Scale check: a workspace with 100 000 issues — query plans, indexes, timings tracked in CI
 - [ ] Virus scanning of uploads with ClamAV (fail closed or open), blocked file types and an attachment size limit in the workspace settings — uploads now also come from e-mail and the portal
 - [x] Webhook formats for chat channels (Slack / Mattermost, Microsoft Teams, Google Chat) as readable messages, alongside the JSON payload
-- [ ] Idle session timeout (`TASKCRAFT_SESSION_IDLE_MINUTES`)
+- [x] Idle session timeout (`TASKCRAFT_SESSION_IDLE_MINUTES`)
 - [ ] Search: stemming in the workspace's language and text inside attachments (PDF, Office, text)
 - [ ] Project export that imports into another TaskCraft (one project with its history and files), next to the whole-workspace backup
 - [ ] Workspace settings: logo, default time zone and date format, an announcement banner, feature switches; profile photos

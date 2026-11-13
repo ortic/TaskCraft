@@ -468,3 +468,15 @@ async fn passkeys_as_second_step_and_without_a_password() {
         "removed passkeys don't sign in"
     );
 }
+
+#[tokio::test]
+async fn idle_sessions_end() {
+    let app = spawn_with(|c| c.session_idle_minutes = 3).await;
+    let owner = app.setup(false).await;
+    assert!(!get(&owner, app.url("/me")).await["user"].is_null());
+    // three minutes counts as ten (last seen is kept to five minutes)
+    sqlx::query("UPDATE sessions SET last_seen_at = now() - interval '8 minutes'").execute(&app.state.db).await.unwrap();
+    assert!(!get(&owner, app.url("/me")).await["user"].is_null(), "still within ten minutes");
+    sqlx::query("UPDATE sessions SET last_seen_at = now() - interval '11 minutes'").execute(&app.state.db).await.unwrap();
+    assert!(get(&owner, app.url("/me")).await["user"].is_null(), "signed out after idling");
+}

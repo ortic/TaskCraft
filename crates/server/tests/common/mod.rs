@@ -61,6 +61,7 @@ pub async fn spawn_with(tweak: impl FnOnce(&mut Config)) -> TestApp {
         max_upload_mb: 16,
         secure_cookies: false,
         session_days: 30,
+        session_idle_minutes: 0,
         log_format: "text".into(),
         metrics_token: None,
         webhook_allow_private: true,
