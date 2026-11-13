@@ -370,6 +370,15 @@ an older TaskCraft restores into a newer one, while a backup from a newer one is
 anything is touched. Attachments go into whatever storage is configured, which also moves them
 from the data directory into S3 or back.
 
+**One project** moves to another TaskCraft with *Project settings → Export* (workspace admins): a
+`.zip` with the project's workflow, issue types, fields, sprints, releases and components, its
+issues with their numbers, history, comments (restricted ones stay restricted), time logs,
+watchers, links between them and the files. Upload it in the other TaskCraft under
+*Administration → Import → TaskCraft (project export)*: it's checked first, then imported under
+the same or another key (the old keys keep working). People are matched by e-mail address; those
+missing are invited or deactivated, as you choose. Mentions, `#` references and images in texts
+point to what was imported. Importing the same export again skips what's already there.
+
 ### Migrating from another tracker
 
 *Administration → Import* (owners and administrators; also linked from *Projects* and from an

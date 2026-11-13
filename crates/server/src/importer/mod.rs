@@ -17,6 +17,7 @@ pub mod http;
 pub mod jobs;
 pub mod model;
 pub mod redmine;
+pub mod taskcraft;
 pub(crate) mod text;
 
 use std::collections::BTreeMap;

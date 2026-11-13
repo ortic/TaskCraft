@@ -192,7 +192,9 @@ fn priorities(m: &Model) -> HashMap<String, i16> {
         .enumerate()
         .map(|(i, (id, p))| {
             let by_place = if n <= 1 { 2 } else { 4 - ((i as f64 / (n - 1) as f64) * 3.0).round() as i16 };
-            ((*id).clone(), parse_priority(&p.name).filter(|p| *p > 0).unwrap_or(by_place))
+            // "None" by name is none; a 0 otherwise doesn't say much
+            let named = parse_priority(&p.name).filter(|v| *v > 0 || matches!(p.name.trim().to_ascii_lowercase().as_str(), "none" | "no priority"));
+            ((*id).clone(), named.unwrap_or(by_place))
         })
         .collect()
 }

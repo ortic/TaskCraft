@@ -103,6 +103,7 @@ pub fn api() -> Router<AppState> {
         .route("/projects/{key}/backlog", get(boards::backlog))
         .route("/projects/{key}/sprints", get(boards::list_sprints).post(boards::create_sprint))
         .route("/projects/{key}/trash", get(issues::trash))
+        .route("/projects/{key}/export", get(crate::importer::taskcraft::download))
         .route("/projects/{key}/reports/{report}", get(reports::project_report))
         .route("/projects/{key}/wiki", get(integrations::project_wiki))
         .route("/projects/{key}/templates", get(templates::list).post(templates::create))

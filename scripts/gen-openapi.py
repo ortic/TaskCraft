@@ -1452,6 +1452,11 @@ op("post", "/issues/{key}/web-links", "addWebLink", "Issues", "Add a web link to
    res=created(obj({"id": uuid, "title": txt, "kind": enum("web", "wiki")}, ["id", "title", "kind"])))
 op("delete", "/links/{id}", "deleteIssueLink", "Issues", "Remove a link between issues", desc="Members of the link's source project.", res=NO)
 op("delete", "/web-links/{id}", "deleteWebLink", "Issues", "Remove a web link", desc="Project members.", res=NO)
+op("get", "/projects/{key}/export", "exportProject", "Projects", "Export a project for another TaskCraft",
+   desc="Workspace admins, in the browser (it holds private issues, restricted comments and people's e-mail addresses). A .zip with taskcraft-project.json "
+   "(the project, its workflow, types, fields, sprints, releases, components and issues with their history, comments, time logs, watchers and links between them) "
+   "and the files as files/<attachment id>; another TaskCraft imports it with POST /admin/backup-imports. People are matched by e-mail address there. Not the trash.",
+   auth="session", res=raw("application/zip", "KEY-yyyy-mm-dd.taskcraft.zip (attachment)"))
 op("get", "/projects/{key}/trash", "listTrash", "Issues", "Deleted issues of a project (the trash)",
    desc="Project members; the latest 200, last deleted first.", res=ok(arr(S("TrashedIssue"))))
 op("get", "/my-work", "getMyWork", "Issues", "The caller's work: assigned, reported, done this week, watching, recently viewed",
@@ -2731,7 +2736,7 @@ D_WARNING = obj(
     ["code", "message", "params", "count"],
 )
 D_API_SOURCE = enum("github", "gitlab", "redmine", desc="the tracker whose API is read")
-D_IMPORT_SOURCE = enum("xml-site-backup", "github", "gitlab", "redmine", desc="where the import comes from")
+D_IMPORT_SOURCE = enum("xml-site-backup", "taskcraft", "github", "gitlab", "redmine", desc="where the import comes from (taskcraft: a project export of another TaskCraft)")
 schemas["BackupSummary"] = obj(
     {
         "source": D_IMPORT_SOURCE,
@@ -3121,8 +3126,9 @@ D_BACKUP_NOTE = "Workspace owners and admins, in the browser (API tokens are ref
 op("get", "/admin/backup-imports", "listBackupImports", "Backup import", "Recent uploads and imports (latest 20)",
    desc=D_BACKUP_NOTE, auth="session",
    res=ok(obj({"imports": arr(S("BackupImport")), "maxUploadMb": d(num, "the largest upload (TASKCRAFT_MAX_UPLOAD_MB)")}, ["imports", "maxUploadMb"])))
-op("post", "/admin/backup-imports", "uploadBackup", "Backup import", "Upload an XML site backup (.zip) and check it in the background",
+op("post", "/admin/backup-imports", "uploadBackup", "Backup import", "Upload an XML site backup or a TaskCraft project export (.zip) and check it in the background",
    desc="The .zip itself is the request body, up to TASKCRAFT_MAX_UPLOAD_MB (413). Answers at once with the job in `checking`; poll it until it's `checked` (with its summary) or `failed`. "
+   "A .zip with taskcraft-project.json is a project export (the job's source becomes `taskcraft`). "
    "One backup at a time is checked or imported (409). The file is kept for a day at most and deleted once it's imported. " + D_BACKUP_NOTE,
    auth="session", query=[q("name", "the file's name (default backup.zip)")],
    req=body(d(binary, "the backup .zip as downloaded"), "application/zip"),

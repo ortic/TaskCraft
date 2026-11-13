@@ -38,8 +38,15 @@ const BACKUP: &str = "xml-site-backup";
 
 /// Where the job's file is: the uploaded backup, or the snapshot read from an API.
 fn file_key(id: Uuid, source: &str) -> ObjPath {
-    if source == BACKUP { ObjPath::from(format!("imports/{id}.zip")) } else { ObjPath::from(format!("imports/{id}.json.gz")) }
+    if uploaded(source) { ObjPath::from(format!("imports/{id}.zip")) } else { ObjPath::from(format!("imports/{id}.json.gz")) }
 }
+
+/// Sources that are an uploaded file (rather than read from an API).
+fn uploaded(source: &str) -> bool {
+    source == BACKUP || source == EXPORT
+}
+
+const EXPORT: &str = super::taskcraft::SOURCE;
 
 const COLUMNS: &str =
     "id, source, connection, file_name, size, status, summary, options, progress, report, error, file_deleted, created_at, updated_at, finished_at";
@@ -225,7 +232,7 @@ pub async fn upload(
     }
     if head != b"PK\x03\x04" {
         let _ = w.abort().await;
-        return Err(ApiError::bad("that's not a .zip file: upload the XML site backup as it was downloaded (a .zip)"));
+        return Err(ApiError::bad("that's not a .zip file: upload the XML site backup or the TaskCraft project export as it was downloaded (a .zip)"));
     }
     w.finish().await.map_err(|e| ApiError::Internal(anyhow::anyhow!("storage: {e}")))?;
     sqlx::query("INSERT INTO backup_imports (id, workspace_id, created_by, file_name, size, status) VALUES ($1, $2, $3, $4, $5, 'checking')")
@@ -288,6 +295,10 @@ async fn with_heartbeat<T>(state: &AppState, id: Uuid, progress: ProgressHandle,
 async fn open(state: &AppState, id: Uuid, progress: &ProgressHandle, tz: chrono_tz::Tz) -> anyhow::Result<(Local, Source, Backup)> {
     super::set_progress(progress, "reading", None, 0, 0);
     let local = fetch(state, id).await?;
+    open_backup(local, tz).await
+}
+
+async fn open_backup(local: Local, tz: chrono_tz::Tz) -> anyhow::Result<(Local, Source, Backup)> {
     let path = local.0.clone();
     let (source, backup) = tokio::task::spawn_blocking(move || -> anyhow::Result<(Source, Backup)> {
         let mut s = Source::open(&path, None)?;
@@ -301,11 +312,39 @@ async fn open(state: &AppState, id: Uuid, progress: &ProgressHandle, tz: chrono_
 async fn check(state: &AppState, id: Uuid, workspace: Uuid) -> anyhow::Result<Value> {
     let progress: ProgressHandle = Arc::default();
     with_heartbeat(state, id, progress.clone(), async {
-        let (_local, source, backup) = open(state, id, &progress, chrono_tz::UTC).await?;
+        super::set_progress(&progress, "reading", None, 0, 0);
+        let local = fetch(state, id).await?;
+        // a TaskCraft project export, else an XML site backup
+        let path = local.0.clone();
+        if tokio::task::spawn_blocking(move || super::taskcraft::is_export(&path)).await? {
+            sqlx::query("UPDATE backup_imports SET source = $2 WHERE id = $1").bind(id).bind(EXPORT).execute(&state.db).await?;
+            let (_local, files, mut m) = open_export(local).await?;
+            // exported from this very workspace: an import makes a copy
+            for p in &m.projects {
+                let here: Option<String> = sqlx::query_scalar("SELECT key FROM projects WHERE id::text = $1 AND workspace_id = $2")
+                    .bind(&p.id)
+                    .bind(workspace)
+                    .fetch_optional(&state.db)
+                    .await?;
+                if let Some(key) = here {
+                    m.notes.push(
+                        super::Warning::new("export-from-here", "The export comes from this workspace: importing it copies {project}").with("project", key),
+                    );
+                }
+            }
+            return Ok(json!(super::summarize(state, workspace, &m, &files).await?));
+        }
+        let (_local, source, backup) = open_backup(local, chrono_tz::UTC).await?;
         let summary = site_backup::summarize(state, workspace, &source, &backup).await?;
         Ok(json!(summary))
     })
     .await
+}
+
+async fn open_export(local: Local) -> anyhow::Result<(Local, super::taskcraft::Export, Model)> {
+    let path = local.0.clone();
+    let (files, m) = tokio::task::spawn_blocking(move || super::taskcraft::Export::open(&path)).await??;
+    Ok((local, files, m))
 }
 
 // ---- other trackers' APIs ----
@@ -437,8 +476,8 @@ pub async fn start(
     sweep(&state).await;
     let j = job(&state, &user, id).await?;
     if j.file_deleted {
-        return Err(ApiError::bad(if j.source == BACKUP {
-            "the uploaded backup is gone (imports keep it for a day): upload it again"
+        return Err(ApiError::bad(if uploaded(&j.source) {
+            "the uploaded file is gone (imports keep it for a day): upload it again"
         } else {
             "what was read is gone (imports keep it for a day): connect again"
         }));
@@ -447,8 +486,8 @@ pub async fn start(
         return Err(ApiError::Conflict(format!("the import is {}", j.status)));
     }
     if j.summary.is_none() {
-        return Err(ApiError::bad(if j.source == BACKUP {
-            "the backup couldn't be read: upload it again"
+        return Err(ApiError::bad(if uploaded(&j.source) {
+            "the uploaded file couldn't be read: upload it again"
         } else {
             "the source couldn't be read: connect again"
         }));
@@ -468,7 +507,7 @@ pub async fn start(
     if req.projects.values().all(|c| *c == Choice::Skip) && !req.projects.is_empty() {
         return Err(ApiError::bad("choose at least one project to import"));
     }
-    let api: Option<Connection> = if j.source == BACKUP {
+    let api: Option<Connection> = if uploaded(&j.source) {
         None
     } else {
         let kind: Kind = j.source.parse().map_err(ApiError::bad)?;
@@ -517,6 +556,11 @@ pub async fn start(
         let progress: ProgressHandle = Arc::default();
         let result = with_heartbeat(&st, id, progress.clone(), async {
             match &api {
+                None if source == EXPORT => {
+                    super::set_progress(&progress, "reading", None, 0, 0);
+                    let (_local, mut files, m) = open_export(fetch(&st, id).await?).await?;
+                    super::run(&st, &u, &mut files, &m, &opts, progress.clone()).await
+                }
                 None => {
                     let (_local, mut source, backup) = open(&st, id, &progress, opts.time_zone).await?;
                     site_backup::run(&st, &u, &mut source, &backup, &opts, progress.clone()).await

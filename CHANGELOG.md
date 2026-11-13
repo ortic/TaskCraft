@@ -37,7 +37,7 @@ The first release.
 - **Integrations**: WikiCraft, Git (commits, branches, pull requests by key), an MCP server for
   assistants, a REST API with tokens, described in OpenAPI 3.1 (`/api/openapi.yaml`).
 - **Import** from CSV and other trackers' exports and APIs, keeping private issues and comments
-  private; **backup and restore** in one file.
+  private; **backup and restore** in one file; one project exported to another TaskCraft.
 - **Operations**: one binary and PostgreSQL, S3-compatible storage, several replicas, Docker
   Compose and Kubernetes manifests.
 - English, German, French and Italian; light, dark and high-contrast themes; WCAG 2.2 AA checked.

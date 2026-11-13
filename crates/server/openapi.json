@@ -3456,6 +3456,54 @@
     }
    }
   },
+  "/projects/{key}/export": {
+   "get": {
+    "tags": [
+     "Projects"
+    ],
+    "summary": "Export a project for another TaskCraft",
+    "operationId": "exportProject",
+    "description": "Workspace admins, in the browser (it holds private issues, restricted comments and people's e-mail addresses). A .zip with taskcraft-project.json (the project, its workflow, types, fields, sprints, releases, components and issues with their history, comments, time logs, watchers and links between them) and the files as files/<attachment id>; another TaskCraft imports it with POST /admin/backup-imports. People are matched by e-mail address there. Not the trash.",
+    "parameters": [
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "project key (former keys keep working) or project id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "KEY-yyyy-mm-dd.taskcraft.zip (attachment)",
+      "content": {
+       "application/zip": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "security": [
+     {
+      "session": []
+     }
+    ]
+   }
+  },
   "/projects/{key}/statuses": {
    "post": {
     "tags": [
@@ -12956,9 +13004,9 @@
     "tags": [
      "Backup import"
     ],
-    "summary": "Upload an XML site backup (.zip) and check it in the background",
+    "summary": "Upload an XML site backup or a TaskCraft project export (.zip) and check it in the background",
     "operationId": "uploadBackup",
-    "description": "The .zip itself is the request body, up to TASKCRAFT_MAX_UPLOAD_MB (413). Answers at once with the job in `checking`; poll it until it's `checked` (with its summary) or `failed`. One backup at a time is checked or imported (409). The file is kept for a day at most and deleted once it's imported. Workspace owners and admins, in the browser (API tokens are refused).",
+    "description": "The .zip itself is the request body, up to TASKCRAFT_MAX_UPLOAD_MB (413). Answers at once with the job in `checking`; poll it until it's `checked` (with its summary) or `failed`. A .zip with taskcraft-project.json is a project export (the job's source becomes `taskcraft`). One backup at a time is checked or imported (409). The file is kept for a day at most and deleted once it's imported. Workspace owners and admins, in the browser (API tokens are refused).",
     "parameters": [
      {
       "name": "name",
@@ -20880,11 +20928,12 @@
       "type": "string",
       "enum": [
        "xml-site-backup",
+       "taskcraft",
        "github",
        "gitlab",
        "redmine"
       ],
-      "description": "where the import comes from"
+      "description": "where the import comes from (taskcraft: a project export of another TaskCraft)"
      },
      "origin": {
       "type": "string",
@@ -21369,11 +21418,12 @@
       "type": "string",
       "enum": [
        "xml-site-backup",
+       "taskcraft",
        "github",
        "gitlab",
        "redmine"
       ],
-      "description": "where the import comes from"
+      "description": "where the import comes from (taskcraft: a project export of another TaskCraft)"
      },
      "connection": {
       "type": [

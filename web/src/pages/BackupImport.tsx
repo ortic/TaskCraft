@@ -85,8 +85,8 @@ type Choice = { action: 'new'; key: string } | { action: 'into'; key: string } |
 type People = 'invite' | 'deactivated'
 
 /** Where an import comes from: an uploaded backup or another tracker's API. */
-type Source = 'xml-site-backup' | 'github' | 'gitlab' | 'redmine'
-type ApiSource = Exclude<Source, 'xml-site-backup'>
+type Source = 'xml-site-backup' | 'taskcraft' | 'github' | 'gitlab' | 'redmine'
+type ApiSource = Exclude<Source, 'xml-site-backup' | 'taskcraft'>
 
 interface Job {
   id: string
@@ -126,10 +126,11 @@ const SOURCES: { id: Source; label: () => string }[] = [
   { id: 'github', label: () => 'GitHub' },
   { id: 'gitlab', label: () => 'GitLab' },
   { id: 'redmine', label: () => 'Redmine' },
+  { id: 'taskcraft', label: () => t('TaskCraft (project export)') },
 ]
 
 const sourceName = (s: Source | undefined) => SOURCES.find((x) => x.id === s)?.label() ?? ''
-const isApi = (s: Source | undefined): s is ApiSource => !!s && s !== 'xml-site-backup'
+const isApi = (s: Source | undefined): s is ApiSource => !!s && s !== 'xml-site-backup' && s !== 'taskcraft'
 
 /** What the connect form asks for, per API source. */
 function apiFields(s: ApiSource) {
@@ -187,6 +188,7 @@ function bytes(n: number): string {
 function warningText(w: Warning): string {
   const p = w.params
   switch (w.code) {
+    case 'export-from-here': return t('The export comes from this workspace: importing it copies {project}', { project: p.project })
     case 'people-unlisted': return t('People the source names but doesn’t list (removed from it) become deactivated accounts')
     case 'sprints-no-dates': return t('Sprints without their dates in the backup are imported as future sprints')
     case 'no-sprint-dates': return t('The backup has no activeobjects.xml: sprints come without their dates')
@@ -258,7 +260,9 @@ export function BackupImportTab() {
   return (
     <div className="bi">
       <p className="adm-intro muted">
-        {showCurrent || !isApi(source)
+        {(showCurrent ? current.source === 'taskcraft' : source === 'taskcraft')
+          ? t('A project exported from another TaskCraft (Project settings → Export) comes along with everything in it: issues with their numbers and history, comments, time, files, links, sprints, releases, fields and its workflow. People are matched by e-mail address. TaskCraft checks the file and shows what it holds; nothing changes until you start the import. Nobody gets an e-mail.')
+          : showCurrent || !isApi(source)
           ? t('Moving from another tracker? Download its XML site backup (a .zip with entities.xml and the attachments) and upload it here, or connect to its API. TaskCraft checks what it gets and shows it; nothing changes until you start the import. People, projects, issues with their numbers, comments, time logs, attachments, links, watchers, components, releases, sprints and the history the reports need come along. Nobody gets an e-mail.')
           : t('TaskCraft connects to {source} with a token that can read the projects, reads them and shows what they hold; nothing changes until you start the import. Issues with their numbers, comments, labels, assignees, releases, history and attached files come along. The token is only used while reading and importing and isn’t stored. Nobody gets an e-mail.', { source: sourceName(source) })}
       </p>
@@ -278,7 +282,7 @@ export function BackupImportTab() {
               }}
             />
           ) : (
-            <UploadCard maxMb={jobs.data?.maxUploadMb ?? 256} onUploaded={() => { setAnother(false); refresh() }} />
+            <UploadCard export={source === 'taskcraft'} maxMb={jobs.data?.maxUploadMb ?? 256} onUploaded={() => { setAnother(false); refresh() }} />
           )}
         </>
       )}
@@ -304,7 +308,7 @@ function SourcePicker({ value, onChange }: { value: Source; onChange: (s: Source
   )
 }
 
-function UploadCard({ maxMb, onUploaded }: { maxMb: number; onUploaded: () => void }) {
+function UploadCard({ export: isExport, maxMb, onUploaded }: { export: boolean; maxMb: number; onUploaded: () => void }) {
   const [file, setFile] = useState<File | null>(null)
   const [sent, setSent] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -316,7 +320,7 @@ function UploadCard({ maxMb, onUploaded }: { maxMb: number; onUploaded: () => vo
     setError(null)
     if (!f) return
     if (!/\.zip$/i.test(f.name)) {
-      setError(t('Choose the backup’s .zip file.'))
+      setError(isExport ? t('Choose the export’s .zip file.') : t('Choose the backup’s .zip file.'))
       return
     }
     if (f.size > max) {
@@ -366,8 +370,8 @@ function UploadCard({ maxMb, onUploaded }: { maxMb: number; onUploaded: () => vo
   return (
     <div className="adm-card bi-card">
       <div className="adm-card-head">
-        <h2><ArchiveRestore size={16} /> {t('Import a backup from another tracker')}</h2>
-        <p className="muted small">{t('An XML site backup (.zip), up to {max}.', { max: bytes(max) })}</p>
+        <h2><ArchiveRestore size={16} /> {isExport ? t('Import a project from another TaskCraft') : t('Import a backup from another tracker')}</h2>
+        <p className="muted small">{isExport ? t('A TaskCraft project export (.zip), up to {max}.', { max: bytes(max) }) : t('An XML site backup (.zip), up to {max}.', { max: bytes(max) })}</p>
       </div>
       <div className="adm-card-body">
         <label
@@ -670,7 +674,7 @@ function Choices({ job, summary, token, onToken, onStarted, onDiscard }: { job: 
   return (
     <div className="adm-card bi-card">
       <div className="adm-card-head">
-        <h2>{fromApi ? t('What {source} holds', { source: sourceName(job.source) }) : t('What the backup holds')}</h2>
+        <h2>{fromApi ? t('What {source} holds', { source: sourceName(job.source) }) : job.source === 'taskcraft' ? t('What the export holds') : t('What the backup holds')}</h2>
         <p className="muted small">
           {t('{count} people are named in it; {matched} of them have an account here already (same e-mail address or name).', { count: summary.people.total, matched: summary.people.matched })}
           {' '}{t('{count} attachment files.', { count: summary.files })}
@@ -846,7 +850,7 @@ function ReportCard({ job, report, onAnother }: { job: Job; report: Report; onAn
                 {report.dryRun || !r.id ? <span>{r.key}</span> : <Link to={`/projects/${r.key}`}>{r.key} · {r.name}</Link>}
                 <span className="badge">{r.created ? t('new project') : t('existing project')}</span>
               </h3>
-              {r.source !== r.key && <p className="faint small">{isApi(job.source) ? t('{old} in {source}', { old: r.source, source: sourceName(job.source) }) : t('{old} in the backup', { old: r.source })}</p>}
+              {r.source !== r.key && <p className="faint small">{isApi(job.source) ? t('{old} in {source}', { old: r.source, source: sourceName(job.source) }) : job.source === 'taskcraft' ? t('{old} in the export', { old: r.source }) : t('{old} in the backup', { old: r.source })}</p>}
               {r.parent && <p className="faint small">{t('a subproject of {parent}', { parent: r.parent })}</p>}
               <dl className="bi-counts">
                 {COUNTS.filter(([k]) => r.counts[k] && (r.counts[k].imported || r.counts[k].existing)).map(([k, label]) => (

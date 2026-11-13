@@ -8,7 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   SlidersHorizontal, Users, Workflow, Shapes, TextCursorInput, Kanban, Bot, Plug, Trash, Shield, GripVertical, Plus, Pencil, X, Check, ArrowRight,
   Archive, ArchiveArrowUp, TriangleExclamationPoint, Type, Hash, CircleDot, ListChecks, Calendar, User, SquareCheck, Link as LinkIcon, Puzzle, Search,
-  ExternalLink, BookOpen, Undo2, Info, Lock, LockOpen, Columns3, Funnel, ChevronDown, ChevronRight, FileStack, Timer, Upload, Mail, LifeBuoy,
+  ExternalLink, BookOpen, Undo2, Info, Lock, LockOpen, Columns3, Funnel, ChevronDown, ChevronRight, FileStack, Timer, Upload, Mail, LifeBuoy, Download,
 } from 'lucide-react'
 import {
   api, ago, dateTime, PRIORITIES, PROJECT_ACTIONS, TYPE_FIELDS, type ProjectAction, type Category, type CustomField, type FieldOption, type IssueType, type Named, type Priority, type Project, type Role,
@@ -738,8 +738,23 @@ function DetailsSection() {
         />
       </Section>
 
-      <Section title={t('Archive or delete')}>
+      <Section title={t('Export, archive or delete')}>
         <div className="ps-danger">
+          <div className="ps-danger-row">
+            <div>
+              <div className="ps-strong">{t('Export project')}</div>
+              <div className="faint small">
+                {wsAdmin
+                  ? t('A .zip with everything in the project — issues with their history, comments, time, files, sprints, releases and settings — that another TaskCraft imports (Administration → Import). It holds private issues and people’s e-mail addresses: keep it safe.')
+                  : t('Only workspace admins can export projects.')}
+              </div>
+            </div>
+            {wsAdmin ? (
+              <a className="btn" href={`/api/projects/${encodeURIComponent(project.key)}/export`} download><Download size={15} /> {t('Export')}</a>
+            ) : (
+              <button className="btn" disabled><Download size={15} /> {t('Export')}</button>
+            )}
+          </div>
           <div className="ps-danger-row">
             <div>
               <div className="ps-strong">{project.archivedAt ? t('Restore project') : t('Archive project')}</div>

@@ -46,7 +46,63 @@ pub fn rich(text: &Text, format: Format, names: &dyn Names, files: &HashMap<Stri
         Format::Plain => crate::doc::from_plain(&text.body),
         Format::Textile => markdown(&crate::markup::textile_to_markdown(&text.body), names, files, project),
         Format::Markdown | Format::Source => markdown(&text.body, names, files, project),
+        Format::Doc => document(&text.body, names, files, project),
     }
+}
+
+/// A TaskCraft document (a project export): mentions point to the people here, `#` references to
+/// the imported issues, images and file links to the imported files.
+fn document(json: &str, names: &dyn Names, files: &HashMap<String, Uuid>, project: &str) -> Value {
+    let Ok(mut doc) = serde_json::from_str::<Value>(json) else { return crate::doc::from_plain(json) };
+    if crate::doc::validate(&doc).is_err() {
+        return crate::doc::from_plain(&crate::doc::text(&doc));
+    }
+    fn file(url: &str, files: &HashMap<String, Uuid>) -> Option<String> {
+        files.get(url).map(|id| format!("/api/attachments/{id}"))
+    }
+    fn walk(n: &mut Value, names: &dyn Names, files: &HashMap<String, Uuid>, project: &str) {
+        if n["type"] == "mention" {
+            let id = n["attrs"]["id"].as_str().unwrap_or("").to_string();
+            if n["attrs"]["mentionSuggestionChar"] == "#" {
+                // KEY-12: the imported issue's key, when it came along
+                if let Some((k, num)) = id.rsplit_once('-')
+                    && let Some(key) = names.issue(project, Some(k), num)
+                {
+                    n["attrs"]["id"] = json!(key);
+                    n["attrs"]["label"] = json!(key);
+                }
+            } else {
+                match names.person(&id) {
+                    (Some(p), Some(name)) => {
+                        n["attrs"]["id"] = json!(p.to_string());
+                        n["attrs"]["label"] = json!(name);
+                    }
+                    (_, name) => {
+                        let label = name.or_else(|| n["attrs"]["label"].as_str().map(str::to_string)).unwrap_or_else(|| "someone".into());
+                        *n = json!({"type": "text", "text": format!("@{label}")});
+                        return;
+                    }
+                }
+            }
+        }
+        if let Some(src) = n.pointer("/attrs/src").and_then(Value::as_str).and_then(|s| file(s, files)) {
+            n["attrs"]["src"] = json!(src);
+        }
+        if let Some(marks) = n["marks"].as_array_mut() {
+            for m in marks {
+                if let Some(href) = m.pointer("/attrs/href").and_then(Value::as_str).and_then(|h| file(h, files)) {
+                    m["attrs"]["href"] = json!(href);
+                }
+            }
+        }
+        if let Some(c) = n["content"].as_array_mut() {
+            for child in c {
+                walk(child, names, files, project);
+            }
+        }
+    }
+    walk(&mut doc, names, files, project);
+    doc
 }
 
 /// Wiki markup as a document.
@@ -215,6 +271,10 @@ pub fn plain(text: &Text, format: Format) -> String {
         Format::Textile => crate::markup::textile_to_markdown(&text.body),
         Format::Plain => return text.body.trim().chars().take(2000).collect(),
         Format::Markdown | Format::Source => text.body.clone(),
+        Format::Doc => {
+            let doc: Value = serde_json::from_str(&text.body).unwrap_or(Value::Null);
+            return crate::doc::text(&doc).chars().take(2000).collect();
+        }
     };
     let doc = crate::doc::from_markdown(&md);
     crate::doc::text(&doc).chars().take(2000).collect()

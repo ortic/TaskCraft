@@ -66,7 +66,7 @@
 - [x] Webhook formats for chat channels (Slack / Mattermost, Microsoft Teams, Google Chat) as readable messages, alongside the JSON payload
 - [x] Idle session timeout (`TASKCRAFT_SESSION_IDLE_MINUTES`)
 - [x] Search: stemming in the workspace's language and text inside attachments (PDF, Office, text)
-- [ ] Project export that imports into another TaskCraft (one project with its history and files), next to the whole-workspace backup
+- [x] Project export that imports into another TaskCraft (one project with its history and files), next to the whole-workspace backup
 - [ ] Workspace settings: logo, default time zone and date format, an announcement banner, feature switches; profile photos
 - [ ] Public read-only projects and share links (expiry, password) for roadmaps and status pages
 - [ ] AI (optional, with your own model): similar issues and duplicates while typing, summaries of long threads, semantic search

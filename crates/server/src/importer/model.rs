@@ -25,6 +25,8 @@ pub enum Format {
     Plain,
     /// the source's own markup (a server setting): [`Model::markup`] unless the import says otherwise
     Source,
+    /// a TaskCraft document (its JSON), from a project export
+    Doc,
 }
 
 impl std::str::FromStr for Format {
@@ -35,6 +37,7 @@ impl std::str::FromStr for Format {
             "markdown" | "common_mark" | "commonmark" => Ok(Format::Markdown),
             "plain" | "none" | "" => Ok(Format::Plain),
             "wiki" => Ok(Format::Wiki),
+            "doc" => Ok(Format::Doc),
             _ => Err("markup must be textile, markdown or plain".into()),
         }
     }
