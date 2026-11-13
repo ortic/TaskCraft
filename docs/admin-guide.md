@@ -130,10 +130,12 @@ reports can then include the whole tree.
   from issues, sprints and releases — see [WikiCraft integration](../README.md#wikicraft-integration).
 - **AI assistants** through the built-in MCP server, with each person's own permissions — see
   [AI assistants (MCP)](../README.md#ai-assistants-mcp).
-- **AI assistance**: with `TASKCRAFT_ANTHROPIC_API_KEY` on the server, people can summarize long
-  threads and search in plain words through Claude. Only what the person asking may read is sent,
-  and only when they ask; each person gets `TASKCRAFT_AI_PER_HOUR` requests an hour. Turn it off
-  for the workspace under *Features*.
+- **AI assistance**: once the server has a model — Claude through the Anthropic API, or a model
+  running in your own network (Ollama, llama.cpp, vLLM, LM Studio, LocalAI) or at another
+  OpenAI-compatible service, see [AI assistance](../README.md#ai-assistance) — people can
+  summarize long threads and search in plain words. Only what the person asking may read is
+  sent, and only when they ask; each person gets `TASKCRAFT_AI_PER_HOUR` requests an hour.
+  *Features* shows which model is set up and lets you turn it off for the workspace.
 - **The REST API** with personal tokens, described in OpenAPI at `/api/openapi.yaml` and in the
   app's API reference.
 

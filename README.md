@@ -150,9 +150,10 @@ helper on every issue. See [Git integration](#git-integration).
 
 **AI assistance** (optional): *Summarize the thread* on issues with longer discussions, and
 *Ask in plain words* next to every search (a question becomes a TQL query you see and can change),
-through Claude with your own Anthropic API key (`TASKCRAFT_ANTHROPIC_API_KEY`). Only what the person
-asking may read is sent, and only when they ask; without a key nothing leaves the server, and a
-workspace can turn it off. **Similar issues** show while someone types a new issue's title — found in
+with the model you choose: Claude through the Anthropic API, or any model behind an
+OpenAI-compatible API — also one running in your own network, so nothing leaves it (see
+[AI assistance](#ai-assistance)). Only what the person asking may read is sent, and only when they
+ask; until a model is set up nothing is sent anywhere, and a workspace can turn it off. **Similar issues** show while someone types a new issue's title — found in
 the database, no AI needed.
 
 **AI assistants**: a built-in [MCP](https://modelcontextprotocol.io) server — Claude & co. search
@@ -596,9 +597,11 @@ set it under `images:` in `kustomization.yaml`.
 | `TASKCRAFT_MAX_UPLOAD_MB` | `256` | largest attachment |
 | `TASKCRAFT_CLAMAV_ADDRESS` | — | scan uploads with ClamAV: clamd's TCP address (`clamav:3310`) |
 | `TASKCRAFT_CLAMAV_FAIL_OPEN` | `false` | `true` stores files when the scanner can't be reached (default: they're refused) |
-| `TASKCRAFT_ANTHROPIC_API_KEY` | — | turns on AI assistance (thread summaries, searching in plain words) through Claude; also read from `ANTHROPIC_API_KEY` |
-| `TASKCRAFT_AI_MODEL` | `claude-opus-5-5` | the Claude model; refusals fall back to another model on the server's side where the model supports it |
-| `TASKCRAFT_ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | the Anthropic API's address (a gateway in between) |
+| `TASKCRAFT_AI_PROVIDER` | — | `anthropic` or `openai-compatible`: turns on AI assistance (see [AI assistance](#ai-assistance)) |
+| `TASKCRAFT_AI_BASE_URL` | Anthropic's | the model server, e.g. `http://localhost:11434/v1` |
+| `TASKCRAFT_AI_API_KEY` | — | its key (Anthropic: also `ANTHROPIC_API_KEY`; local servers usually need none) |
+| `TASKCRAFT_AI_MODEL` | `claude-opus-5-5` with Anthropic | the model, e.g. `llama3.1` |
+| `TASKCRAFT_AI_TIMEOUT_SECS` | `180` | how long an answer may take |
 | `TASKCRAFT_AI_PER_HOUR` | `60` | AI requests per person and hour |
 | `TASKCRAFT_SECURE_COOKIES` | `false` | `true` behind HTTPS (an `https://` base URL also enables HSTS) |
 | `TASKCRAFT_SESSION_DAYS` | `30` | session lifetime |
@@ -742,6 +745,24 @@ What happens to a message:
 
 *Project settings → E-mail* lists the latest messages and what became of each (workspace admins
 also see those that reached no project); the log is kept for 90 days.
+
+### AI assistance
+
+Thread summaries and searching in plain words use one model for the whole server:
+
+| Model | Settings |
+|---|---|
+| **Claude** (Anthropic API) | `TASKCRAFT_AI_PROVIDER=anthropic`, `TASKCRAFT_AI_API_KEY=sk-ant-…`; `TASKCRAFT_AI_MODEL` defaults to `claude-opus-5-5`, and a refusal is answered by a fallback model on Anthropic's side |
+| **A model in your network**: Ollama, llama.cpp's server, vLLM, LM Studio, LocalAI | `TASKCRAFT_AI_PROVIDER=openai-compatible`, `TASKCRAFT_AI_BASE_URL=http://ollama:11434/v1` (the server's OpenAI-compatible address, usually ending in `/v1`), `TASKCRAFT_AI_MODEL=llama3.1` |
+| **Another hosted service** with an OpenAI-compatible API | `openai-compatible`, its address, model and `TASKCRAFT_AI_API_KEY` |
+
+TaskCraft calls `POST /v1/messages` (Anthropic) or `POST {base}/chat/completions`. For the
+search it asks for a JSON answer with a schema; servers that don't take one are asked again for
+plain JSON, and the reasoning some models write first (`<think>…</think>`) is left out. Smaller
+local models answer more slowly and write simpler queries: give them time
+(`TASKCRAFT_AI_TIMEOUT_SECS`) and check the query they wrote — it stays in the search field.
+*Administration → Overview → Features* shows which model is set up and whether it runs in your
+own network; the workspace can turn AI off there.
 
 ### Monitoring
 

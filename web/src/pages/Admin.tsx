@@ -446,6 +446,16 @@ function toLocalInput(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/** How the server reaches its AI model, in a sentence for administrators. */
+function aiSetupText(me: Me): string {
+  const s = me.workspace?.aiSetup
+  if (!s) return t('Not set up on this server: see TASKCRAFT_AI_PROVIDER in the documentation.')
+  if (s.local) return t('Set up with {model}, running in your own network: nothing leaves it.', { model: s.model })
+  return s.provider === 'anthropic'
+    ? t('Set up with {model} through the Anthropic API.', { model: s.model })
+    : t('Set up with {model} on an OpenAI-compatible service outside your network.', { model: s.model })
+}
+
 /** Parts of TaskCraft the workspace doesn't use. */
 function FeaturesForm({ me }: { me: Me }) {
   const qc = useQueryClient()
@@ -456,7 +466,7 @@ function FeaturesForm({ me }: { me: Me }) {
     { id: 'portal', label: () => t('Service desk portal'), hint: () => t('Request forms and the portal where requesters follow their requests. E-mail in keeps working.') },
     { id: 'automation', label: () => t('Automation'), hint: () => t('Rules that act on changes and on schedules. Existing rules are kept, but don’t run.') },
     { id: 'sharing', label: () => t('Sharing with links'), hint: () => t('Read-only pages projects share by link (status pages, roadmaps). Turned off, every link stops working.') },
-    { id: 'ai', label: () => t('AI assistance'), hint: () => t('Summaries of long threads and searching in plain words, through Claude by Anthropic with the server’s API key. Only what the person asking may read is sent, and only when they ask.') },
+    { id: 'ai', label: () => t('AI assistance'), hint: () => `${t('Summaries of long threads and searching in plain words. Only what the person asking may read is sent, and only when they ask.')} ${aiSetupText(me)}` },
   ]
   const saved = me.workspace?.features ?? {}
   const [on, setOn] = useState<Record<string, boolean>>(() => Object.fromEntries(FEATURES.map((f) => [f.id, saved[f.id] !== false])))

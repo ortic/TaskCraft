@@ -195,6 +195,7 @@ pub async fn me(
             "announcement": crate::features::announcement(&settings),
             "features": crate::features::all(&settings),
             "ai": crate::ai::available(&state, user.workspace_id).await,
+            "aiSetup": if user.is_admin() { crate::ai::setup_json(&state) } else { Value::Null },
             "logo": crate::features::logo_url(&settings),
             "virusScanning": user.is_admin() && state.config.clamav_address.as_deref().is_some_and(|a| !a.is_empty()),
             "maxUploadMb": state.config.max_upload_mb,

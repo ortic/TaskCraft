@@ -71,7 +71,7 @@ export interface Me {
   user: User | null
   profile?: { title: string | null; locale: string | null; timezone: string | null }
   preferences?: Record<string, any>
-  workspace: { id: string; name: string; accentColor?: string | null; defaultLanguage?: string | null; weekStart?: string | null; retention?: Record<string, number> | null; uploads?: { blockedTypes?: string[]; maxMb?: number | null } | null; virusScanning?: boolean; maxUploadMb?: number; timeZone?: string | null; dateFormat?: DateFormat | null; announcement?: Announcement | null; features?: Partial<Record<Feature, boolean>>; logo?: string | null; ai?: boolean } | null
+  workspace: { id: string; name: string; accentColor?: string | null; defaultLanguage?: string | null; weekStart?: string | null; retention?: Record<string, number> | null; uploads?: { blockedTypes?: string[]; maxMb?: number | null } | null; virusScanning?: boolean; maxUploadMb?: number; timeZone?: string | null; dateFormat?: DateFormat | null; announcement?: Announcement | null; features?: Partial<Record<Feature, boolean>>; logo?: string | null; ai?: boolean; aiSetup?: { provider: 'anthropic' | 'openai-compatible'; model: string; local: boolean } | null } | null
   wikicraft?: { url: string | null; connected: boolean; personal: boolean }
   baseUrl?: string
   /** the workspace requires two-factor authentication and this person hasn't set it up */

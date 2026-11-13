@@ -60,8 +60,9 @@ async fn ai_assistance() {
     let seen: Arc<Mutex<Seen>> = Arc::default();
     let base = fake_api(seen.clone()).await;
     let app = spawn_with(move |c| {
-        c.anthropic_api_key = Some("sk-test".into());
-        c.anthropic_base_url = base;
+        c.ai_api_key = Some("sk-test".into());
+        c.ai_base_url = Some(base);
+        c.ai_provider = Some("anthropic".into());
         c.ai_per_hour = 4;
     })
     .await;
@@ -72,6 +73,9 @@ async fn ai_assistance() {
     post(&c, app.url("/issues/WEB-1/comments"), json!({"markdown": "Happens with every Visa card"})).await;
     post(&c, app.url("/issues/WEB-1/comments"), json!({"markdown": "secret: the acquirer contract ended", "visibility": "admins"})).await;
     assert_eq!(get(&member, app.url("/me")).await["workspace"]["ai"], true);
+    let setup = &get(&c, app.url("/me")).await["workspace"]["aiSetup"];
+    assert_eq!((setup["provider"].as_str(), setup["model"].as_str(), setup["local"].as_bool()), (Some("anthropic"), Some("claude-opus-5-5"), Some(true)));
+    assert_eq!(get(&member, app.url("/me")).await["workspace"]["aiSetup"], Value::Null, "for admins");
 
     // a summary of what the asker may read, in their language, with the fallback switched on
     let r = post(&member, app.url("/issues/WEB-1/summary?lang=de"), json!({})).await;
@@ -136,4 +140,67 @@ async fn similar_issues_without_ai() {
     let found = keys(get(&c, app.url("/issues/similar?q=Login%20fails%20on%20Chrome&exclude=WEB-1")).await);
     assert!(found.contains(&"WEB-5".to_string()) && !found.contains(&"WEB-1".to_string()), "{found:?}");
     assert_eq!(get(&member, app.url("/issues/similar?q=login")).await, json!([]), "one word says too little");
+}
+
+/// A stand-in for a model running in the network behind an OpenAI-compatible chat API: it takes
+/// no JSON schema (400), thinks aloud and fences its JSON.
+async fn fake_local(seen: Arc<Mutex<Seen>>) -> String {
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = format!("http://{}/v1", l.local_addr().unwrap());
+    let app = axum::Router::new().route(
+        "/v1/chat/completions",
+        axum::routing::post(move |headers: axum::http::HeaderMap, axum::Json(body): axum::Json<Value>| {
+            let seen = seen.clone();
+            async move {
+                let mut s = seen.lock().unwrap();
+                let auth = headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+                s.requests.push((body.clone(), vec![("authorization".into(), auth)]));
+                if body.get("response_format").is_some() {
+                    return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": {"message": "response_format is not supported"}})));
+                }
+                let structured = body["messages"][0]["content"].as_str().unwrap_or("").contains("JSON object only");
+                let content = if structured {
+                    "<think>The person wants their open work.</think>\nHere you go:\n```json\n{\"tql\": \"assignee = me() and category != done\", \"explanation\": \"Your open issues\"}\n```"
+                } else {
+                    "<think>Reading the thread…</think>\nThe login fails on Safari; a fix is being tested."
+                };
+                (
+                    axum::http::StatusCode::OK,
+                    axum::Json(json!({"choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}]})),
+                )
+            }
+        }),
+    );
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    addr
+}
+
+#[tokio::test]
+async fn a_model_of_your_own() {
+    let seen: Arc<Mutex<Seen>> = Arc::default();
+    let base = fake_local(seen.clone()).await;
+    let app = spawn_with(move |c| {
+        c.ai_provider = Some("openai-compatible".into());
+        c.ai_base_url = Some(base);
+        c.ai_model = Some("llama3.1".into());
+    })
+    .await;
+    let c = app.setup(false).await;
+    let setup = &get(&c, app.url("/me")).await["workspace"]["aiSetup"];
+    assert_eq!((setup["provider"].as_str(), setup["model"].as_str(), setup["local"].as_bool()), (Some("openai-compatible"), Some("llama3.1"), Some(true)));
+    post(&c, app.url("/projects"), json!({"key": "WEB", "name": "Website", "template": "kanban"})).await;
+    post(&c, app.url("/issues"), json!({"projectKey": "WEB", "title": "Login fails on Safari"})).await;
+    post(&c, app.url("/issues/WEB-1/comments"), json!({"markdown": "A fix is in testing"})).await;
+
+    let r = post(&c, app.url("/issues/WEB-1/summary"), json!({})).await;
+    assert_eq!(r["markdown"], "The login fails on Safari; a fix is being tested.", "without the thinking");
+    let r = post(&c, app.url("/ai/tql"), json!({"question": "my open work"})).await;
+    assert_eq!(r["tql"], "assignee = me() and category != done");
+    let s = seen.lock().unwrap();
+    let (first, headers) = &s.requests[0];
+    assert_eq!(first["model"], "llama3.1");
+    assert_eq!(first["messages"][0]["role"], "system");
+    assert_eq!(headers[0].1, "", "no key, no authorization");
+    let asked: Vec<bool> = s.requests[1..].iter().map(|(b, _)| b.get("response_format").is_some()).collect();
+    assert_eq!(asked, [true, false], "a server without JSON schemas is asked again without one");
 }

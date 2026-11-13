@@ -6,9 +6,10 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 
 ## [Unreleased]
 
-- **AI assistance** (optional, with your own Anthropic API key): summaries of long issue threads
-  from what the reader may see, and searching in plain words (a question becomes a TQL query);
-  similar issues while typing a new one (no AI needed).
+- **AI assistance** (optional): summaries of long issue threads from what the reader may see, and
+  searching in plain words (a question becomes a TQL query), with Claude through the Anthropic API
+  or any model behind an OpenAI-compatible API — also one running in your own network; similar
+  issues while typing a new one (no AI needed).
 - Checklist boxes in texts are 24 px targets.
 
 ## [0.1.0] - 2026-11-13

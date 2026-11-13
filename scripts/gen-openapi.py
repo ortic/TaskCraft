@@ -624,7 +624,8 @@ schemas["Me"] = obj(
                     "announcement": null(obj({"id": uuid, "text": txt, "tone": enum("info", "warning"), "until": null(dt, "shown until"), "at": dt}, ["id", "text", "tone"]),
                                          "the announcement for everyone while it's current"),
                     "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean}), "parts of TaskCraft that are on"),
-                    "ai": d(boolean, "AI assistance can be used (the server has a key and the workspace hasn't turned it off)"),
+                    "ai": d(boolean, "AI assistance can be used (the server has a model and the workspace hasn't turned it off)"),
+                    "aiSetup": null(obj({"provider": enum("anthropic", "openai-compatible"), "model": txt, "local": d(boolean, "the model runs in the server's own network")}), "the AI setup (admins only)"),
                     "logo": null(txt, "the logo's address (/api/workspace/logo?v=…); null: TaskCraft's mark"),
                 },
                 ["id", "name"],
@@ -1481,7 +1482,7 @@ op("get", "/issues/similar", "similarIssues", "Issues", "Issues with a similar t
    query=[q("q", "the title (and words) being written", required=True), q("project", "a project key (else every project you see)"), q("exclude", "an issue key to leave out")],
    res=ok(arr(S("Issue"))))
 op("post", "/issues/{key}/summary", "summarizeIssue", "Issues", "Summarize an issue's thread with AI",
-   desc="When the server has an Anthropic API key and the workspace uses AI (400 otherwise). Only the description and the comments the caller may read are sent. "
+   desc="When the server has an AI model set up and the workspace uses AI (400 otherwise). Only the description and the comments the caller may read are sent. "
    "A fair share per person and hour (429).", query=[q("lang", "the summary's language (en, de, …)")],
    res=ok(obj({"markdown": txt, "doc": d(anyval, "the summary as a document"), "comments": d(num, "comments it read")}, ["markdown", "doc", "comments"])), err="429")
 op("post", "/ai/tql", "askTql", "Search & TQL", "A question in plain words as a TQL query",

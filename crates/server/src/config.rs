@@ -55,18 +55,30 @@ pub struct Config {
     #[arg(long, env = "TASKCRAFT_CLAMAV_ADDRESS")]
     pub clamav_address: Option<String>,
 
-    /// AI assistance (thread summaries, searching in plain words) through Claude: the Anthropic
-    /// API key (also read from `ANTHROPIC_API_KEY`). Without one, nothing is sent anywhere.
-    #[arg(long, env = "TASKCRAFT_ANTHROPIC_API_KEY", hide_env_values = true)]
-    pub anthropic_api_key: Option<String>,
+    /// AI assistance (thread summaries, searching in plain words): `anthropic` (Claude through the
+    /// Anthropic API) or `openai-compatible` (any server with an OpenAI-compatible chat API: models
+    /// you run yourself with Ollama, llama.cpp, vLLM, LM Studio or LocalAI, or a hosted service).
+    /// Default: `anthropic` when an Anthropic key is set, `openai-compatible` when only an address is.
+    #[arg(long, env = "TASKCRAFT_AI_PROVIDER")]
+    pub ai_provider: Option<String>,
 
-    /// The Anthropic API's address (a gateway in between, for example).
-    #[arg(long, env = "TASKCRAFT_ANTHROPIC_BASE_URL", default_value = "https://api.anthropic.com")]
-    pub anthropic_base_url: String,
+    /// The AI server's address: `http://localhost:11434/v1` for a local model; for Anthropic
+    /// `https://api.anthropic.com` unless a gateway sits in between.
+    #[arg(long, env = "TASKCRAFT_AI_BASE_URL")]
+    pub ai_base_url: Option<String>,
 
-    /// The Claude model for AI assistance.
-    #[arg(long, env = "TASKCRAFT_AI_MODEL", default_value = "claude-opus-5-5")]
-    pub ai_model: String,
+    /// The AI server's API key (Anthropic: also read from `ANTHROPIC_API_KEY`; local servers
+    /// usually need none).
+    #[arg(long, env = "TASKCRAFT_AI_API_KEY", hide_env_values = true)]
+    pub ai_api_key: Option<String>,
+
+    /// The model (Anthropic: `claude-opus-5-5` unless set; required for other servers, e.g. `llama3.1`).
+    #[arg(long, env = "TASKCRAFT_AI_MODEL")]
+    pub ai_model: Option<String>,
+
+    /// How long an answer may take, in seconds (models on modest hardware are slow).
+    #[arg(long, env = "TASKCRAFT_AI_TIMEOUT_SECS", default_value_t = 180)]
+    pub ai_timeout_secs: u64,
 
     /// AI requests per person and hour.
     #[arg(long, env = "TASKCRAFT_AI_PER_HOUR", default_value_t = 60)]

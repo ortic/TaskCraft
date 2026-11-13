@@ -4766,7 +4766,7 @@ paths:
       - Issues
       summary: Summarize an issue's thread with AI
       operationId: summarizeIssue
-      description: When the server has an Anthropic API key and the workspace uses AI (400 otherwise). Only the description
+      description: When the server has an AI model set up and the workspace uses AI (400 otherwise). Only the description
         and the comments the caller may read are sent. A fair share per person and hour (429).
       parameters:
       - name: key
@@ -11861,7 +11861,23 @@ components:
               description: parts of TaskCraft that are on
             ai:
               type: boolean
-              description: AI assistance can be used (the server has a key and the workspace hasn't turned it off)
+              description: AI assistance can be used (the server has a model and the workspace hasn't turned it off)
+            aiSetup:
+              type:
+              - object
+              - 'null'
+              properties:
+                provider:
+                  type: string
+                  enum:
+                  - anthropic
+                  - openai-compatible
+                model:
+                  type: string
+                local:
+                  type: boolean
+                  description: the model runs in the server's own network
+              description: the AI setup (admins only)
             logo:
               type:
               - string
