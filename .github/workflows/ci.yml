@@ -31,6 +31,31 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 
+  # A workspace with 100 000 issues: the most used pages within their time budgets
+  # (crates/server/tests/scale.rs); the timings land in the job summary.
+  scale:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: taskcraft
+          POSTGRES_PASSWORD: taskcraft
+          POSTGRES_DB: taskcraft
+        ports: ["55433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U taskcraft" --health-interval 5s --health-timeout 5s --health-retries 10
+          --shm-size 256mb
+    env:
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: scale
+      - run: cargo test --release -p taskcraft --test scale -- --ignored
+
   manifests:
     runs-on: ubuntu-latest
     steps:

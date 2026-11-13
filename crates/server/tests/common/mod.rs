@@ -95,6 +95,33 @@ pub async fn spawn_with(tweak: impl FnOnce(&mut Config)) -> TestApp {
     TestApp { base: format!("http://{addr}"), state, _data: data }
 }
 
+/// Each test removes its database when it ends: hundreds of them would fill the disk and
+/// Postgres' shared memory (its statistics grow with every database).
+impl Drop for TestApp {
+    fn drop(&mut self) {
+        if std::env::var_os("TASKCRAFT_TEST_KEEP_DB").is_some() {
+            return;
+        }
+        let Some((_, name)) = self.state.config.database_url.rsplit_once('/') else { return };
+        if !name.starts_with("taskcraft_test_") || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+            return;
+        }
+        let name = name.to_string();
+        let admin_url = std::env::var("TASKCRAFT_TEST_ADMIN_URL").unwrap_or(ADMIN_URL.into());
+        // the test's runtime is ending: a thread with its own
+        let _ = std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().ok()?;
+            rt.block_on(async {
+                let admin = sqlx::PgPool::connect(&admin_url).await.ok()?;
+                sqlx::query(sqlx::AssertSqlSafe(format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)"))).execute(&admin).await.ok()?;
+                admin.close().await;
+                Some(())
+            })
+        })
+        .join();
+    }
+}
+
 /// A browser-like client: cookie session plus the CSRF header.
 pub fn client() -> reqwest::Client {
     let mut h = reqwest::header::HeaderMap::new();

@@ -2,6 +2,8 @@
 services:
   db:
     image: postgres:17-alpine
+    # Docker's default of 64 MB is tight for parallel queries over large projects
+    shm_size: 256mb
     environment:
       POSTGRES_USER: taskcraft
       POSTGRES_PASSWORD: ${TASKCRAFT_DB_PASSWORD:-change-me}

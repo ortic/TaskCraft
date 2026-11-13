@@ -311,6 +311,14 @@ The single sign-on tests (`crates/server/tests/sso.rs`) run their own mock OpenI
 the LDAP tests run when an lldap test directory is reachable and the SAML test needs
 `--features saml` and a SimpleSAMLphp test IdP (both described at the top of that file).
 
+Scale check: a workspace with 100 000 issues (history, comments, labels, time logs, epics)
+and the time each of the most used pages takes; CI fails when one is slower than its budget and
+shows the timings in the job summary. On a laptop every page answers in under 250 ms.
+
+```bash
+cargo test --release -p taskcraft --test scale -- --ignored     # report in target/scale-report.md
+```
+
 Browser tests (Playwright; a journey through a fresh workspace with sample data, including axe
 accessibility checks):
 

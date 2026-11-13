@@ -189,12 +189,16 @@ pub fn push_where(qb: &mut Qb, ctx: &Ctx, q: &Query) -> ApiResult<()> {
     }
     if let Some(f) = &q.filter {
         qb.push(" AND ");
-        expr(qb, ctx, f)?;
+        expr(qb, ctx, f, true)?;
     }
     Ok(())
 }
 
-fn expr(qb: &mut Qb, ctx: &Ctx, e: &Expr) -> ApiResult<()> {
+/// One condition. `positive`: reached through AND and OR only, where NULL filters a row out
+/// just like false, so a condition goes in as it is and indexes can serve it; under NOT it's
+/// wrapped in `COALESCE(…, false)` to keep NOT's meaning.
+fn expr(qb: &mut Qb, ctx: &Ctx, e: &Expr, positive: bool) -> ApiResult<()> {
+    let (open, close) = if positive { ("(", ")") } else { ("COALESCE(", ", false)") };
     match e {
         Expr::And { items } | Expr::Or { items } => {
             let joiner = if matches!(e, Expr::And { .. }) { " AND " } else { " OR " };
@@ -203,33 +207,33 @@ fn expr(qb: &mut Qb, ctx: &Ctx, e: &Expr) -> ApiResult<()> {
                 if i > 0 {
                     qb.push(joiner);
                 }
-                expr(qb, ctx, item)?;
+                expr(qb, ctx, item, positive)?;
             }
             qb.push(")");
         }
         Expr::Not { item } => {
             qb.push("NOT ");
-            expr(qb, ctx, item)?;
+            expr(qb, ctx, item, false)?;
         }
         Expr::Text { text } => {
-            qb.push("COALESCE(");
+            qb.push(open);
             text_search(qb, text);
-            qb.push(", false)");
+            qb.push(close);
         }
         Expr::Compare { field, op, value } => {
-            qb.push("COALESCE(");
+            qb.push(open);
             compare(qb, ctx, &field.to_lowercase(), *op, std::slice::from_ref(value), false)?;
-            qb.push(", false)");
+            qb.push(close);
         }
         Expr::In { field, values, negated } => {
-            qb.push("COALESCE(");
+            qb.push(open);
             compare(qb, ctx, &field.to_lowercase(), if *negated { Op::Ne } else { Op::Eq }, values, true)?;
-            qb.push(", false)");
+            qb.push(close);
         }
         Expr::Empty { field, negated } => {
-            qb.push("COALESCE(");
+            qb.push(open);
             empty(qb, ctx, &field.to_lowercase(), *negated)?;
-            qb.push(", false)");
+            qb.push(close);
         }
     }
     Ok(())
@@ -254,9 +258,10 @@ fn text_search(qb: &mut Qb, text: &str) {
         qb.push(")");
     }
     if let Some((k, n)) = split_key(text) {
-        qb.push(" OR (upper(p.key) = ");
+        // on issues' own columns, so the three can be looked up in indexes together
+        qb.push(" OR (i.project_id = ANY(ARRAY(SELECT id FROM projects WHERE upper(key) = ");
         qb.push_bind(k);
-        qb.push(" AND i.number = ");
+        qb.push(")) AND i.number = ");
         qb.push_bind(n);
         qb.push(")");
     }
@@ -355,9 +360,9 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
                 if i > 0 {
                     qb.push(" OR ");
                 }
-                qb.push("(upper(p.key) = ");
+                qb.push("(i.project_id = ANY(ARRAY(SELECT id FROM projects WHERE upper(key) = ");
                 qb.push_bind(k);
-                qb.push(" AND i.number = ");
+                qb.push(")) AND i.number = ");
                 qb.push_bind(n);
                 qb.push(")");
             }

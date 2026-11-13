@@ -72,8 +72,13 @@ impl AppState {
 }
 
 /// The database pool (without running migrations).
+///
+/// JIT compilation is off: TaskCraft's queries are short, and for the larger ones Postgres
+/// would spend more time compiling than it saves (over half a second for the portfolio with
+/// 100 000 issues).
 pub async fn connect(config: &Config) -> anyhow::Result<PgPool> {
-    Ok(sqlx::postgres::PgPoolOptions::new().max_connections(20).acquire_timeout(std::time::Duration::from_secs(10)).connect(&config.database_url).await?)
+    let options = <sqlx::postgres::PgConnectOptions as std::str::FromStr>::from_str(&config.database_url)?.options([("jit", "off")]);
+    Ok(sqlx::postgres::PgPoolOptions::new().max_connections(20).acquire_timeout(std::time::Duration::from_secs(10)).connect_with(options).await?)
 }
 
 /// The schema migrations built into this binary.

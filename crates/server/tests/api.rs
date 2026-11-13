@@ -215,6 +215,61 @@ async fn ranking_sprints_burndown_and_velocity() {
     }
 }
 
+/// Cumulative flow counts issues that didn't change in the window in the database and replays
+/// the others: both must add up to the statuses each day.
+#[tokio::test]
+async fn cumulative_flow_over_time() {
+    let app = spawn().await;
+    let c = app.setup(false).await;
+    let p = project(&app, &c, "CFD", "kanban").await;
+    let statuses: Vec<(String, String)> =
+        p["statuses"].as_array().unwrap().iter().map(|s| (s["id"].as_str().unwrap().to_string(), s["category"].as_str().unwrap().to_string())).collect();
+    let todo = statuses.iter().find(|s| s.1 == "todo").unwrap().0.clone();
+    let doing = statuses.iter().find(|s| s.1 == "in_progress").unwrap().0.clone();
+    let done = statuses.iter().find(|s| s.1 == "done").unwrap().0.clone();
+    for t in ["steady", "changes", "new"] {
+        post(&c, app.url("/issues"), json!({"projectKey": "CFD", "title": t})).await;
+    }
+    patch(&c, app.url("/issues/CFD-1"), json!({"statusId": doing})).await;
+    patch(&c, app.url("/issues/CFD-2"), json!({"statusId": done})).await;
+    let db = &app.state.db;
+    let back = |n: i32, days: i32, kind: &'static str| {
+        sqlx::query(
+            "UPDATE issue_events e SET created_at = now() - $3 * interval '1 day' FROM issues i
+              WHERE i.id = e.issue_id AND i.number = $1 AND e.kind = $2 AND i.project_id = (SELECT id FROM projects WHERE key = 'CFD')",
+        )
+        .bind(n)
+        .bind(kind)
+        .bind(days)
+        .execute(db)
+    };
+    // CFD-1 was created and started long ago; CFD-2 was created long ago and finished ten days ago
+    back(1, 100, "created").await.unwrap();
+    back(1, 99, "field").await.unwrap();
+    back(2, 100, "created").await.unwrap();
+    back(2, 10, "field").await.unwrap();
+    let r = get(&c, app.url("/projects/CFD/reports/cumulative-flow?days=30")).await;
+    let days = r["days"].as_array().unwrap();
+    assert_eq!(days.len(), 30);
+    let n = |d: &Value, s: &str| d["counts"][s].as_i64().unwrap_or(0);
+    let first = &days[0];
+    assert_eq!((n(first, &todo), n(first, &doing), n(first, &done)), (1, 1, 0), "{first}");
+    let before = &days[30 - 12];
+    assert_eq!((n(before, &todo), n(before, &doing), n(before, &done)), (1, 1, 0), "{before}");
+    let after = &days[30 - 9];
+    assert_eq!((n(after, &todo), n(after, &doing), n(after, &done)), (0, 1, 1), "{after}");
+    let today = &days[29];
+    assert_eq!((n(today, &todo), n(today, &doing), n(today, &done)), (1, 1, 1), "{today}");
+
+    // created vs resolved: CFD-2 resolved today (its resolved_at), all three created in the window's days
+    let r = get(&c, app.url("/projects/CFD/reports/created-resolved?days=7")).await;
+    let days = r["days"].as_array().unwrap();
+    assert_eq!(days.len(), 7);
+    let created: i64 = days.iter().map(|d| d["created"].as_i64().unwrap()).sum();
+    let resolved: i64 = days.iter().map(|d| d["resolved"].as_i64().unwrap()).sum();
+    assert_eq!((created, resolved), (3, 1));
+}
+
 #[tokio::test]
 async fn restricted_workflow_and_automation() {
     let app = spawn().await;

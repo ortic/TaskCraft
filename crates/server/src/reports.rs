@@ -251,18 +251,6 @@ pub async fn sprint_stats(state: &AppState, sprint_id: Uuid) -> ApiResult<Value>
     }))
 }
 
-async fn project_events(state: &AppState, project: Uuid, fields: &[&str]) -> ApiResult<Vec<Ev>> {
-    let fields: Vec<String> = fields.iter().map(|s| s.to_string()).collect();
-    Ok(sqlx::query_as(
-        "SELECT e.issue_id, e.kind, e.field, e.new_value, e.created_at FROM issue_events e JOIN issues i ON i.id = e.issue_id AND i.deleted_at IS NULL
-          WHERE e.project_id = $1 AND (e.kind = 'created' OR e.field = ANY($2)) ORDER BY e.created_at, e.id",
-    )
-    .bind(project)
-    .bind(&fields)
-    .fetch_all(&state.db)
-    .await?)
-}
-
 fn day_end(d: NaiveDate) -> DateTime<Utc> {
     DateTime::from_naive_utc_and_offset(d.and_hms_opt(23, 59, 59).unwrap_or_default(), Utc)
 }
@@ -272,9 +260,33 @@ pub async fn cumulative_flow(state: &AppState, project: Uuid, days: i64) -> ApiR
     let days = days.clamp(7, 365);
     let statuses: Vec<(Uuid, String, String, Option<String>)> =
         sqlx::query_as("SELECT id, name, category, color FROM statuses WHERE project_id = $1 ORDER BY position").bind(project).fetch_all(&state.db).await?;
-    let events = project_events(state, project, &["status"]).await?;
     let today = Utc::now().date_naive();
     let first = today - Duration::days(days - 1);
+    let start = day_end(first);
+    // Issues whose status doesn't change in the window keep one status all along: the
+    // database counts those; only the others are replayed day by day.
+    const CHANGED: &str = "SELECT w.issue_id FROM issue_events w WHERE w.project_id = $1 AND w.created_at > $2 AND (w.kind = 'created' OR w.field = 'status')";
+    let steady: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT st, count(*) FROM (
+            SELECT DISTINCT ON (e.issue_id) CASE WHEN e.kind = 'created' THEN e.new_value->'status'->>'id' ELSE e.new_value->>'id' END AS st
+              FROM issue_events e JOIN issues i ON i.id = e.issue_id AND i.deleted_at IS NULL
+             WHERE e.project_id = $1 AND (e.kind = 'created' OR e.field = 'status') AND e.issue_id NOT IN ({CHANGED})
+             ORDER BY e.issue_id, e.created_at DESC, e.id DESC) last
+          WHERE st IS NOT NULL GROUP BY st"
+    )))
+    .bind(project)
+    .bind(start)
+    .fetch_all(&state.db)
+    .await?;
+    let events: Vec<Ev> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT e.issue_id, e.kind, e.field, e.new_value, e.created_at FROM issue_events e JOIN issues i ON i.id = e.issue_id AND i.deleted_at IS NULL
+          WHERE e.project_id = $1 AND (e.kind = 'created' OR e.field = 'status') AND e.issue_id IN ({CHANGED}) ORDER BY e.created_at, e.id"
+    )))
+    .bind(project)
+    .bind(start)
+    .fetch_all(&state.db)
+    .await?;
+    let mut counts: HashMap<String, i64> = steady.into_iter().collect();
     let mut states: HashMap<Uuid, IssueState> = HashMap::new();
     let mut i = 0;
     let mut series = Vec::new();
@@ -282,16 +294,21 @@ pub async fn cumulative_flow(state: &AppState, project: Uuid, days: i64) -> ApiR
     while d <= today {
         let end = day_end(d);
         while i < events.len() && events[i].created_at <= end {
-            apply_event(states.entry(events[i].issue_id).or_default(), &events[i]);
+            let st = states.entry(events[i].issue_id).or_default();
+            let before = st.status.clone();
+            apply_event(st, &events[i]);
+            if before != st.status {
+                if let Some(b) = before {
+                    *counts.entry(b).or_default() -= 1;
+                }
+                if let Some(a) = &st.status {
+                    *counts.entry(a.clone()).or_default() += 1;
+                }
+            }
             i += 1;
         }
-        let mut counts: BTreeMap<String, i64> = BTreeMap::new();
-        for s in states.values() {
-            if let Some(st) = &s.status {
-                *counts.entry(st.clone()).or_default() += 1;
-            }
-        }
-        series.push(json!({"date": d, "counts": counts}));
+        let day: BTreeMap<&String, i64> = counts.iter().filter(|(_, n)| **n > 0).map(|(k, n)| (k, *n)).collect();
+        series.push(json!({"date": d, "counts": day}));
         d += Duration::days(1);
     }
     Ok(json!({
@@ -364,11 +381,12 @@ pub async fn cycle_time(state: &AppState, projects: &[Uuid], days: i64, viewer: 
 pub async fn created_resolved(state: &AppState, projects: &[Uuid], days: i64) -> ApiResult<Value> {
     let days = days.clamp(7, 365);
     let rows: Vec<(NaiveDate, i64, i64)> = sqlx::query_as(
-        "WITH d AS (SELECT generate_series(current_date - ($2::int - 1), current_date, interval '1 day')::date AS day)
-         SELECT d.day,
-                (SELECT count(*) FROM issues i WHERE i.project_id = ANY($1) AND i.deleted_at IS NULL AND i.created_at::date = d.day),
-                (SELECT count(*) FROM issues i WHERE i.project_id = ANY($1) AND i.deleted_at IS NULL AND i.resolved_at::date = d.day)
-           FROM d ORDER BY d.day",
+        "WITH d AS (SELECT generate_series(current_date - ($2::int - 1), current_date, interval '1 day')::date AS day),
+              c AS (SELECT created_at::date AS day, count(*) AS n FROM issues
+                     WHERE project_id = ANY($1) AND deleted_at IS NULL AND created_at >= current_date - ($2::int - 1) GROUP BY 1),
+              r AS (SELECT resolved_at::date AS day, count(*) AS n FROM issues
+                     WHERE project_id = ANY($1) AND deleted_at IS NULL AND resolved_at >= current_date - ($2::int - 1) GROUP BY 1)
+         SELECT d.day, COALESCE(c.n, 0), COALESCE(r.n, 0) FROM d LEFT JOIN c USING (day) LEFT JOIN r USING (day) ORDER BY d.day",
     )
     .bind(projects)
     .bind(days as i32)
