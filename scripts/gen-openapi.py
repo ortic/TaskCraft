@@ -1930,6 +1930,7 @@ schemas["View"] = obj(
         "updatedAt": dt,
         "starred": d(boolean, "starred by the caller (shown in the sidebar)"),
         "mine": d(boolean, "the caller owns it"),
+        "subscribed": d(boolean, "the caller gets its results by e-mail"),
     },
     ["id", "name", "query", "layout", "config", "shared", "updatedAt", "starred", "mine"],
     "A saved filter: a TQL query and how it is shown.",
@@ -2346,6 +2347,22 @@ op(
     res=NO,
     err="-404",
 )
+D_SUBSCRIPTION = obj(
+    {
+        "schedule": S("Schedule"),
+        "skipEmpty": d(boolean, "no e-mail when nothing matches (default true)"),
+        "nextRunAt": ndt(),
+        "lastRunAt": ndt(),
+    },
+    ["schedule", "skipEmpty"],
+)
+op("get", "/views/{id}/subscription", "getViewSubscription", "Notifications & views", "Your subscription to a saved filter",
+   desc="A filter you see (yours, or a shared one in a project you see). Null when you aren't subscribed.", res=ok({**D_SUBSCRIPTION, "nullable": True}))
+op("put", "/views/{id}/subscription", "subscribeView", "Notifications & views", "Get a saved filter's results by e-mail on a schedule",
+   desc="The issues it finds — as you'd see them, private ones only when you see them, the 50 most recently changed — are e-mailed to you in your language "
+   "with a link to the filter. Needs an e-mail address on your account.",
+   req=body(obj({"schedule": S("Schedule"), "skipEmpty": d(boolean, "default true")}, ["schedule"])), res=ok(D_SUBSCRIPTION))
+op("delete", "/views/{id}/subscription", "unsubscribeView", "Notifications & views", "Stop getting a saved filter by e-mail", res=NO)
 op(
     "get",
     "/notifications",

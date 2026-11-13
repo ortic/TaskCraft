@@ -6,7 +6,7 @@ import { t } from '../i18n'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Columns3, Download, Rows3, Save, Star, Trash, ArrowUp, ArrowDown, Ellipsis, Share2, ListFilter, Lock, Printer } from 'lucide-react'
+import { Columns3, Download, Rows3, Save, Star, Trash, ArrowUp, ArrowDown, Ellipsis, Share2, ListFilter, Lock, Printer, Mail } from 'lucide-react'
 import { api, qs, shortDate, duration, ago, type Issue, type Project, type SavedView, type CustomField } from '../api'
 import { Avatar, Confirm, Empty, ErrorBox, Loading, Modal, PopButton, useMe, usePeople, useProject, useProjects, useToast } from '../ui'
 import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
@@ -14,6 +14,7 @@ import QueryBar from '../components/QueryBar'
 import { OptionChip, PersonPicker, PriorityPicker, StatusPicker, DueText } from '../components/fields'
 import { useOpenIssue } from '../components/Layout'
 import { refreshIssues } from '../components/IssueView'
+import ScheduleEditor, { defaultSchedule, describeSchedule, type Schedule } from '../components/ScheduleEditor'
 
 type ColId = string
 const BASE_COLUMNS: { id: ColId; label: () => string; sort?: string }[] = [
@@ -150,6 +151,7 @@ export default function IssueList() {
         <a className="btn btn-sm" href={`/api/search.xlsx${qs({ q: effective, project: key, subprojects })}`} download><Download size={14} /> {t('Excel')}</a>
         <button className="btn btn-sm" onClick={() => window.print()} title={t('Print the list, or save it as PDF')}><Printer size={14} /> {t('Print')}</button>
         <SaveView query={query} columns={columns} group={group} projectKey={key} current={view} />
+        {view && <Subscribe view={view} />}
       </div>
       {result.error && <ErrorBox error={result.error} />}
       {result.isLoading && <Loading />}
@@ -234,6 +236,78 @@ function ViewsMenu({ views, current }: { views: SavedView[]; current?: SavedView
       </PopButton>
       {del && (
         <Confirm title={t('Delete “{name}”?', { name: del.name })} body={<p>{t('The saved filter is removed for everyone it was shared with.')}</p>} confirmLabel={t('Delete')} danger onClose={() => setDel(null)} onConfirm={async () => { await api.del(`/views/${del.id}`); qc.invalidateQueries({ queryKey: ['views'] }) }} />
+      )}
+    </>
+  )
+}
+
+/** A saved filter's results by e-mail on a schedule (for the reader). */
+function Subscribe({ view }: { view: SavedView }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const me = useMe().data
+  const [open, setOpen] = useState(false)
+  const current = useQuery({
+    queryKey: ['view-subscription', view.id],
+    queryFn: () => api.get<{ schedule: Schedule; skipEmpty: boolean; nextRunAt: string | null } | null>(`/views/${view.id}/subscription`),
+    enabled: open,
+  })
+  const [schedule, setSchedule] = useState<Schedule>({ ...defaultSchedule(), every: 'weekday' })
+  const [skipEmpty, setSkipEmpty] = useState(true)
+  useEffect(() => {
+    if (current.data) {
+      setSchedule(current.data.schedule)
+      setSkipEmpty(current.data.skipEmpty)
+    }
+  }, [current.data])
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['views'] })
+    qc.invalidateQueries({ queryKey: ['view-subscription', view.id] })
+  }
+  const save = async () => {
+    try {
+      await api.put(`/views/${view.id}/subscription`, { schedule, skipEmpty })
+      toast(t('You’ll get “{name}” by e-mail {when}', { name: view.name, when: describeSchedule(schedule) }))
+      refresh()
+      setOpen(false)
+    } catch (e) {
+      toast((e as Error).message)
+    }
+  }
+  const stop = async () => {
+    await api.del(`/views/${view.id}/subscription`)
+    toast(t('Subscription stopped'))
+    refresh()
+    setOpen(false)
+  }
+  return (
+    <>
+      <button className={`btn btn-sm ${view.subscribed ? 'active' : ''}`} aria-pressed={!!view.subscribed} onClick={() => setOpen(true)}>
+        <Mail size={14} /> {view.subscribed ? t('Subscribed') : t('Subscribe')}
+      </button>
+      {open && (
+        <Modal
+          title={t('“{name}” by e-mail', { name: view.name })}
+          onClose={() => setOpen(false)}
+          width={520}
+          footer={
+            <>
+              {view.subscribed && <button className="btn" onClick={stop}>{t('Stop the subscription')}</button>}
+              <span className="spacer" />
+              <button className="btn" onClick={() => setOpen(false)}>{t('Cancel')}</button>
+              <button className="btn btn-primary" onClick={save}>{view.subscribed ? t('Save') : t('Subscribe')}</button>
+            </>
+          }
+        >
+          <p className="muted small" style={{ marginTop: 0 }}>{t('The issues this filter finds — what you’d see here — are e-mailed to {email}.', { email: me?.user?.email ?? '' })}</p>
+          <div className="field">
+            <span className="field-label">{t('When')}</span>
+            <ScheduleEditor value={schedule} onChange={setSchedule} />
+          </div>
+          <label className="row small" style={{ gap: 6 }}>
+            <input type="checkbox" checked={skipEmpty} onChange={(e) => setSkipEmpty(e.target.checked)} /> {t('No e-mail when nothing matches')}
+          </label>
+        </Modal>
       )}
     </>
   )

@@ -630,6 +630,57 @@ pub fn reset_mail(l: &str, name: &str, email: &str, url: &str, by_admin: Option<
     (subject, text, html)
 }
 
+/// A saved filter's results for its subscriber: (subject, text, html). Lists the first issues
+/// (most recently changed first) and links to the filter.
+pub fn subscription_mail(l: &str, base: &str, name: &str, filter: &str, view: Uuid, total: i64, issues: &[crate::issues::Summary]) -> (String, String, String) {
+    let count = if total == 1 { tr(l, "1 issue", &[]) } else { tr(l, "{n} issues", &[("n", &total.to_string())]) };
+    let subject = tr(l, "{filter}: {count}", &[("filter", filter), ("count", &count)]);
+    let url = format!("{base}/search?view={view}");
+    let hi = tr(l, "Hi {name},", &[("name", name)]);
+    let intro = if total == 0 {
+        tr(l, "Nothing matches your filter “{filter}” right now.", &[("filter", filter)])
+    } else {
+        tr(l, "This is what your filter “{filter}” finds now ({count}):", &[("filter", filter), ("count", &count)])
+    };
+    let more = (total > issues.len() as i64).then(|| tr(l, "and {n} more", &[("n", &(total - issues.len() as i64).to_string())]));
+    let open = tr(l, "Open the filter", &[]);
+    let why = tr(l, "You subscribed to this filter in TaskCraft. Change or stop it on the filter's page.", &[]);
+    let line = |s: &crate::issues::Summary| {
+        let who = s.assignee.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| tr(l, "unassigned", &[]));
+        format!("{} · {} · {}", s.status.name, s.priority, who)
+    };
+    let mut text = format!("{hi}\n\n{intro}\n");
+    for s in issues {
+        text.push_str(&format!("\n[{}] {}\n  {}\n  {}\n", s.key, s.title, line(s), s.url));
+    }
+    if let Some(m) = &more {
+        text.push_str(&format!("\n… {m}\n"));
+    }
+    text.push_str(&format!("\n{open}: {url}\n\n--\n{why}\n"));
+    let mut rows = String::new();
+    for s in issues {
+        rows.push_str(&format!(
+            "<tr><td style=\"padding:6px 8px 6px 0;vertical-align:top;white-space:nowrap\"><a href=\"{u}\" style=\"color:{ACCENT};text-decoration:none;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px\">{k}</a></td>\
+             <td style=\"padding:6px 0;vertical-align:top\"><a href=\"{u}\" style=\"color:#1f2328;text-decoration:none\">{t}</a><div style=\"color:#6b7280;font-size:13px\">{d}</div></td></tr>",
+            u = esc(&s.url),
+            k = esc(&s.key),
+            t = esc(&s.title),
+            d = esc(&line(s)),
+        ));
+    }
+    let body = format!(
+        "<p style=\"margin:0 0 6px\">{}</p><p style=\"margin:0 0 10px\">{}</p><table style=\"border-collapse:collapse;width:100%\">{rows}</table>{}\
+         <p style=\"margin:20px 0 0\"><a href=\"{}\" style=\"background:{ACCENT};color:#ffffff;padding:9px 16px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block\">{}</a></p>",
+        esc(&hi),
+        esc(&intro),
+        more.as_ref().map(|m| format!("<p style=\"color:#6b7280;margin:8px 0 0\">… {}</p>", esc(m))).unwrap_or_default(),
+        esc(&url),
+        esc(&open),
+    );
+    let html = layout(&subject, &body, &esc(&why));
+    (subject, text, html)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Cadence {
     /// a couple of minutes after it happened

@@ -165,6 +165,7 @@ pub fn api() -> Router<AppState> {
         .route("/views", get(views::list).post(views::create))
         .route("/views/{id}", patch(views::update).delete(views::delete))
         .route("/views/{id}/star", put(views::star))
+        .route("/views/{id}/subscription", get(views::subscription).put(views::subscribe).delete(views::unsubscribe))
         .route("/notifications", get(views::notifications))
         .route("/notifications/read", post(views::read_notifications))
         // WikiCraft

@@ -48,7 +48,7 @@ One binary, PostgreSQL, optional S3. Built with the same stack as WikiCraft.
   your recent velocity ("21 of ~22 pts")
 - **List**: any query as a table — choose columns, sort, group, edit status / priority / assignee
   in place, select many and change them at once; **saved filters**, private or shared, starred
-  into the sidebar
+  into the sidebar, and **subscriptions**: a filter's results e-mailed on a schedule
 - **Timeline**: epics and issues on a calendar, drag to reschedule, dependency arrows with
   conflict warnings; **Calendar**: issues by due or start date, drag to another day
 - **Your work**: assigned, recently viewed, watching, reported, finished; activity of your projects

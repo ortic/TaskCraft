@@ -12,13 +12,15 @@ use crate::app::{AppState, new_id};
 use crate::auth::CurrentUser;
 use crate::error::{ApiError, ApiResult};
 
-type ViewRow = (Uuid, Option<Uuid>, Option<String>, Option<Uuid>, Option<String>, String, String, String, Value, bool, chrono::DateTime<chrono::Utc>, bool);
+type ViewRow =
+    (Uuid, Option<Uuid>, Option<String>, Option<Uuid>, Option<String>, String, String, String, Value, bool, chrono::DateTime<chrono::Utc>, bool, bool);
 
 fn view_json(r: &ViewRow, me: Uuid) -> Value {
-    let (id, owner, owner_name, project, project_key, name, query, layout, config, shared, updated, starred) = r;
+    let (id, owner, owner_name, project, project_key, name, query, layout, config, shared, updated, starred, subscribed) = r;
     json!({
         "id": id, "ownerId": owner, "ownerName": owner_name, "projectId": project, "projectKey": project_key, "name": name, "query": query,
-        "layout": layout, "config": config, "shared": shared, "updatedAt": updated, "starred": starred, "mine": *owner == Some(me)
+        "layout": layout, "config": config, "shared": shared, "updatedAt": updated, "starred": starred, "mine": *owner == Some(me),
+        "subscribed": subscribed,
     })
 }
 
@@ -26,7 +28,8 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser)
     let visible = crate::access::visible_projects(&state, &user).await?;
     let rows: Vec<ViewRow> = sqlx::query_as(
         "SELECT v.id, v.owner_id, u.name, v.project_id, p.key, v.name, v.query, v.layout, v.config, v.shared, v.updated_at,
-                EXISTS (SELECT 1 FROM view_stars s WHERE s.view_id = v.id AND s.user_id = $1)
+                EXISTS (SELECT 1 FROM view_stars s WHERE s.view_id = v.id AND s.user_id = $1),
+                EXISTS (SELECT 1 FROM view_subscriptions s WHERE s.view_id = v.id AND s.user_id = $1)
            FROM views v LEFT JOIN users u ON u.id = v.owner_id LEFT JOIN projects p ON p.id = v.project_id
           WHERE v.workspace_id = $2 AND (v.owner_id = $1 OR (v.shared AND (v.project_id IS NULL OR v.project_id = ANY($3))))
           ORDER BY lower(v.name)",
@@ -125,6 +128,65 @@ pub async fn star(State(state): State<AppState>, CurrentUser(user): CurrentUser,
 }
 
 // ---- notifications ----
+
+/// A saved filter the caller sees (their own, or one shared in a project they see).
+async fn visible_view(state: &AppState, user: &crate::auth::User, id: Uuid) -> ApiResult<(String, String)> {
+    let visible = crate::access::visible_projects(state, user).await?;
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT name, query FROM views WHERE id = $1 AND workspace_id = $2
+            AND (owner_id = $3 OR (shared AND (project_id IS NULL OR project_id = ANY($4))))",
+    )
+    .bind(id)
+    .bind(user.workspace_id)
+    .bind(user.id)
+    .bind(&visible)
+    .fetch_optional(&state.db)
+    .await?;
+    row.ok_or(ApiError::NotFound("filter"))
+}
+
+/// The caller's subscription to a saved filter (null: none).
+pub async fn subscription(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>) -> ApiResult<Json<Value>> {
+    visible_view(&state, &user, id).await?;
+    let row: Option<(Value, bool, Option<chrono::DateTime<chrono::Utc>>, Option<chrono::DateTime<chrono::Utc>>)> =
+        sqlx::query_as("SELECT schedule, skip_empty, next_run_at, last_run_at FROM view_subscriptions WHERE view_id = $1 AND user_id = $2")
+            .bind(id)
+            .bind(user.id)
+            .fetch_optional(&state.db)
+            .await?;
+    Ok(Json(match row {
+        Some((schedule, skip, next, last)) => json!({"schedule": schedule, "skipEmpty": skip, "nextRunAt": next, "lastRunAt": last}),
+        None => Value::Null,
+    }))
+}
+
+/// Subscribes the caller to a saved filter's results by e-mail (`{"schedule": …, "skipEmpty"}`).
+pub async fn subscribe(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>, Json(req): Json<Value>) -> ApiResult<Json<Value>> {
+    visible_view(&state, &user, id).await?;
+    if user.email.as_deref().is_none_or(str::is_empty) {
+        return Err(ApiError::bad("your account has no e-mail address"));
+    }
+    let schedule = crate::schedule::parse(&req["schedule"]).map_err(ApiError::BadRequest)?;
+    let next = crate::schedule::next_after(&schedule, chrono::Utc::now());
+    let skip = req["skipEmpty"].as_bool().unwrap_or(true);
+    sqlx::query(
+        "INSERT INTO view_subscriptions (view_id, user_id, schedule, skip_empty, next_run_at) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (view_id, user_id) DO UPDATE SET schedule = $3, skip_empty = $4, next_run_at = $5",
+    )
+    .bind(id)
+    .bind(user.id)
+    .bind(&req["schedule"])
+    .bind(skip)
+    .bind(next)
+    .execute(&state.db)
+    .await?;
+    Ok(Json(json!({"schedule": req["schedule"], "skipEmpty": skip, "nextRunAt": next})))
+}
+
+pub async fn unsubscribe(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>) -> ApiResult<StatusCode> {
+    sqlx::query("DELETE FROM view_subscriptions WHERE view_id = $1 AND user_id = $2").bind(id).bind(user.id).execute(&state.db).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
 
 pub async fn notifications(State(state): State<AppState>, CurrentUser(user): CurrentUser) -> ApiResult<Json<Value>> {
     let rows: Vec<(Uuid, Option<Uuid>, Option<String>, String, Value, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(

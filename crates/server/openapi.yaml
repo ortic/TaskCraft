@@ -7961,6 +7961,141 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /views/{id}/subscription:
+    get:
+      tags:
+      - Notifications & views
+      summary: Your subscription to a saved filter
+      operationId: getViewSubscription
+      description: A filter you see (yours, or a shared one in a project you see). Null when you aren't subscribed.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedule:
+                    $ref: '#/components/schemas/Schedule'
+                  skipEmpty:
+                    type: boolean
+                    description: no e-mail when nothing matches (default true)
+                  nextRunAt:
+                    type:
+                    - string
+                    - 'null'
+                    format: date-time
+                  lastRunAt:
+                    type:
+                    - string
+                    - 'null'
+                    format: date-time
+                required:
+                - schedule
+                - skipEmpty
+                nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+      - Notifications & views
+      summary: Get a saved filter's results by e-mail on a schedule
+      operationId: subscribeView
+      description: The issues it finds — as you'd see them, private ones only when you see them, the 50 most recently changed
+        — are e-mailed to you in your language with a link to the filter. Needs an e-mail address on your account.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                schedule:
+                  $ref: '#/components/schemas/Schedule'
+                skipEmpty:
+                  type: boolean
+                  description: default true
+              required:
+              - schedule
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedule:
+                    $ref: '#/components/schemas/Schedule'
+                  skipEmpty:
+                    type: boolean
+                    description: no e-mail when nothing matches (default true)
+                  nextRunAt:
+                    type:
+                    - string
+                    - 'null'
+                    format: date-time
+                  lastRunAt:
+                    type:
+                    - string
+                    - 'null'
+                    format: date-time
+                required:
+                - schedule
+                - skipEmpty
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+      - Notifications & views
+      summary: Stop getting a saved filter by e-mail
+      operationId: unsubscribeView
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /notifications:
     get:
       tags:
@@ -13171,6 +13306,9 @@ components:
         mine:
           type: boolean
           description: the caller owns it
+        subscribed:
+          type: boolean
+          description: the caller gets its results by e-mail
       required:
       - id
       - name

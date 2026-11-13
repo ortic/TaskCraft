@@ -502,3 +502,43 @@ async fn emails_speak_each_persons_language() {
     post(&owner, app.url("/admin/mail/test"), json!({})).await;
     sink.wait("owner@example.com", "TaskCraft test e-mail").await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn saved_filters_are_emailed_on_a_schedule() {
+    let (app, sink) = with_mail().await;
+    let owner = app.setup(false).await;
+    post(&owner, app.url("/projects"), json!({"key": "SUB", "name": "Subscriptions", "template": "kanban"})).await;
+    let (mia, _) = app.user(&owner, "Mia Member", "mia@example.com", "member").await;
+    post(&owner, app.url("/issues"), json!({"projectKey": "SUB", "title": "Visible <work>", "priority": "urgent"})).await;
+    let level = post(&owner, app.url("/projects/SUB/security-levels"), json!({"name": "Admins"})).await;
+    post(&owner, app.url("/issues"), json!({"projectKey": "SUB", "title": "Hidden work", "priority": "urgent", "securityLevelId": level["id"]})).await;
+    let urgent = post(&owner, app.url("/views"), json!({"name": "Urgent", "query": "priority = urgent", "shared": true})).await;
+    let nothing = post(&mia, app.url("/views"), json!({"name": "Nothing", "query": "priority = none and category = done"})).await;
+    let id = |v: &serde_json::Value| v["id"].as_str().unwrap().to_string();
+
+    // a schedule is checked; the subscription shows up on the filter
+    let daily = json!({"every": "day", "at": "08:00", "tz": "Europe/Zurich"});
+    assert_eq!(send(&mia, Method::PUT, app.url(&format!("/views/{}/subscription", id(&urgent))), json!({"schedule": {"every": "fortnight"}})).await.0, 400);
+    let sub = send(&mia, Method::PUT, app.url(&format!("/views/{}/subscription", id(&urgent))), json!({"schedule": daily})).await;
+    assert_eq!(sub.0, 200, "{}", sub.1);
+    send(&mia, Method::PUT, app.url(&format!("/views/{}/subscription", id(&nothing))), json!({"schedule": daily, "skipEmpty": true})).await;
+    let views = get(&mia, app.url("/views")).await;
+    assert!(views.as_array().unwrap().iter().all(|v| v["subscribed"] == true), "{views}");
+    assert_eq!(get(&mia, app.url(&format!("/views/{}/subscription", id(&urgent)))).await["skipEmpty"], true);
+
+    // when due: run as Mia (she doesn't see the private issue), the empty one skipped
+    sqlx::query("UPDATE view_subscriptions SET next_run_at = now() - interval '1 minute'").execute(&app.state.db).await.unwrap();
+    let sent = taskcraft::schedule::run_subscriptions(&app.state).await.unwrap();
+    assert_eq!(sent, 1, "the empty filter sends nothing");
+    taskcraft::mail::drain(&app.state).await.unwrap();
+    let m = sink.wait("mia@example.com", "Urgent: 1 issue").await;
+    assert!(m.text.contains("Visible <work>") && !m.text.contains("Hidden"), "{}", m.text);
+    assert!(m.html.contains("Visible &lt;work&gt;"), "{}", m.html);
+    assert!(m.text.contains(&format!("/search?view={}", id(&urgent))));
+    let next: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT min(next_run_at) FROM view_subscriptions").fetch_one(&app.state.db).await.unwrap();
+    assert!(next > chrono::Utc::now(), "the next run is ahead");
+
+    // unsubscribing
+    assert_eq!(send(&mia, Method::DELETE, app.url(&format!("/views/{}/subscription", id(&urgent))), json!(null)).await.0, 204);
+    assert!(get(&mia, app.url(&format!("/views/{}/subscription", id(&urgent)))).await.is_null());
+}

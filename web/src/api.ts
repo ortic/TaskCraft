@@ -398,6 +398,8 @@ export interface SavedView {
   shared: boolean
   starred: boolean
   mine: boolean
+  /** the reader gets its results by e-mail */
+  subscribed?: boolean
 }
 
 export interface WikiPage {

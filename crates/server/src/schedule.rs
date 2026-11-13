@@ -148,6 +148,62 @@ pub async fn tick(state: &AppState) {
     if let Err(e) = crate::sla::alert(state).await {
         tracing::warn!(error = %e, "service-level alerts");
     }
+    if let Err(e) = run_subscriptions(state).await {
+        tracing::warn!(error = %e, "filter subscriptions");
+    }
+}
+
+/// Filter subscriptions: a saved filter's results e-mailed to its subscriber, run as them (they
+/// see what they'd see in the app).
+pub async fn run_subscriptions(state: &AppState) -> anyhow::Result<usize> {
+    let mut sent = 0;
+    if !state.mailer.enabled() {
+        return Ok(0);
+    }
+    for _ in 0..50 {
+        let mut tx = state.db.begin().await?;
+        type Due = (Uuid, Uuid, Value, bool, String, String, Option<String>);
+        let due: Option<Due> = sqlx::query_as(
+            "SELECT s.view_id, s.user_id, s.schedule, s.skip_empty, v.name, v.query, p.key FROM view_subscriptions s
+               JOIN views v ON v.id = s.view_id LEFT JOIN projects p ON p.id = v.project_id
+              WHERE s.next_run_at <= now() ORDER BY s.next_run_at LIMIT 1 FOR UPDATE OF s SKIP LOCKED",
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some((view, user_id, schedule, skip_empty, name, query, project)) = due else { break };
+        let next = parse(&schedule).map(|s| next_after(&s, Utc::now())).ok();
+        sqlx::query("UPDATE view_subscriptions SET next_run_at = $3, last_run_at = now() WHERE view_id = $1 AND user_id = $2")
+            .bind(view)
+            .bind(user_id)
+            .bind(next)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        let user: Option<crate::auth::User> =
+            sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {} FROM users WHERE id = $1 AND status = 'active'", crate::auth::USER_COLUMNS)))
+                .bind(user_id)
+                .fetch_optional(&state.db)
+                .await?;
+        let Some(user) = user.filter(|u| u.email.as_deref().is_some_and(|e| !e.is_empty())) else { continue };
+        let found = match crate::routes::issues::run_search(state, &user, &query, project.as_deref(), 50, 0, "i.updated_at DESC").await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(view = %view, error = %e, "filter subscription query failed");
+                continue;
+            }
+        };
+        if found.total == 0 && skip_empty {
+            continue;
+        }
+        let l = crate::i18n::of_user(&state.db, user.id).await;
+        let base = state.config.base().to_string();
+        let (subject, text, html) = crate::mail::subscription_mail(l, &base, &user.name, &name, view, found.total, &found.issues);
+        let mail = crate::mail::Mail { to: user.email.clone().unwrap_or_default(), subject, text, html, purpose: "subscription" };
+        if crate::mail::queue(state, &mail).await? {
+            sent += 1;
+        }
+    }
+    Ok(sent)
 }
 
 /// Scheduled rules: every issue of the project matching the rule's condition gets the actions.
