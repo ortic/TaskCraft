@@ -19,8 +19,10 @@ try {
 // browser's language.
 async function start() {
   const portal = location.pathname === '/portal' || location.pathname.startsWith('/portal/')
-  await loadLanguage(portal ? chooseLanguage() : (rememberedLanguage() ?? chooseLanguage()))
-  const { default: App } = portal ? await import('./portal/Portal') : await import('./App')
+  // shared pages (/share/…): read-only pages a project shares by link, also for people without an account
+  const shared = location.pathname.startsWith('/share/')
+  await loadLanguage(portal || shared ? chooseLanguage() : (rememberedLanguage() ?? chooseLanguage()))
+  const { default: App } = portal ? await import('./portal/Portal') : shared ? await import('./share/Share') : await import('./App')
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>

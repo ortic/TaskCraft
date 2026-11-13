@@ -191,6 +191,7 @@ TAGS = [
     ("Integrations (WikiCraft, Git)", "WikiCraft (linked pages, project docs, generated pages) and Git (connected repositories, webhook receivers, development links)."),
     ("E-mail in", "Messages handed over by mail servers and a project's e-mail settings."),
     ("Service desk portal", "The portal for requesters (signed in by e-mailed links, a cookie of its own), public request forms and a project's service desk settings."),
+    ("Sharing", "Share links: read-only pages of a project (a list of issues or the roadmap) for people without an account, and the public endpoints those pages read."),
     ("Notifications & views", "In-app notifications and saved filters (views)."),
     ("Administration", "Workspace settings, audit log, statistics and outgoing e-mail."),
     ("Webhooks", "Outgoing webhooks: register endpoints and test them. Deliveries carry the WebhookEvent schema."),
@@ -622,7 +623,7 @@ schemas["Me"] = obj(
                     "dateFormat": null(enum("dmy", "mdy", "ymd"), "how dates are written (null: as the language writes them)"),
                     "announcement": null(obj({"id": uuid, "text": txt, "tone": enum("info", "warning"), "until": null(dt, "shown until"), "at": dt}, ["id", "text", "tone"]),
                                          "the announcement for everyone while it's current"),
-                    "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean}), "parts of TaskCraft that are on"),
+                    "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean}), "parts of TaskCraft that are on"),
                     "logo": null(txt, "the logo's address (/api/workspace/logo?v=…); null: TaskCraft's mark"),
                 },
                 ["id", "name"],
@@ -2753,6 +2754,51 @@ D_WARNING = obj(
     ["code", "message", "params", "count"],
 )
 D_API_SOURCE = enum("github", "gitlab", "redmine", desc="the tracker whose API is read")
+# ---- Sharing ----
+
+schemas["ShareLink"] = obj(
+    {
+        "id": uuid, "kind": enum("issues", "roadmap"), "title": txt, "query": d(txt, "TQL within the project (issues; empty: all)"), "url": d(uri, "the page's address"),
+        "people": d(boolean, "shows people's names"), "comments": d(boolean, "shows comments meant for everyone"), "password": d(boolean, "asks for a password"),
+        "expiresAt": ndt("works until"), "expired": boolean, "createdAt": dt, "views": num, "lastViewedAt": ndt(),
+    },
+    ["id", "kind", "title", "url", "password", "createdAt", "views"],
+    "A share link as its project's admins see it.",
+)
+SHARE_REQ = obj({
+    "kind": enum("issues", "roadmap", desc="when making one (default issues)"), "title": txt, "query": d(txt, "TQL within the project"),
+    "people": boolean, "comments": boolean, "password": d(txt, "at least 8 characters; a new one locks out who had the old one"),
+    "clearPassword": d(boolean, "removes the password"), "expiresAt": null(dt, "works until (null: until revoked)"),
+})
+SHARED_ISSUE = obj({
+    "key": txt, "title": txt, "type": obj({"name": txt, "level": num}), "status": obj({"name": txt, "category": txt, "color": ntxt()}), "priority": txt,
+    "assignee": null(obj({"name": txt}), "only when the link shows names"), "startDate": null(date), "dueDate": null(date), "updatedAt": dt, "resolvedAt": ndt(),
+    "createdAt": dt, "labels": arr(txt), "versions": arr(txt), "childCount": num, "childDone": num,
+})
+D_SHARE = "Project admins; the workspace can turn sharing off (400 then)."
+op("get", "/projects/{key}/shares", "listShareLinks", "Sharing", "A project's share links", desc="Project admins.", res=ok(arr(S("ShareLink"))))
+op("post", "/projects/{key}/shares", "createShareLink", "Sharing", "Make a share link", desc=D_SHARE + " The query must parse (400).", req=body(SHARE_REQ), res=created(S("ShareLink")))
+op("patch", "/shares/{id}", "updateShareLink", "Sharing", "Change a share link", desc="Project admins. Only the fields sent change.", pp={"id": (uuid, "link id")}, req=body(SHARE_REQ), res=ok(S("ShareLink")))
+op("delete", "/shares/{id}", "revokeShareLink", "Sharing", "Revoke a share link", desc="Project admins. The address stops working at once.", pp={"id": (uuid, "link id")}, res=NO)
+D_PUBLIC = ("Public: the address is the key. Unknown, ended or revoked links, and all of them while the workspace turns sharing off, answer 404; "
+            "with a password, send the key from /unlock as x-share-key (else 401). Private issues and restricted comments are never shown.")
+PP_TOKEN = {"token": (txt, "the secret part of the address")}
+op("get", "/share/{token}", "getSharedPage", "Sharing", "What a shared page is", desc=D_PUBLIC + " Counts a view.", auth="public", pp=PP_TOKEN,
+   res=ok(obj({"title": txt, "kind": enum("issues", "roadmap"), "locked": d(boolean, "asks for the password first"), "project": obj({"name": txt, "key": txt, "color": ntxt()}),
+               "workspace": obj({"name": txt}), "people": boolean, "comments": boolean, "expiresAt": ndt()}, ["title", "kind", "locked"])))
+op("post", "/share/{token}/unlock", "unlockSharedPage", "Sharing", "Unlock a shared page with its password",
+   desc="Public. 10 wrong passwords per quarter hour and link (429).", auth="public", pp=PP_TOKEN, req=body(obj({"password": txt}, ["password"])),
+   res=ok(obj({"key": null(txt, "send as x-share-key")})), err="429")
+op("get", "/share/{token}/issues", "listSharedIssues", "Sharing", "The issues of a shared list", desc=D_PUBLIC + " At most 500.", auth="public", pp=PP_TOKEN,
+   query=[q("q", "filter by title or key")], res=ok(obj({"issues": arr(SHARED_ISSUE), "more": d(boolean, "there are more than 500")}, ["issues", "more"])))
+op("get", "/share/{token}/issues/{key}", "getSharedIssue", "Sharing", "One shared issue: description, sub-issues, comments", desc=D_PUBLIC, auth="public",
+   pp={**PP_TOKEN, "key": (txt, "issue key")}, res=ok({"allOf": [SHARED_ISSUE, obj({"description": anyval, "children": arr(SHARED_ISSUE), "comments": arr(obj({"body": anyval, "author": ntxt(), "createdAt": dt}))})]}))
+op("get", "/share/{token}/roadmap", "getSharedRoadmap", "Sharing", "A shared roadmap: epics and releases", desc=D_PUBLIC, auth="public", pp=PP_TOKEN,
+   res=ok(obj({"epics": arr(SHARED_ISSUE), "releases": arr(obj({"name": txt, "released": boolean, "startDate": null(date), "releaseDate": null(date), "description": ntxt()}))})))
+op("get", "/share/{token}/files/{id}", "getSharedFile", "Sharing", "A file of a shared issue (images in its description)",
+   desc=D_PUBLIC + " The key may also come as ?key=. Images are shown inline, other files downloaded.", auth="public", pp={**PP_TOKEN, "id": (uuid, "attachment id")},
+   query=[q("key", "the key from /unlock")], res=raw("application/octet-stream", "the file"))
+
 D_IMPORT_SOURCE = enum("xml-site-backup", "taskcraft", "github", "gitlab", "redmine", desc="where the import comes from (taskcraft: a project export of another TaskCraft)")
 schemas["BackupSummary"] = obj(
     {
@@ -3083,7 +3129,7 @@ op("put", "/admin/workspace", "updateWorkspace", "Administration", "Rename the w
        "dateFormat": null(enum("auto", "dmy", "mdy", "ymd"), "how dates are written (auto or null: as the language writes them)"),
        "announcement": null(obj({"text": d(txt, "up to 500 characters (empty: taken down)"), "tone": enum("info", "warning"), "until": null(dt, "shown until (null: until taken down)")}, ["text"]),
                             "a message at the top of every page (null: taken down)"),
-       "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean}),
+       "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean}),
                      "false turns a part off: it's hidden and the API refuses it (400; the portal answers 404); left out: on"),
        "uploads": obj(
            {

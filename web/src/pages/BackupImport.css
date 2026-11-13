@@ -60,3 +60,6 @@
 .bi-add .input { flex: 1 1 220px; min-width: 0; }
 .bi-available { list-style: none; margin: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
 .bi-markup { margin: 14px 0 0; max-width: 420px; }
+.bi-wiki { margin-top: 20px; }
+.bi-wiki-body { padding-bottom: 14px; }
+.bi-wiki-body p { margin: 0; }

@@ -107,6 +107,9 @@ tags:
 - name: Service desk portal
   description: The portal for requesters (signed in by e-mailed links, a cookie of its own), public request forms and a project's
     service desk settings.
+- name: Sharing
+  description: 'Share links: read-only pages of a project (a list of issues or the roadmap) for people without an account,
+    and the public endpoints those pages read.'
 - name: Notifications & views
   description: In-app notifications and saved filters (views).
 - name: Administration
@@ -7973,6 +7976,769 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /projects/{key}/shares:
+    get:
+      tags:
+      - Sharing
+      summary: A project's share links
+      operationId: listShareLinks
+      description: Project admins.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: project key (former keys keep working) or project id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ShareLink'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - Sharing
+      summary: Make a share link
+      operationId: createShareLink
+      description: Project admins; the workspace can turn sharing off (400 then). The query must parse (400).
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: project key (former keys keep working) or project id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind:
+                  type: string
+                  enum:
+                  - issues
+                  - roadmap
+                  description: when making one (default issues)
+                title:
+                  type: string
+                query:
+                  type: string
+                  description: TQL within the project
+                people:
+                  type: boolean
+                comments:
+                  type: boolean
+                password:
+                  type: string
+                  description: at least 8 characters; a new one locks out who had the old one
+                clearPassword:
+                  type: boolean
+                  description: removes the password
+                expiresAt:
+                  type:
+                  - string
+                  - 'null'
+                  format: date-time
+                  description: 'works until (null: until revoked)'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareLink'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /shares/{id}:
+    patch:
+      tags:
+      - Sharing
+      summary: Change a share link
+      operationId: updateShareLink
+      description: Project admins. Only the fields sent change.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: link id
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind:
+                  type: string
+                  enum:
+                  - issues
+                  - roadmap
+                  description: when making one (default issues)
+                title:
+                  type: string
+                query:
+                  type: string
+                  description: TQL within the project
+                people:
+                  type: boolean
+                comments:
+                  type: boolean
+                password:
+                  type: string
+                  description: at least 8 characters; a new one locks out who had the old one
+                clearPassword:
+                  type: boolean
+                  description: removes the password
+                expiresAt:
+                  type:
+                  - string
+                  - 'null'
+                  format: date-time
+                  description: 'works until (null: until revoked)'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareLink'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+      - Sharing
+      summary: Revoke a share link
+      operationId: revokeShareLink
+      description: Project admins. The address stops working at once.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: link id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /share/{token}:
+    get:
+      tags:
+      - Sharing
+      summary: What a shared page is
+      operationId: getSharedPage
+      description: 'Public: the address is the key. Unknown, ended or revoked links, and all of them while the workspace turns
+        sharing off, answer 404; with a password, send the key from /unlock as x-share-key (else 401). Private issues and
+        restricted comments are never shown. Counts a view.'
+      parameters:
+      - name: token
+        in: path
+        required: true
+        description: the secret part of the address
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  title:
+                    type: string
+                  kind:
+                    type: string
+                    enum:
+                    - issues
+                    - roadmap
+                  locked:
+                    type: boolean
+                    description: asks for the password first
+                  project:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      key:
+                        type: string
+                      color:
+                        type:
+                        - string
+                        - 'null'
+                  workspace:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                  people:
+                    type: boolean
+                  comments:
+                    type: boolean
+                  expiresAt:
+                    type:
+                    - string
+                    - 'null'
+                    format: date-time
+                required:
+                - title
+                - kind
+                - locked
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+      - {}
+  /share/{token}/unlock:
+    post:
+      tags:
+      - Sharing
+      summary: Unlock a shared page with its password
+      operationId: unlockSharedPage
+      description: Public. 10 wrong passwords per quarter hour and link (429).
+      parameters:
+      - name: token
+        in: path
+        required: true
+        description: the secret part of the address
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password:
+                  type: string
+              required:
+              - password
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type:
+                    - string
+                    - 'null'
+                    description: send as x-share-key
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooMany'
+      security:
+      - {}
+  /share/{token}/issues:
+    get:
+      tags:
+      - Sharing
+      summary: The issues of a shared list
+      operationId: listSharedIssues
+      description: 'Public: the address is the key. Unknown, ended or revoked links, and all of them while the workspace turns
+        sharing off, answer 404; with a password, send the key from /unlock as x-share-key (else 401). Private issues and
+        restricted comments are never shown. At most 500.'
+      parameters:
+      - name: token
+        in: path
+        required: true
+        description: the secret part of the address
+        schema:
+          type: string
+      - name: q
+        in: query
+        required: false
+        description: filter by title or key
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issues:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                        title:
+                          type: string
+                        type:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            level:
+                              type: integer
+                        status:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            category:
+                              type: string
+                            color:
+                              type:
+                              - string
+                              - 'null'
+                        priority:
+                          type: string
+                        assignee:
+                          type:
+                          - object
+                          - 'null'
+                          properties:
+                            name:
+                              type: string
+                          description: only when the link shows names
+                        startDate:
+                          type:
+                          - string
+                          - 'null'
+                          format: date
+                          description: YYYY-MM-DD
+                        dueDate:
+                          type:
+                          - string
+                          - 'null'
+                          format: date
+                          description: YYYY-MM-DD
+                        updatedAt:
+                          type: string
+                          format: date-time
+                        resolvedAt:
+                          type:
+                          - string
+                          - 'null'
+                          format: date-time
+                        createdAt:
+                          type: string
+                          format: date-time
+                        labels:
+                          type: array
+                          items:
+                            type: string
+                        versions:
+                          type: array
+                          items:
+                            type: string
+                        childCount:
+                          type: integer
+                        childDone:
+                          type: integer
+                  more:
+                    type: boolean
+                    description: there are more than 500
+                required:
+                - issues
+                - more
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+      - {}
+  /share/{token}/issues/{key}:
+    get:
+      tags:
+      - Sharing
+      summary: 'One shared issue: description, sub-issues, comments'
+      operationId: getSharedIssue
+      description: 'Public: the address is the key. Unknown, ended or revoked links, and all of them while the workspace turns
+        sharing off, answer 404; with a password, send the key from /unlock as x-share-key (else 401). Private issues and
+        restricted comments are never shown.'
+      parameters:
+      - name: token
+        in: path
+        required: true
+        description: the secret part of the address
+        schema:
+          type: string
+      - name: key
+        in: path
+        required: true
+        description: issue key
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - type: object
+                  properties:
+                    key:
+                      type: string
+                    title:
+                      type: string
+                    type:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        level:
+                          type: integer
+                    status:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        category:
+                          type: string
+                        color:
+                          type:
+                          - string
+                          - 'null'
+                    priority:
+                      type: string
+                    assignee:
+                      type:
+                      - object
+                      - 'null'
+                      properties:
+                        name:
+                          type: string
+                      description: only when the link shows names
+                    startDate:
+                      type:
+                      - string
+                      - 'null'
+                      format: date
+                      description: YYYY-MM-DD
+                    dueDate:
+                      type:
+                      - string
+                      - 'null'
+                      format: date
+                      description: YYYY-MM-DD
+                    updatedAt:
+                      type: string
+                      format: date-time
+                    resolvedAt:
+                      type:
+                      - string
+                      - 'null'
+                      format: date-time
+                    createdAt:
+                      type: string
+                      format: date-time
+                    labels:
+                      type: array
+                      items:
+                        type: string
+                    versions:
+                      type: array
+                      items:
+                        type: string
+                    childCount:
+                      type: integer
+                    childDone:
+                      type: integer
+                - type: object
+                  properties:
+                    description:
+                      description: any JSON value
+                    children:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          key:
+                            type: string
+                          title:
+                            type: string
+                          type:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              level:
+                                type: integer
+                          status:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              category:
+                                type: string
+                              color:
+                                type:
+                                - string
+                                - 'null'
+                          priority:
+                            type: string
+                          assignee:
+                            type:
+                            - object
+                            - 'null'
+                            properties:
+                              name:
+                                type: string
+                            description: only when the link shows names
+                          startDate:
+                            type:
+                            - string
+                            - 'null'
+                            format: date
+                            description: YYYY-MM-DD
+                          dueDate:
+                            type:
+                            - string
+                            - 'null'
+                            format: date
+                            description: YYYY-MM-DD
+                          updatedAt:
+                            type: string
+                            format: date-time
+                          resolvedAt:
+                            type:
+                            - string
+                            - 'null'
+                            format: date-time
+                          createdAt:
+                            type: string
+                            format: date-time
+                          labels:
+                            type: array
+                            items:
+                              type: string
+                          versions:
+                            type: array
+                            items:
+                              type: string
+                          childCount:
+                            type: integer
+                          childDone:
+                            type: integer
+                    comments:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          body:
+                            description: any JSON value
+                          author:
+                            type:
+                            - string
+                            - 'null'
+                          createdAt:
+                            type: string
+                            format: date-time
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+      - {}
+  /share/{token}/roadmap:
+    get:
+      tags:
+      - Sharing
+      summary: 'A shared roadmap: epics and releases'
+      operationId: getSharedRoadmap
+      description: 'Public: the address is the key. Unknown, ended or revoked links, and all of them while the workspace turns
+        sharing off, answer 404; with a password, send the key from /unlock as x-share-key (else 401). Private issues and
+        restricted comments are never shown.'
+      parameters:
+      - name: token
+        in: path
+        required: true
+        description: the secret part of the address
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  epics:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                        title:
+                          type: string
+                        type:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            level:
+                              type: integer
+                        status:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            category:
+                              type: string
+                            color:
+                              type:
+                              - string
+                              - 'null'
+                        priority:
+                          type: string
+                        assignee:
+                          type:
+                          - object
+                          - 'null'
+                          properties:
+                            name:
+                              type: string
+                          description: only when the link shows names
+                        startDate:
+                          type:
+                          - string
+                          - 'null'
+                          format: date
+                          description: YYYY-MM-DD
+                        dueDate:
+                          type:
+                          - string
+                          - 'null'
+                          format: date
+                          description: YYYY-MM-DD
+                        updatedAt:
+                          type: string
+                          format: date-time
+                        resolvedAt:
+                          type:
+                          - string
+                          - 'null'
+                          format: date-time
+                        createdAt:
+                          type: string
+                          format: date-time
+                        labels:
+                          type: array
+                          items:
+                            type: string
+                        versions:
+                          type: array
+                          items:
+                            type: string
+                        childCount:
+                          type: integer
+                        childDone:
+                          type: integer
+                  releases:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        released:
+                          type: boolean
+                        startDate:
+                          type:
+                          - string
+                          - 'null'
+                          format: date
+                          description: YYYY-MM-DD
+                        releaseDate:
+                          type:
+                          - string
+                          - 'null'
+                          format: date
+                          description: YYYY-MM-DD
+                        description:
+                          type:
+                          - string
+                          - 'null'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+      - {}
+  /share/{token}/files/{id}:
+    get:
+      tags:
+      - Sharing
+      summary: A file of a shared issue (images in its description)
+      operationId: getSharedFile
+      description: 'Public: the address is the key. Unknown, ended or revoked links, and all of them while the workspace turns
+        sharing off, answer 404; with a password, send the key from /unlock as x-share-key (else 401). Private issues and
+        restricted comments are never shown. The key may also come as ?key=. Images are shown inline, other files downloaded.'
+      parameters:
+      - name: token
+        in: path
+        required: true
+        description: the secret part of the address
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        description: attachment id
+        schema:
+          type: string
+          format: uuid
+      - name: key
+        in: query
+        required: false
+        description: the key from /unlock
+        schema:
+          type: string
+      responses:
+        '200':
+          description: the file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+      - {}
   /views:
     get:
       tags:
@@ -8463,6 +9229,8 @@ paths:
                     portal:
                       type: boolean
                     automation:
+                      type: boolean
+                    sharing:
                       type: boolean
                   description: 'false turns a part off: it''s hidden and the API refuses it (400; the portal answers 404);
                     left out: on'
@@ -10944,6 +11712,8 @@ components:
                 portal:
                   type: boolean
                 automation:
+                  type: boolean
+                sharing:
                   type: boolean
               description: parts of TaskCraft that are on
             logo:
@@ -14734,6 +15504,62 @@ components:
       - id
       - action
       - at
+    ShareLink:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+          - issues
+          - roadmap
+        title:
+          type: string
+        query:
+          type: string
+          description: 'TQL within the project (issues; empty: all)'
+        url:
+          type: string
+          format: uri
+          description: the page's address
+        people:
+          type: boolean
+          description: shows people's names
+        comments:
+          type: boolean
+          description: shows comments meant for everyone
+        password:
+          type: boolean
+          description: asks for a password
+        expiresAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: works until
+        expired:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        views:
+          type: integer
+        lastViewedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - kind
+      - title
+      - url
+      - password
+      - createdAt
+      - views
+      description: A share link as its project's admins see it.
     BackupSummary:
       type: object
       properties:

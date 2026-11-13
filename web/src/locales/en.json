@@ -1,11 +1,11 @@
 {
+  "{count} attachment files.": {
+    "one": "{count} attachment file.",
+    "other": "{count} attachment files."
+  },
   "{count} confidential issues": {
     "one": "{count} confidential issue",
     "other": "{count} confidential issues"
-  },
-  "{count} open issues": {
-    "one": "{count} open issue",
-    "other": "{count} open issues"
   },
   "{count} days": {
     "one": "{count} day",
@@ -23,17 +23,45 @@
     "one": "{count} issue · {percent} done",
     "other": "{count} issues · {percent} done"
   },
+  "{count} issues are here from an earlier import and are skipped": {
+    "one": "{count} issue is here from an earlier import and is skipped",
+    "other": "{count} issues are here from an earlier import and are skipped"
+  },
   "{count} issues are planned for this sprint.": {
     "one": "{count} issue is planned for this sprint.",
     "other": "{count} issues are planned for this sprint."
+  },
+  "{count} issues imported": {
+    "one": "{count} issue imported",
+    "other": "{count} issues imported"
+  },
+  "{count} issues imported.": {
+    "one": "{count} issue imported.",
+    "other": "{count} issues imported."
   },
   "{count} members": {
     "one": "{count} member",
     "other": "{count} members"
   },
+  "{count} open issues": {
+    "one": "{count} open issue",
+    "other": "{count} open issues"
+  },
+  "{count} operations": {
+    "one": "{count} operation",
+    "other": "{count} operations"
+  },
+  "{count} passkeys": {
+    "one": "{count} passkey",
+    "other": "{count} passkeys"
+  },
   "{count} people": {
     "one": "{count} person",
     "other": "{count} people"
+  },
+  "{count} people are named in it; {matched} of them have an account here already (same e-mail address or name).": {
+    "one": "{count} person is named in it; {matched} of them has an account here already (same e-mail address or name).",
+    "other": "{count} people are named in it; {matched} of them have an account here already (same e-mail address or name)."
   },
   "{count} people can see this project.": {
     "one": "{count} person can see this project.",
@@ -42,6 +70,42 @@
   "{count} points": {
     "one": "{count} point",
     "other": "{count} points"
+  },
+  "{count} pull requests": {
+    "one": "{count} pull request",
+    "other": "{count} pull requests"
+  },
+  "{count} recovery codes left.": {
+    "one": "{count} recovery code left.",
+    "other": "{count} recovery codes left."
+  },
+  "{count} rows found. Match the columns:": {
+    "one": "{count} row found. Match the columns:",
+    "other": "{count} rows found. Match the columns:"
+  },
+  "{count} rules": {
+    "one": "{count} rule",
+    "other": "{count} rules"
+  },
+  "{count} sprints": {
+    "one": "{count} sprint",
+    "other": "{count} sprints"
+  },
+  "{count} sub-tasks": {
+    "one": "{count} sub-task",
+    "other": "{count} sub-tasks"
+  },
+  "{count} times": {
+    "one": "once",
+    "other": "{count} times"
+  },
+  "{count} views": {
+    "one": "{count} view",
+    "other": "{count} views"
+  },
+  "{count} widgets": {
+    "one": "{count} widget",
+    "other": "{count} widgets"
   },
   "{days} days in this status": {
     "one": "{days} day in this status",
@@ -87,6 +151,10 @@
     "one": "ended {n} day ago",
     "other": "ended {n} days ago"
   },
+  "Import {count} issues": {
+    "one": "Import {count} issue",
+    "other": "Import {count} issues"
+  },
   "in {count} days": {
     "one": "in {count} day",
     "other": "in {count} days"
@@ -94,6 +162,18 @@
   "Issues finished in {count} days": {
     "one": "Issues finished in {count} day",
     "other": "Issues finished in {count} days"
+  },
+  "Its {count} sub-tasks are created too.": {
+    "one": "Its {count} sub-task is created too.",
+    "other": "Its {count} sub-tasks are created too."
+  },
+  "Its {count} sub-tasks move along.": {
+    "one": "Its {count} sub-task moves along.",
+    "other": "Its {count} sub-tasks move along."
+  },
+  "linked {count} commits": {
+    "one": "linked {count} commit",
+    "other": "linked {count} commits"
   },
   "Move the {count} unfinished issues to": {
     "one": "Move the {count} unfinished issue to",
@@ -111,6 +191,14 @@
     "one": "Running difference of created and resolved issues: {value} after {count} day.",
     "other": "Running difference of created and resolved issues: {value} after {count} days."
   },
+  "Show all {count} commits": {
+    "one": "Show {count} commit",
+    "other": "Show all {count} commits"
+  },
+  "Signed out of {count} other sessions": {
+    "one": "Signed out of {count} other session",
+    "other": "Signed out of {count} other sessions"
+  },
   "Sprint completed; {n} issues moved": {
     "one": "Sprint completed; {n} issue moved",
     "other": "Sprint completed; {n} issues moved"
@@ -126,89 +214,5 @@
   "Velocity of the last {count} sprints: {average} completed on average.": {
     "one": "Velocity of the last sprint: {average} completed.",
     "other": "Velocity of the last {count} sprints: {average} completed on average."
-  },
-  "Its {count} sub-tasks move along.": {
-    "one": "Its {count} sub-task moves along.",
-    "other": "Its {count} sub-tasks move along."
-  },
-  "{count} sub-tasks": {
-    "one": "{count} sub-task",
-    "other": "{count} sub-tasks"
-  },
-  "Its {count} sub-tasks are created too.": {
-    "one": "Its {count} sub-task is created too.",
-    "other": "Its {count} sub-tasks are created too."
-  },
-  "{count} issues imported": {
-    "one": "{count} issue imported",
-    "other": "{count} issues imported"
-  },
-  "{count} issues imported.": {
-    "one": "{count} issue imported.",
-    "other": "{count} issues imported."
-  },
-  "{count} rows found. Match the columns:": {
-    "one": "{count} row found. Match the columns:",
-    "other": "{count} rows found. Match the columns:"
-  },
-  "Import {count} issues": {
-    "one": "Import {count} issue",
-    "other": "Import {count} issues"
-  },
-  "{count} widgets": {
-    "one": "{count} widget",
-    "other": "{count} widgets"
-  },
-  "{count} passkeys": {
-    "one": "{count} passkey",
-    "other": "{count} passkeys"
-  },
-  "{count} recovery codes left.": {
-    "one": "{count} recovery code left.",
-    "other": "{count} recovery codes left."
-  },
-  "Signed out of {count} other sessions": {
-    "one": "Signed out of {count} other session",
-    "other": "Signed out of {count} other sessions"
-  },
-  "{count} pull requests": {
-    "one": "{count} pull request",
-    "other": "{count} pull requests"
-  },
-  "linked {count} commits": {
-    "one": "linked {count} commit",
-    "other": "linked {count} commits"
-  },
-  "Show all {count} commits": {
-    "one": "Show {count} commit",
-    "other": "Show all {count} commits"
-  },
-  "{count} attachment files.": {
-    "one": "{count} attachment file.",
-    "other": "{count} attachment files."
-  },
-  "{count} issues are here from an earlier import and are skipped": {
-    "one": "{count} issue is here from an earlier import and is skipped",
-    "other": "{count} issues are here from an earlier import and are skipped"
-  },
-  "{count} people are named in it; {matched} of them have an account here already (same e-mail address or name).": {
-    "one": "{count} person is named in it; {matched} of them has an account here already (same e-mail address or name).",
-    "other": "{count} people are named in it; {matched} of them have an account here already (same e-mail address or name)."
-  },
-  "{count} sprints": {
-    "one": "{count} sprint",
-    "other": "{count} sprints"
-  },
-  "{count} times": {
-    "one": "once",
-    "other": "{count} times"
-  },
-  "{count} operations": {
-    "one": "{count} operation",
-    "other": "{count} operations"
-  },
-  "{count} rules": {
-    "one": "{count} rule",
-    "other": "{count} rules"
   }
 }

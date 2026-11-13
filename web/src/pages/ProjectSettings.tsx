@@ -8,7 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   SlidersHorizontal, Users, Workflow, Shapes, TextCursorInput, Kanban, Bot, Plug, Trash, Shield, GripVertical, Plus, Pencil, X, Check, ArrowRight,
   Archive, ArchiveArrowUp, TriangleExclamationPoint, Type, Hash, CircleDot, ListChecks, Calendar, User, SquareCheck, Link as LinkIcon, Puzzle, Search,
-  ExternalLink, BookOpen, Undo2, Info, Lock, LockOpen, Columns3, Funnel, ChevronDown, ChevronRight, FileStack, Timer, Upload, Mail, LifeBuoy, Download,
+  ExternalLink, BookOpen, Undo2, Info, Lock, LockOpen, Columns3, Funnel, ChevronDown, ChevronRight, FileStack, Timer, Upload, Mail, LifeBuoy, Download, Globe,
 } from 'lucide-react'
 import {
   api, ago, dateTime, PRIORITIES, PROJECT_ACTIONS, TYPE_FIELDS, type ProjectAction, type Category, type CustomField, type FieldOption, type IssueType, type Named, type Priority, type Project, type Role,
@@ -19,6 +19,7 @@ import { Avatar, Choices, Confirm, Empty, ErrorBox, Loading, Lozenge, Modal, Pop
 import { PROJECT_COLORS, PROJECT_ICONS, ProjectIcon, TYPE_ICONS, TypeIcon, priorityLabel } from '../icons'
 import { AddPersonButton, OptionChip, PersonPicker } from '../components/fields'
 import { useOpenIssue } from '../components/Layout'
+import ShareSettings from './ShareSettings'
 import { ServiceLevelsSection, TemplatesSection } from '../components/TemplateSettings'
 import { ImportSection } from '../components/ImportSettings'
 import GitSettings from './GitSettings'
@@ -169,6 +170,7 @@ const SECTIONS = [
   { id: 'sla', icon: Timer, label: () => t('Service levels') },
   { id: 'email', icon: Mail, label: () => t('E-mail') },
   { id: 'service-desk', icon: LifeBuoy, label: () => t('Service desk') },
+  { id: 'sharing', icon: Globe, label: () => t('Sharing') },
   { id: 'integrations', icon: Plug, label: () => t('Integrations') },
   { id: 'import', icon: Upload, label: () => t('Import') },
   { id: 'trash', icon: Trash, label: () => t('Trash') },
@@ -183,6 +185,7 @@ export default function ProjectSettings() {
   const toast = useToast()
   const automation = useFeature('automation')
   const portal = useFeature('portal')
+  const sharing = useFeature('sharing')
   const cacheKey = useMemo(() => ['project', urlKey.toUpperCase()], [urlKey])
   const p = project.data
 
@@ -226,7 +229,7 @@ export default function ProjectSettings() {
       </div>
     )
   // parts the workspace turned off
-  const shown = (id: string) => !(id === 'automation' && !automation) && !(id === 'service-desk' && !portal)
+  const shown = (id: string) => !(id === 'automation' && !automation) && !(id === 'service-desk' && !portal) && !(id === 'sharing' && !sharing)
   const active = SECTIONS.find((s) => s.id === tab && shown(s.id)) ?? SECTIONS[0]
   return (
     <SettingsCtx.Provider value={ctx}>
@@ -271,6 +274,7 @@ export default function ProjectSettings() {
             {active.id === 'integrations' && <IntegrationsSection />}
             {active.id === 'import' && <ImportSection project={p} />}
             {active.id === 'integrations' && <GitSettings project={p} />}
+            {active.id === 'sharing' && <ShareSettings project={p} />}
             {active.id === 'trash' && <TrashSection />}
           </div>
         </div>

@@ -1,0 +1,49 @@
+/* Shared pages: a list of issues or a roadmap, read-only, for people without an account. */
+.share-main { max-width: 980px; }
+.share-bar { max-width: 980px; }
+.share-badge { margin-inline-start: auto; font-size: 12.5px; font-weight: 600; color: var(--text-soft); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; }
+.share-foot { max-width: 980px; width: 100%; margin: 0 auto; padding: 0 20px 28px; color: var(--text-faint); font-size: 13px; }
+.share-unlock h1 { display: flex; align-items: center; gap: 8px; font-size: 22px; }
+.share-filter { display: flex; align-items: center; gap: 8px; max-width: 420px; margin-bottom: 8px; color: var(--text-faint); }
+.share-filter .input { flex: 1; }
+.share-back { margin: 0 0 14px; }
+.share-back a { display: inline-flex; align-items: center; gap: 6px; }
+
+.share-list { list-style: none; margin: 0; padding: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.share-list > li + li { border-top: 1px solid var(--border); }
+.share-row { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 14px; align-items: center; padding: 10px 14px; color: var(--text); }
+a.share-row:hover { background: var(--bg-hover); text-decoration: none; }
+a.share-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.share-row-static { grid-template-columns: auto 1fr auto; }
+.share-key { font-family: var(--mono, ui-monospace, monospace); font-size: 12.5px; color: var(--text-soft); }
+.share-title { font-weight: 550; min-width: 0; overflow-wrap: anywhere; }
+.share-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.share-facts { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 4px 0 18px; color: var(--text-soft); font-size: 14px; }
+.share-doc { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+.portal-doc-image { max-width: 100%; height: auto; border-radius: 6px; display: block; margin: 8px 0; }
+.share-comments { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.share-comments > li { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; }
+.share-comments .portal-faint { margin: 0 0 6px; }
+
+/* the roadmap: months, epics as bars with their progress, releases as markers */
+.share-road { position: relative; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 34px 0 28px; margin: 6px 0 8px; overflow: hidden; }
+.share-road-months { position: absolute; inset: 0 0 auto 0; height: 26px; border-bottom: 1px solid var(--border); }
+.share-road-months span { position: absolute; top: 5px; padding-inline-start: 6px; font-size: 12px; color: var(--text-soft); border-inline-start: 1px solid var(--border); height: 100vh; white-space: nowrap; }
+.share-road-today { position: absolute; top: 26px; bottom: 0; width: 2px; background: var(--danger); opacity: .55; }
+.share-road-row { position: relative; height: 34px; }
+.share-road-bar { position: absolute; top: 5px; height: 24px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 18%, var(--bg)); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); overflow: hidden; color: var(--text); display: flex; align-items: center; }
+.share-road-bar:hover { text-decoration: none; border-color: var(--accent); }
+.share-road-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.share-road-done { background: color-mix(in srgb, var(--success) 16%, var(--bg)); border-color: color-mix(in srgb, var(--success) 45%, transparent); }
+.share-road-fill { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.share-road-done .share-road-fill { background: color-mix(in srgb, var(--success) 26%, transparent); }
+.share-road-label { position: relative; padding: 0 8px; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.share-road-release { position: absolute; bottom: 4px; transform: translateX(-50%); font-size: 11.5px; color: var(--text-soft); white-space: nowrap; }
+.share-road-release::before { content: '◆'; color: var(--warning); margin-inline-end: 4px; }
+.share-road-release.released::before { color: var(--success); }
+
+@media (max-width: 640px) {
+  .share-row { grid-template-columns: 1fr; }
+  .share-meta { justify-content: flex-start; }
+  .share-road { display: none; }
+}

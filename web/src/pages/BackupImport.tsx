@@ -6,9 +6,9 @@ import { t, locale } from '../i18n'
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArchiveRestore, CircleCheck, CircleX, FileArchive, FolderKanban, ListChecks, Plug, Plus, RotateCcw, TriangleAlert, Upload, X } from 'lucide-react'
+import { ArchiveRestore, BookOpen, CircleCheck, CircleX, ExternalLink, FileArchive, FolderKanban, ListChecks, Plug, Plus, RotateCcw, TriangleAlert, Upload, X } from 'lucide-react'
 import { api, ago, ApiError, dateTime } from '../api'
-import { Confirm, ErrorBox, Loading, Spinner, useProjects, useToast } from '../ui'
+import { Confirm, ErrorBox, Loading, Spinner, useMe, useProjects, useToast } from '../ui'
 import './BackupImport.css'
 
 interface Warning {
@@ -287,7 +287,35 @@ export function BackupImportTab() {
         </>
       )}
       {list.length > (showCurrent ? 1 : 0) && <EarlierImports jobs={showCurrent ? list.slice(1) : list} />}
+      <WikiNote />
     </div>
+  )
+}
+
+/** Documentation moves into WikiCraft: where its own import is. */
+function WikiNote() {
+  const wiki = useMe().data?.wikicraft?.url
+  return (
+    <aside className="adm-card bi-wiki" aria-labelledby="bi-wiki-title">
+      <div className="adm-card-head">
+        <h2 id="bi-wiki-title"><BookOpen size={16} /> {t('Coming from {wiki} as well?', { wiki: 'Confluence' })}</h2>
+        <p className="small muted">
+          {t('Spaces and pages move into WikiCraft, next to TaskCraft: pages with their history, attachments, comments, labels and permissions, macros, and the old page addresses still working. Its import takes the XML and Cloud exports.')}
+        </p>
+      </div>
+      <div className="adm-card-body bi-wiki-body">
+        {wiki ? (
+          <a className="btn" href={`${wiki.replace(/\/$/, '')}/admin/import`} target="_blank" rel="noopener noreferrer">
+            <ExternalLink size={14} /> {t('Open the import in WikiCraft')}
+          </a>
+        ) : (
+          <p className="small">
+            {t('Set up WikiCraft and connect it (TASKCRAFT_WIKICRAFT_URL); its import is under Administration → Import there.')}{' '}
+            <a href="https://github.com/ortic/WikiCraft" target="_blank" rel="noopener noreferrer">{t('About WikiCraft')}</a>
+          </p>
+        )}
+      </div>
+    </aside>
   )
 }
 

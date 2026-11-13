@@ -226,3 +226,13 @@ a.field-hint { display: inline-flex; align-items: center; gap: 4px; }
 .ps-type-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
 .ps-type-field .select { width: auto; min-width: 104px; }
 .ps-chat-action { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 260px; }
+
+/* sharing */
+.ps-list > .ps-share + .ps-share { border-top: 1px solid var(--border); }
+.ps-share { display: grid; gap: 8px; padding: 12px 14px; list-style: none; }
+.ps-share-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ps-share-head .ps-strong { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ps-share-form { display: grid; gap: 12px; }
+.ps-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 560px) { .ps-grid2 { grid-template-columns: 1fr; } }
+ul.ps-list { padding: 0; margin-top: 0; list-style: none; }

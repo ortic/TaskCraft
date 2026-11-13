@@ -22,7 +22,7 @@ async fn features_announcement_and_logo() {
     assert!(send(&c, Method::PUT, app.url("/admin/workspace"), off).await.0 < 300);
     let me = get(&member, app.url("/me")).await;
     let ws = &me["workspace"];
-    assert_eq!(ws["features"], json!({"timeTracking": false, "votes": false, "portal": false, "automation": false}));
+    assert_eq!(ws["features"], json!({"timeTracking": false, "votes": false, "portal": false, "automation": false, "sharing": true}));
     assert_eq!((ws["timeZone"].as_str(), ws["dateFormat"].as_str()), (Some("Europe/Zurich"), Some("dmy")));
     assert_eq!(ws["announcement"]["text"], "Maintenance tonight at 22:00");
     assert_eq!(ws["announcement"]["tone"], "warning");

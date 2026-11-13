@@ -12,7 +12,7 @@ export interface DocNode {
   type: string
   text?: string
   marks?: Mark[]
-  attrs?: { level?: number; checked?: boolean; start?: number }
+  attrs?: { level?: number; checked?: boolean; start?: number; src?: string; alt?: string; id?: string; label?: string; mentionSuggestionChar?: string }
   content?: DocNode[]
 }
 
@@ -23,6 +23,9 @@ export function docText(n: DocNode | null | undefined): string {
   if (!n) return ''
   return (n.text ?? '') + (n.content ?? []).map(docText).join('')
 }
+
+/** Where images may come from (shared pages): their address, or null to leave them out. */
+type Images = ((src: string) => string | null) | undefined
 
 function text(n: DocNode, key: number): ReactNode {
   let el: ReactNode = n.text ?? ''
@@ -37,9 +40,15 @@ function text(n: DocNode, key: number): ReactNode {
   return <Fragment key={key}>{el}</Fragment>
 }
 
-function node(n: DocNode, key: number): ReactNode {
-  const kids = () => (n.content ?? []).map(node)
+function node(n: DocNode, key: number, images: Images): ReactNode {
+  const kids = () => (n.content ?? []).map((c, i) => node(c, i, images))
   switch (n.type) {
+    case 'mention':
+      return <Fragment key={key}>{`${n.attrs?.mentionSuggestionChar === '#' ? '' : '@'}${n.attrs?.label ?? n.attrs?.id ?? ''}`}</Fragment>
+    case 'image': {
+      const src = images && n.attrs?.src ? images(n.attrs.src) : null
+      return src ? <img key={key} src={src} alt={n.attrs?.alt ?? ''} className="portal-doc-image" loading="lazy" /> : null
+    }
     case 'text':
       return text(n, key)
     case 'hardBreak':
@@ -77,7 +86,7 @@ function node(n: DocNode, key: number): ReactNode {
   }
 }
 
-export default function RichDoc({ doc }: { doc: DocNode | null | undefined }) {
+export default function RichDoc({ doc, images }: { doc: DocNode | null | undefined; images?: Images }) {
   if (!doc) return null
-  return <>{node(doc, 0)}</>
+  return <>{node(doc, 0, images)}</>
 }

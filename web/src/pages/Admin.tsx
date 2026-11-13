@@ -455,6 +455,7 @@ function FeaturesForm({ me }: { me: Me }) {
     { id: 'votes', label: () => t('Votes'), hint: () => t('People vote for issues they want.') },
     { id: 'portal', label: () => t('Service desk portal'), hint: () => t('Request forms and the portal where requesters follow their requests. E-mail in keeps working.') },
     { id: 'automation', label: () => t('Automation'), hint: () => t('Rules that act on changes and on schedules. Existing rules are kept, but don’t run.') },
+    { id: 'sharing', label: () => t('Sharing with links'), hint: () => t('Read-only pages projects share by link (status pages, roadmaps). Turned off, every link stops working.') },
   ]
   const saved = me.workspace?.features ?? {}
   const [on, setOn] = useState<Record<string, boolean>>(() => Object.fromEntries(FEATURES.map((f) => [f.id, saved[f.id] !== false])))

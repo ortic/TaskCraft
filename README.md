@@ -6,6 +6,9 @@ documentation next to the work through [WikiCraft](https://github.com/ortic/Wiki
 
 One binary, PostgreSQL, optional S3. Built with the same stack as WikiCraft.
 
+**Guides**: [user guide](docs/user-guide.md) · [admin guide](docs/admin-guide.md) ·
+[migrating to TaskCraft](docs/migrating.md) · [translating](docs/translating.md)
+
 ## Features
 
 **Plan and track**
@@ -151,8 +154,12 @@ the user's permissions. See [AI assistants (MCP)](#ai-assistants-mcp).
 
 **Administration**: the workspace's name, logo, accent colour, default language, time zone and
 date format; profile photos (cropped in the browser; admins can take one down); an **announcement** at the top of every page (until a date or until it's taken down);
-**features** a workspace doesn't use — time tracking, votes, the service desk portal, automation —
-turned off for everyone (hidden, and refused by the API); workspace owner / admins / members / guests; project roles (viewer, member,
+**features** a workspace doesn't use — time tracking, votes, the service desk portal, automation,
+sharing — turned off for everyone (hidden, and refused by the API); **share links** (*Project settings →
+Sharing*): read-only pages for people without an account — a status page (issues from a TQL
+query) or the roadmap (epics with their progress, releases) — with an optional password and end
+date, revocable at once; private issues and restricted comments never show, names only when
+chosen; workspace owner / admins / members / guests; project roles (viewer, member,
 admin) for people and teams, a default role per project; per project, who may delete or move
 issues, plan sprints, manage releases, edit others' comments, log time for others and change
 who sees an issue; **private issues**: security levels per project (by role, teams or people; a

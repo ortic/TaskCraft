@@ -32,6 +32,7 @@ pub mod query;
 pub mod reports;
 pub mod routes;
 pub mod schedule;
+pub mod share;
 pub mod site_backup;
 pub mod sla;
 pub mod sso;

@@ -433,7 +433,7 @@ export function userColor(seed: string): string {
 }
 
 /** Parts of TaskCraft a workspace can turn off. */
-export type Feature = 'timeTracking' | 'votes' | 'portal' | 'automation'
+export type Feature = 'timeTracking' | 'votes' | 'portal' | 'automation' | 'sharing'
 export type DateFormat = 'dmy' | 'mdy' | 'ymd'
 export interface Announcement {
   id: string

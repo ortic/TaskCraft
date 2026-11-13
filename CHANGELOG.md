@@ -41,5 +41,8 @@ The first release.
 - **Operations**: one binary and PostgreSQL, S3-compatible storage, several replicas, Docker
   Compose and Kubernetes manifests.
 - **Workspace settings**: logo, default time zone and date format, an announcement banner,
-  features turned off for everyone (time tracking, votes, the portal, automation); profile photos.
+  features turned off for everyone (time tracking, votes, the portal, automation, sharing); profile
+  photos.
+- **Share links**: read-only status pages and roadmaps for people without an account, with a
+  password and an end date.
 - English, German, French and Italian; light, dark and high-contrast themes; WCAG 2.2 AA checked.
