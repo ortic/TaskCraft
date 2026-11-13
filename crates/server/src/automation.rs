@@ -153,6 +153,20 @@ pub async fn execute(state: &AppState, bot: &Actor, s: &Summary, actions: &Value
                 patch.insert("sprintId".into(), sprint);
             }
             "comment" => comments.push(a["text"].as_str().unwrap_or("").to_string()),
+            // a message in a chat channel (never about a private issue: channels are shared)
+            "chat" if s.security.is_none() => {
+                let template = a["message"].as_str().filter(|m| !m.trim().is_empty()).unwrap_or("{key} {title}");
+                let text: String = crate::chat::fill(template, &serde_json::to_value(s).unwrap_or_default()).chars().take(1000).collect();
+                let m = crate::chat::Message { text, link: Some((format!("{} {}", s.key, s.title), s.url.clone())) };
+                if let (Some(url), Some(body)) = (a["url"].as_str().map(str::to_string), crate::chat::body(a["format"].as_str().unwrap_or("slack"), &m)) {
+                    let state = state.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = crate::webhooks::send_chat(&state, &url, &body).await {
+                            tracing::warn!(error = %e, "automation chat message");
+                        }
+                    });
+                }
+            }
             "notify" => {
                 let mut to: Vec<Uuid> = match a["to"].as_str() {
                     Some("reporter") => s.reporter.iter().map(|r| r.id).collect(),

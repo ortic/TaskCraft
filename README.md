@@ -150,7 +150,9 @@ who sees an issue; **private issues**: security levels per project (by role, tea
 default for new issues) — an issue with one is seen only by those, project admins and its
 reporter, creator and assignee, and doesn't show up anywhere for anyone else; comments
 restricted to members, project admins or a team; invitations and password-reset links;
-teams; personal API tokens (read-only or read/write); signed webhooks; audit log. With SMTP
+teams; personal API tokens (read-only or read/write); signed webhooks, or readable messages for
+chat channels (Slack and compatible ones like Mattermost, Microsoft Teams, Google Chat — never about
+private issues or restricted comments) from webhooks and automation rules; audit log. With SMTP
 configured, invitations and password-reset links are e-mailed and people can reset a forgotten
 password themselves.
 

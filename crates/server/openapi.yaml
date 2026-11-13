@@ -8272,6 +8272,16 @@ paths:
                 secret:
                   type: string
                   description: 'the signing secret (at least 8 characters; default: generated)'
+                format:
+                  type: string
+                  enum:
+                  - json
+                  - slack
+                  - teams
+                  - google-chat
+                  description: 'json (default): the signed event (WebhookEvent); slack (also Mattermost and other Slack-compatible
+                    incoming webhooks), teams (an adaptive card) or google-chat: a readable message in the workspace''s language
+                    for a chat channel''s incoming-webhook address — nothing about private issues or restricted comments'
               required:
               - url
       responses:
@@ -8301,7 +8311,7 @@ paths:
     patch:
       tags:
       - Webhooks
-      summary: Turn a webhook on or off, or change its events
+      summary: Turn a webhook on or off, or change its events or format
       operationId: updateWebhook
       description: Workspace admins. Only the fields sent change.
       parameters:
@@ -8326,6 +8336,16 @@ paths:
                   items:
                     type: string
                   description: 'replaces the events (unknown ones are dropped; empty or `*`: all)'
+                format:
+                  type: string
+                  enum:
+                  - json
+                  - slack
+                  - teams
+                  - google-chat
+                  description: 'json (default): the signed event (WebhookEvent); slack (also Mattermost and other Slack-compatible
+                    incoming webhooks), teams (an adaptive card) or google-chat: a readable message in the workspace''s language
+                    for a chat channel''s incoming-webhook address — nothing about private issues or restricted comments'
       responses:
         '204':
           description: Done (no content)
@@ -8364,7 +8384,8 @@ paths:
       - Webhooks
       summary: Send a ping delivery now and report how it went
       operationId: testWebhook
-      description: Workspace admins. Delivers a `ping` event (signed like any delivery) right away, without retries.
+      description: Workspace admins. Delivers a `ping` event (signed like any delivery; chat formats get a short message)
+        right away, without retries.
       parameters:
       - name: id
         in: path
@@ -11210,6 +11231,7 @@ components:
           - setSprint
           - comment
           - notify
+          - chat
         statusId:
           type: string
           format: uuid
@@ -11236,7 +11258,19 @@ components:
           description: 'comment: Markdown'
         message:
           type: string
-          description: 'notify: up to 300 characters'
+          description: 'notify: up to 300 characters; chat: the message, with {key}, {title}, {status}, {assignee}, {priority},
+            {project} and {url} filled in (default `{key} {title}`)'
+        url:
+          type: string
+          format: uri
+          description: 'chat: the channel''s incoming-webhook address'
+        format:
+          type: string
+          enum:
+          - slack
+          - teams
+          - google-chat
+          description: 'chat: the chat service (default slack); nothing is posted about private issues'
       required:
       - action
       description: Something a rule does. Rules act as Automation (no person); their changes may trigger other rules, up to
@@ -14077,6 +14111,16 @@ components:
           - string
           - 'null'
           format: date-time
+        format:
+          type: string
+          enum:
+          - json
+          - slack
+          - teams
+          - google-chat
+          description: 'json (default): the signed event (WebhookEvent); slack (also Mattermost and other Slack-compatible
+            incoming webhooks), teams (an adaptive card) or google-chat: a readable message in the workspace''s language for
+            a chat channel''s incoming-webhook address — nothing about private issues or restricted comments'
       required:
       - id
       - url

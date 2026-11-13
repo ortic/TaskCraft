@@ -96,6 +96,36 @@ async fn resolve(u: &Url, allow_private: bool) -> Result<SocketAddr, String> {
 
 /// Sends one delivery; Ok(status) or Err(reason).
 pub async fn deliver(state: &AppState, url: &str, secret: &str, payload: &Value) -> Result<u16, String> {
+    let body = serde_json::to_vec(payload).map_err(|e| e.to_string())?;
+    let signature = sign(secret, &body);
+    post(state, url, body, Some((payload["event"].as_str().unwrap_or(""), &signature))).await
+}
+
+/// Sends an event in a webhook's format: the signed event (`json`), or a readable message for a
+/// chat channel in `lang` — nothing for a private issue or a restricted comment (that counts as
+/// sent).
+pub async fn deliver_as(state: &AppState, url: &str, secret: &str, format: &str, lang: &str, payload: &Value) -> Result<u16, String> {
+    if format == "json" {
+        return deliver(state, url, secret, payload).await;
+    }
+    let event = match payload["event"].as_str().unwrap_or("") {
+        "ping" => "test",
+        e => e,
+    };
+    let Some(body) = crate::chat::event_message(lang, event, &payload["data"]).and_then(|m| crate::chat::body(format, &m)) else {
+        return Ok(204);
+    };
+    send_chat(state, url, &body).await
+}
+
+/// Posts a chat message (an automation rule's, or an event's).
+pub async fn send_chat(state: &AppState, url: &str, body: &Value) -> Result<u16, String> {
+    let body = serde_json::to_vec(body).map_err(|e| e.to_string())?;
+    post(state, url, body, None).await
+}
+
+/// One POST of JSON to a checked address (`signed`: the event and its signature).
+async fn post(state: &AppState, url: &str, body: Vec<u8>, signed: Option<(&str, &str)>) -> Result<u16, String> {
     let u = validate_url(url)?;
     let addr = resolve(&u, state.config.webhook_allow_private).await?;
     let host = u.host_str().unwrap_or_default().to_string();
@@ -107,16 +137,11 @@ pub async fn deliver(state: &AppState, url: &str, secret: &str, payload: &Value)
         .user_agent(concat!("TaskCraft-Webhooks/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| e.to_string())?;
-    let body = serde_json::to_vec(payload).map_err(|e| e.to_string())?;
-    let res = client
-        .post(u)
-        .header("content-type", "application/json")
-        .header("x-taskcraft-event", payload["event"].as_str().unwrap_or(""))
-        .header("x-taskcraft-signature", sign(secret, &body))
-        .body(body)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    let mut req = client.post(u).header("content-type", "application/json");
+    if let Some((event, signature)) = signed {
+        req = req.header("x-taskcraft-event", event).header("x-taskcraft-signature", signature);
+    }
+    let res = req.body(body).send().await.map_err(|e| e.to_string())?;
     let status = res.status().as_u16();
     if res.status().is_success() { Ok(status) } else { Err(format!("HTTP {status}")) }
 }
@@ -137,14 +162,15 @@ pub fn spawn_worker(state: &AppState) {
 async fn tick(state: &AppState) -> anyhow::Result<()> {
     for _ in 0..20 {
         let mut tx = state.db.begin().await?;
-        let due: Option<(Uuid, Uuid, Value, i32, String, String)> = sqlx::query_as(
-            "SELECT o.id, o.webhook_id, o.payload, o.attempts, w.url, w.secret FROM webhook_outbox o JOIN webhooks w ON w.id = o.webhook_id
+        let due: Option<(Uuid, Uuid, Value, i32, String, String, String, Uuid)> = sqlx::query_as(
+            "SELECT o.id, o.webhook_id, o.payload, o.attempts, w.url, w.secret, w.format, w.workspace_id FROM webhook_outbox o JOIN webhooks w ON w.id = o.webhook_id
               WHERE o.next_at <= now() ORDER BY o.next_at LIMIT 1 FOR UPDATE OF o SKIP LOCKED",
         )
         .fetch_optional(&mut *tx)
         .await?;
-        let Some((id, hook, payload, attempts, url, secret)) = due else { return Ok(()) };
-        let result = deliver(state, &url, &secret, &payload).await;
+        let Some((id, hook, payload, attempts, url, secret, format, workspace)) = due else { return Ok(()) };
+        let lang = if format == "json" { "en" } else { crate::i18n::of_workspace(&state.db, workspace).await };
+        let result = deliver_as(state, &url, &secret, &format, lang, &payload).await;
         match &result {
             Ok(_) => {
                 sqlx::query("DELETE FROM webhook_outbox WHERE id = $1").bind(id).execute(&mut *tx).await?;

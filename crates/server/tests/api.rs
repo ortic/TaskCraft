@@ -456,3 +456,71 @@ async fn openapi_document_is_public_and_cacheable() {
     assert!(r.headers()["content-type"].to_str().unwrap().starts_with("application/yaml"));
     assert!(r.text().await.unwrap().contains("\nopenapi: 3.1.0\n"));
 }
+
+#[tokio::test]
+async fn chat_channels_get_readable_messages() {
+    use axum::extract::State;
+    // a stand-in for a chat service's incoming webhook
+    let got: Arc<Mutex<Vec<Value>>> = Default::default();
+    let chat = axum::Router::new()
+        .route(
+            "/hook",
+            axum::routing::post(|State(g): State<Arc<Mutex<Vec<Value>>>>, axum::Json(b): axum::Json<Value>| async move {
+                g.lock().unwrap().push(b);
+                "ok"
+            }),
+        )
+        .with_state(got.clone());
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/hook", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, chat).await.unwrap() });
+    let app = spawn().await;
+    let c = app.setup(false).await;
+    project(&app, &c, "WEB", "kanban").await;
+    let wait_for = |n: usize| {
+        let got = got.clone();
+        async move {
+            for _ in 0..200 {
+                if got.lock().unwrap().len() >= n {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(150)).await;
+            }
+            got.lock().unwrap().clone()
+        }
+    };
+
+    // a webhook in Slack's format: readable text with a link, no signature needed
+    assert_eq!(send(&c, Method::POST, app.url("/admin/webhooks"), json!({"url": url, "format": "pigeon"})).await.0, 400);
+    let h = post(&c, app.url("/admin/webhooks"), json!({"url": url, "events": ["issue.created", "comment.created"], "format": "slack"})).await;
+    let test = post(&c, app.url(&format!("/admin/webhooks/{}/test", h["id"].as_str().unwrap())), json!({})).await;
+    assert_eq!(test["ok"], true, "{test}");
+    assert_eq!(got.lock().unwrap()[0]["text"], "TaskCraft can post to this channel.");
+    let key = post(&c, app.url("/issues"), json!({"projectKey": "WEB", "title": "Checkout <broken>"})).await["key"].as_str().unwrap().to_string();
+    let msgs = wait_for(2).await;
+    let text = msgs[1]["text"].as_str().unwrap();
+    assert!(text.starts_with(&format!("New issue {key}")) && text.contains("|WEB-1 Checkout &lt;broken&gt;>"), "{text}");
+
+    // private issues and restricted comments stay out of the channel
+    let level = post(&c, app.url("/projects/WEB/security-levels"), json!({"name": "Staff", "minRole": "member"})).await;
+    post(&c, app.url("/issues"), json!({"projectKey": "WEB", "title": "Secret", "securityLevelId": level["id"]})).await;
+    post(&c, app.url(&format!("/issues/{key}/comments")), json!({"markdown": "admins only", "visibility": "admins"})).await;
+    post(&c, app.url(&format!("/issues/{key}/comments")), json!({"markdown": "Fixed in staging"})).await;
+    let msgs = wait_for(3).await;
+    let pending: Vec<(Value, i32)> = sqlx::query_as("SELECT payload, attempts FROM webhook_outbox").fetch_all(&app.state.db).await.unwrap();
+    let last: Option<String> = sqlx::query_scalar("SELECT last_error FROM webhooks").fetch_one(&app.state.db).await.unwrap();
+    assert_eq!(msgs.len(), 3, "{msgs:?} pending {pending:?} last {last:?}");
+    assert_eq!(msgs[2]["text"].as_str().unwrap().split(" — ").next().unwrap(), format!("New comment on {key}: Fixed in staging"));
+
+    // an automation rule posts its own message (Teams' card here)
+    post(
+        &c,
+        app.url("/projects/WEB/automation"),
+        json!({"name": "Tell the channel", "trigger": {"event": "created"}, "actions": [{"action": "chat", "url": url, "format": "teams", "message": "{key} needs a look: {title}"}]}),
+    )
+    .await;
+    post(&c, app.url("/issues"), json!({"projectKey": "WEB", "title": "Payment page slow"})).await;
+    let msgs = wait_for(5).await;
+    let card = msgs.iter().find(|m| m["type"] == "message").expect("a Teams message");
+    assert_eq!(card["attachments"][0]["content"]["body"][0]["text"], "WEB-3 needs a look: Payment page slow");
+}

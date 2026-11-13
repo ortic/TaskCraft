@@ -33,9 +33,9 @@ type MembersData = { defaultRole: Role; grants: Grant[]; people: { id: string; n
 type Team = { id: string; name: string; memberIds: string[]; color?: string | null }
 type TriggerEvent = 'created' | 'status' | 'assigned' | 'field' | 'commented' | 'schedule'
 type Trigger = { event: TriggerEvent; toStatusId?: string; fromStatusId?: string; toCategory?: Category; field?: string; schedule?: Schedule }
-type ActionKind = 'setStatus' | 'assign' | 'setPriority' | 'addLabel' | 'removeLabel' | 'setSprint' | 'comment' | 'notify'
+type ActionKind = 'setStatus' | 'assign' | 'setPriority' | 'addLabel' | 'removeLabel' | 'setSprint' | 'comment' | 'notify' | 'chat'
 type NotifyTo = 'assignee' | 'reporter' | 'watchers' | 'lead'
-type RuleAction = { action: ActionKind; statusId?: string; to?: 'reporter' | 'nobody' | NotifyTo; userId?: string; priority?: Priority; label?: string; sprint?: 'active' | null; text?: string; message?: string }
+type RuleAction = { action: ActionKind; statusId?: string; to?: 'reporter' | 'nobody' | NotifyTo; userId?: string; priority?: Priority; label?: string; sprint?: 'active' | null; text?: string; message?: string; url?: string; format?: 'slack' | 'teams' | 'google-chat' }
 type Rule = { id: string; name: string; enabled: boolean; trigger: Trigger; condition: string; actions: RuleAction[]; runs: number; lastRunAt: string | null; nextRunAt?: string | null }
 type TrashItem = { id: string; key: string; title: string; deletedAt: string | null; deletedBy: string | null }
 type WikiSpace = { key: string; name: string; url: string }
@@ -2499,6 +2499,7 @@ const ACTIONS: { id: ActionKind; label: () => string }[] = [
   { id: 'setSprint', label: () => t('move it to a sprint') },
   { id: 'comment', label: () => t('add a comment') },
   { id: 'notify', label: () => t('notify someone') },
+  { id: 'chat', label: () => t('post to a chat channel') },
 ]
 
 function describeTrigger(tr: Trigger, project: Project): string {
@@ -2543,6 +2544,8 @@ function describeAction(a: RuleAction, project: Project, people: Named[]): strin
       return t('add the comment “{text}”', { text: (a.text ?? '').length > 60 ? (a.text ?? '').slice(0, 57) + '…' : a.text ?? '' })
     case 'notify':
       return t('notify {who}', { who: a.to === 'reporter' ? t('the reporter') : a.to === 'watchers' ? t('the watchers') : a.to === 'lead' ? t('the project lead') : t('the assignee') })
+    case 'chat':
+      return t('post to a chat channel')
   }
   return ''
 }
@@ -2653,6 +2656,8 @@ function actionReady(a: RuleAction): boolean {
       return !!a.text?.trim()
     case 'notify':
       return !!a.message?.trim()
+    case 'chat':
+      return /^https?:\/\/\S+$/i.test(a.url?.trim() ?? '')
     default:
       return true
   }
@@ -2675,6 +2680,8 @@ function cleanAction(a: RuleAction): RuleAction {
       return { action: a.action, text: a.text ?? '' }
     case 'notify':
       return { action: a.action, to: a.to ?? 'assignee', message: a.message ?? '' }
+    case 'chat':
+      return { action: a.action, url: (a.url ?? '').trim(), format: a.format ?? 'slack', message: a.message ?? '' }
   }
 }
 
@@ -2690,6 +2697,8 @@ function newAction(kind: ActionKind, project: Project): RuleAction {
       return { action: kind, sprint: 'active' }
     case 'notify':
       return { action: kind, to: 'assignee', message: '' }
+    case 'chat':
+      return { action: kind, url: '', format: 'slack', message: '{key} {title}: {status}' }
     default:
       return { action: kind, label: '', text: '' }
   }
@@ -2899,6 +2908,21 @@ function ActionParams({ a, onChange }: { a: RuleAction; onChange: (a: RuleAction
           </select>
           <input className="input input-sm ps-grow" aria-label={t('Message')} placeholder={t('Message, e.g. This is due tomorrow')} value={a.message ?? ''} onChange={(e) => onChange({ ...a, message: e.target.value })} />
         </>
+      )
+    case 'chat':
+      return (
+        <div className="ps-chat-action">
+          <div className="row-wrap" style={{ gap: 6 }}>
+            <select className="select input-sm ps-auto" aria-label={t('Chat service')} value={a.format ?? 'slack'} onChange={(e) => onChange({ ...a, format: e.target.value as RuleAction['format'] })}>
+              <option value="slack">{t('Slack and compatible')}</option>
+              <option value="teams">{t('Microsoft Teams')}</option>
+              <option value="google-chat">{t('Google Chat')}</option>
+            </select>
+            <input className="input input-sm ps-grow" type="url" spellCheck={false} aria-label={t('Incoming-webhook address')} placeholder={t('The channel’s incoming-webhook address')} value={a.url ?? ''} onChange={(e) => onChange({ ...a, url: e.target.value })} />
+          </div>
+          <input className="input input-sm" aria-label={t('Message')} value={a.message ?? ''} onChange={(e) => onChange({ ...a, message: e.target.value })} />
+          <span className="faint small">{t('{key}, {title}, {status}, {assignee}, {priority}, {project} and {url} are filled in. Nothing is posted about private issues.')}</span>
+        </div>
       )
   }
 }

@@ -1579,8 +1579,17 @@ fn check_rule(req: &Value) -> ApiResult<()> {
         return Err(ApiError::bad("a rule needs 1–10 actions"));
     }
     for a in actions {
-        if !matches!(a["action"].as_str(), Some("setStatus" | "assign" | "setPriority" | "addLabel" | "removeLabel" | "setSprint" | "comment" | "notify")) {
+        if !matches!(
+            a["action"].as_str(),
+            Some("setStatus" | "assign" | "setPriority" | "addLabel" | "removeLabel" | "setSprint" | "comment" | "notify" | "chat")
+        ) {
             return Err(ApiError::bad("unknown action"));
+        }
+        if a["action"] == "chat" {
+            crate::webhooks::validate_url(a["url"].as_str().unwrap_or("")).map_err(ApiError::BadRequest)?;
+            if !matches!(a["format"].as_str().unwrap_or("slack"), "slack" | "teams" | "google-chat") {
+                return Err(ApiError::bad("a chat message's format is slack, teams or google-chat"));
+            }
         }
     }
     Ok(())

@@ -216,7 +216,7 @@ pub async fn add_with(state: &AppState, actor: &Actor, issue: Uuid, body: Value,
         actor.workspace,
         Some(project),
         "comment.created",
-        json!({"issue": {"id": s.id, "key": s.key, "title": s.title}, "comment": {"id": id, "text": text, "visibility": opts.visibility}}),
+        json!({"issue": {"id": s.id, "key": s.key, "title": s.title, "url": s.url, "security": s.security}, "comment": {"id": id, "text": text, "visibility": opts.visibility}}),
     )
     .await;
     crate::automation::run_commented(state, actor, &s).await;

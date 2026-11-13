@@ -62,8 +62,9 @@ pub async fn stats(State(state): State<AppState>, CurrentUser(user): CurrentUser
 
 pub async fn webhooks(State(state): State<AppState>, CurrentUser(user): CurrentUser) -> ApiResult<Json<Value>> {
     require_admin(&user)?;
-    let rows: Vec<(Uuid, Option<Uuid>, Option<String>, String, Vec<String>, bool, Option<i32>, Option<String>, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
-        "SELECT w.id, w.project_id, p.key, w.url, w.events, w.active, w.last_status, w.last_error, w.last_sent_at FROM webhooks w LEFT JOIN projects p ON p.id = w.project_id
+    type HookRow = (Uuid, Option<Uuid>, Option<String>, String, Vec<String>, bool, Option<i32>, Option<String>, Option<chrono::DateTime<chrono::Utc>>, String);
+    let rows: Vec<HookRow> = sqlx::query_as(
+        "SELECT w.id, w.project_id, p.key, w.url, w.events, w.active, w.last_status, w.last_error, w.last_sent_at, w.format FROM webhooks w LEFT JOIN projects p ON p.id = w.project_id
           WHERE w.workspace_id = $1 ORDER BY w.created_at",
     )
     .bind(user.workspace_id)
@@ -71,10 +72,19 @@ pub async fn webhooks(State(state): State<AppState>, CurrentUser(user): CurrentU
     .await?;
     Ok(Json(json!({
         "events": crate::webhooks::EVENTS,
-        "webhooks": rows.into_iter().map(|(id, pid, pk, url, ev, active, st, err, at)| json!({
-            "id": id, "projectId": pid, "projectKey": pk, "url": url, "events": ev, "active": active, "lastStatus": st, "lastError": err, "lastSentAt": at
+        "formats": crate::chat::FORMATS,
+        "webhooks": rows.into_iter().map(|(id, pid, pk, url, ev, active, st, err, at, format)| json!({
+            "id": id, "projectId": pid, "projectKey": pk, "url": url, "events": ev, "active": active, "lastStatus": st, "lastError": err, "lastSentAt": at, "format": format
         })).collect::<Vec<_>>()
     })))
+}
+
+/// A webhook's format: json (default) or a chat channel's.
+fn webhook_format(v: &Value) -> ApiResult<&'static str> {
+    match v.as_str() {
+        None | Some("") => Ok("json"),
+        Some(f) => crate::chat::FORMATS.iter().find(|x| **x == f).copied().ok_or_else(|| ApiError::bad("format must be json, slack, teams or google-chat")),
+    }
 }
 
 pub async fn create_webhook(State(state): State<AppState>, CurrentUser(user): CurrentUser, Json(req): Json<Value>) -> ApiResult<(StatusCode, Json<Value>)> {
@@ -94,8 +104,9 @@ pub async fn create_webhook(State(state): State<AppState>, CurrentUser(user): Cu
         None => None,
     };
     let secret = req["secret"].as_str().filter(|s| s.len() >= 8).map(str::to_string).unwrap_or_else(random_token);
+    let format = webhook_format(&req["format"])?;
     let id = new_id();
-    sqlx::query("INSERT INTO webhooks (id, workspace_id, project_id, url, secret, events, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)")
+    sqlx::query("INSERT INTO webhooks (id, workspace_id, project_id, url, secret, events, created_by, format) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)")
         .bind(id)
         .bind(user.workspace_id)
         .bind(project)
@@ -103,6 +114,7 @@ pub async fn create_webhook(State(state): State<AppState>, CurrentUser(user): Cu
         .bind(&secret)
         .bind(&events)
         .bind(user.id)
+        .bind(format)
         .execute(&state.db)
         .await?;
     audit(&state, user.workspace_id, Some(user.id), "webhook.created", Some(url.to_string()), json!({"events": events})).await;
@@ -118,6 +130,10 @@ pub async fn update_webhook(
     require_admin(&user)?;
     if let Some(a) = req["active"].as_bool() {
         sqlx::query("UPDATE webhooks SET active = $3 WHERE id = $1 AND workspace_id = $2").bind(id).bind(user.workspace_id).bind(a).execute(&state.db).await?;
+    }
+    if req.get("format").is_some() {
+        let f = webhook_format(&req["format"])?;
+        sqlx::query("UPDATE webhooks SET format = $3 WHERE id = $1 AND workspace_id = $2").bind(id).bind(user.workspace_id).bind(f).execute(&state.db).await?;
     }
     if let Some(ev) = req["events"].as_array() {
         let events: Vec<String> =
@@ -141,14 +157,15 @@ pub async fn delete_webhook(State(state): State<AppState>, CurrentUser(user): Cu
 /// Sends a `ping` right away and reports how it went.
 pub async fn test_webhook(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>) -> ApiResult<Json<Value>> {
     require_admin(&user)?;
-    let row: Option<(String, String)> = sqlx::query_as("SELECT url, secret FROM webhooks WHERE id = $1 AND workspace_id = $2")
+    let row: Option<(String, String, String)> = sqlx::query_as("SELECT url, secret, format FROM webhooks WHERE id = $1 AND workspace_id = $2")
         .bind(id)
         .bind(user.workspace_id)
         .fetch_optional(&state.db)
         .await?;
-    let (url, secret) = row.ok_or(ApiError::NotFound("webhook"))?;
+    let (url, secret, format) = row.ok_or(ApiError::NotFound("webhook"))?;
     let payload = json!({"event": "ping", "timestamp": chrono::Utc::now(), "webhookId": id, "deliveryId": new_id(), "data": {}});
-    let result = crate::webhooks::deliver(&state, &url, &secret, &payload).await;
+    let lang = crate::i18n::of_workspace(&state.db, user.workspace_id).await;
+    let result = crate::webhooks::deliver_as(&state, &url, &secret, &format, lang, &payload).await;
     sqlx::query("UPDATE webhooks SET last_status = $2, last_error = $3, last_sent_at = now() WHERE id = $1")
         .bind(id)
         .bind(result.as_ref().ok().map(|s| *s as i32))

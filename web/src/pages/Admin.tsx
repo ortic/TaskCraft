@@ -830,6 +830,33 @@ interface Hook {
   lastStatus: number | null
   lastError: string | null
   lastSentAt: string | null
+  /** json: the signed event; else a readable message for a chat channel */
+  format?: string
+}
+
+/** What a webhook sends: the signed event, or a chat channel's message. */
+const FORMATS: { id: string; label: () => string }[] = [
+  { id: 'json', label: () => t('JSON event (signed)') },
+  { id: 'slack', label: () => t('Chat message: Slack and compatible (Mattermost, …)') },
+  { id: 'teams', label: () => t('Chat message: Microsoft Teams') },
+  { id: 'google-chat', label: () => t('Chat message: Google Chat') },
+]
+const formatLabel = (f?: string) => FORMATS.find((x) => x.id === (f ?? 'json'))?.label() ?? f ?? ''
+
+function FormatSelect({ value, onChange }: { value: string; onChange: (f: string) => void }) {
+  return (
+    <div className="field">
+      <label htmlFor="adm-hook-format">{t('Sends')}</label>
+      <select id="adm-hook-format" className="select" value={value} onChange={(e) => onChange(e.target.value)} aria-describedby="adm-hook-format-hint">
+        {FORMATS.map((f) => <option key={f.id} value={f.id}>{f.label()}</option>)}
+      </select>
+      <span className="field-hint" id="adm-hook-format-hint">
+        {value === 'json'
+          ? t('The event as JSON, for your own services.')
+          : t('A readable message in the workspace’s language, for a channel’s incoming-webhook address. Nothing is posted about private issues or restricted comments.')}
+      </span>
+    </div>
+  )
 }
 
 const EVENT_LABELS: Record<string, () => string> = {
@@ -937,6 +964,7 @@ function WebhooksTab() {
                 <Switch checked={h.active} onChange={(on) => setActive(h, on)} label={h.active ? t('Active: switch off') : t('Paused: switch on')} />
                 <span className="adm-hook-url" title={h.url}>{h.url}</span>
                 <span className={`badge ${h.projectKey ? 'badge-accent' : ''}`}>{h.projectKey ? h.projectKey : t('All projects')}</span>
+                {h.format && h.format !== 'json' && <span className="badge" title={formatLabel(h.format)}>{t('Chat')}</span>}
                 {!h.active && <span className="badge badge-warning">{t('Paused')}</span>}
               </div>
               <div className="adm-hook-events">
@@ -999,6 +1027,7 @@ function AddWebhook({ events, onClose, onCreated }: { events: string[]; onClose:
   const [project, setProject] = useState('')
   const [chosen, setChosen] = useState<string[]>(['*'])
   const [secret, setSecret] = useState('')
+  const [format, setFormat] = useState('json')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [created, setCreated] = useState<string | null>(null)
@@ -1010,9 +1039,10 @@ function AddWebhook({ events, onClose, onCreated }: { events: string[]; onClose:
     setBusy(true)
     setErr('')
     try {
-      const r = await api.post<{ id: string; secret: string }>('/admin/webhooks', { url: url.trim(), events: chosen, projectKey: project || undefined, secret: secret || undefined })
+      const r = await api.post<{ id: string; secret: string }>('/admin/webhooks', { url: url.trim(), events: chosen, projectKey: project || undefined, secret: secret || undefined, format })
       onCreated()
-      setCreated(r.secret)
+      if (format === 'json') setCreated(r.secret)
+      else onClose()
     } catch (e) {
       setErr((e as Error).message)
     } finally {
@@ -1056,24 +1086,28 @@ function AddWebhook({ events, onClose, onCreated }: { events: string[]; onClose:
         <span className="field-label">{t('Events')}</span>
         <EventPicker events={events} value={chosen} onChange={setChosen} />
       </div>
-      <div className="field">
-        <label htmlFor="adm-hook-secret">{t('Secret (optional)')}</label>
-        <input id="adm-hook-secret" className="input" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={t('Leave empty to generate one')} autoComplete="off" spellCheck={false} />
-        <span className="field-hint">{t('Used to sign each delivery (X-TaskCraft-Signature: sha256=…).')}</span>
-      </div>
+      <FormatSelect value={format} onChange={setFormat} />
+      {format === 'json' && (
+        <div className="field">
+          <label htmlFor="adm-hook-secret">{t('Secret (optional)')}</label>
+          <input id="adm-hook-secret" className="input" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={t('Leave empty to generate one')} autoComplete="off" spellCheck={false} />
+          <span className="field-hint">{t('Used to sign each delivery (X-TaskCraft-Signature: sha256=…).')}</span>
+        </div>
+      )}
     </Modal>
   )
 }
 
 function EditWebhook({ hook, events, onClose, onSaved }: { hook: Hook; events: string[]; onClose: () => void; onSaved: () => void }) {
   const [chosen, setChosen] = useState<string[]>(allEvents(hook.events) ? ['*'] : hook.events)
+  const [format, setFormat] = useState(hook.format ?? 'json')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const save = async () => {
     if (!allEvents(chosen) && chosen.length === 0) return setErr(t('Pick at least one event.'))
     setBusy(true)
     try {
-      await api.patch(`/admin/webhooks/${hook.id}`, { events: chosen })
+      await api.patch(`/admin/webhooks/${hook.id}`, { events: chosen, format })
       onSaved()
       onClose()
     } catch (e) {
@@ -1084,7 +1118,7 @@ function EditWebhook({ hook, events, onClose, onSaved }: { hook: Hook; events: s
   }
   return (
     <Modal
-      title={t('Webhook events')}
+      title={t('Edit webhook')}
       onClose={onClose}
       width={540}
       footer={
@@ -1097,6 +1131,7 @@ function EditWebhook({ hook, events, onClose, onSaved }: { hook: Hook; events: s
     >
       <p className="small muted adm-ellipsis" title={hook.url}>{hook.url}</p>
       <EventPicker events={events} value={chosen} onChange={setChosen} />
+      <FormatSelect value={format} onChange={setFormat} />
     </Modal>
   )
 }

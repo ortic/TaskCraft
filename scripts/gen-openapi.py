@@ -1104,7 +1104,7 @@ schemas["AutomationTrigger"] = obj(
 )
 schemas["AutomationAction"] = obj(
     {
-        "action": enum("setStatus", "assign", "setPriority", "addLabel", "removeLabel", "setSprint", "comment", "notify"),
+        "action": enum("setStatus", "assign", "setPriority", "addLabel", "removeLabel", "setSprint", "comment", "notify", "chat"),
         "statusId": d(uuid, "setStatus"),
         "to": d(
             txt,
@@ -1115,7 +1115,9 @@ schemas["AutomationAction"] = obj(
         "label": d(txt, "addLabel / removeLabel"),
         "sprint": d(txt, "setSprint: active = the running sprint, anything else = the backlog"),
         "text": d(txt, "comment: Markdown"),
-        "message": d(txt, "notify: up to 300 characters"),
+        "message": d(txt, "notify: up to 300 characters; chat: the message, with {key}, {title}, {status}, {assignee}, {priority}, {project} and {url} filled in (default `{key} {title}`)"),
+        "url": d(uri, "chat: the channel's incoming-webhook address"),
+        "format": d(enum("slack", "teams", "google-chat"), "chat: the chat service (default slack); nothing is posted about private issues"),
     },
     ["action"],
     "Something a rule does. Rules act as Automation (no person); their changes may trigger other rules, up to three rounds deep.",
@@ -2656,6 +2658,11 @@ schemas["RequestSubmission"] = obj(
     ["stamp", "summary"],
     "A request form submission.",
 )
+D_HOOK_FORMAT = d(
+    enum("json", "slack", "teams", "google-chat"),
+    "json (default): the signed event (WebhookEvent); slack (also Mattermost and other Slack-compatible incoming webhooks), teams (an adaptive card) or google-chat: "
+    "a readable message in the workspace's language for a chat channel's incoming-webhook address — nothing about private issues or restricted comments",
+)
 schemas["Webhook"] = obj(
     {
         "id": uuid,
@@ -2667,6 +2674,7 @@ schemas["Webhook"] = obj(
         "lastStatus": null(num, "HTTP status of the last delivery"),
         "lastError": ntxt(),
         "lastSentAt": ndt(),
+        "format": D_HOOK_FORMAT,
     },
     ["id", "url", "events", "active"],
     "An outgoing webhook (the secret is shown only when it's created).",
@@ -3044,15 +3052,16 @@ op("post", "/admin/webhooks", "createWebhook", "Webhooks", "Add a webhook (the a
        "events": arr(txt, "event names, or `*`"),
        "projectKey": d(txt, "only this project's events"),
        "secret": d(txt, "the signing secret (at least 8 characters; default: generated)"),
+       "format": D_HOOK_FORMAT,
    }, ["url"])),
    res=created(obj({"id": uuid, "secret": d(txt, "signs the deliveries (X-TaskCraft-Signature)")}, ["id", "secret"])))
-op("patch", "/admin/webhooks/{id}", "updateWebhook", "Webhooks", "Turn a webhook on or off, or change its events",
+op("patch", "/admin/webhooks/{id}", "updateWebhook", "Webhooks", "Turn a webhook on or off, or change its events or format",
    desc="Workspace admins. Only the fields sent change.", pp={"id": (uuid, "webhook id")},
-   req=body(obj({"active": boolean, "events": arr(txt, "replaces the events (unknown ones are dropped; empty or `*`: all)")})), res=NO, err="-404")
+   req=body(obj({"active": boolean, "events": arr(txt, "replaces the events (unknown ones are dropped; empty or `*`: all)"), "format": D_HOOK_FORMAT})), res=NO, err="-404")
 op("delete", "/admin/webhooks/{id}", "deleteWebhook", "Webhooks", "Delete a webhook",
    desc="Workspace admins.", pp={"id": (uuid, "webhook id")}, res=NO, err="-404")
 op("post", "/admin/webhooks/{id}/test", "testWebhook", "Webhooks", "Send a ping delivery now and report how it went",
-   desc="Workspace admins. Delivers a `ping` event (signed like any delivery) right away, without retries.", pp={"id": (uuid, "webhook id")},
+   desc="Workspace admins. Delivers a `ping` event (signed like any delivery; chat formats get a short message) right away, without retries.", pp={"id": (uuid, "webhook id")},
    res=ok(one(
        obj({"ok": d(boolean, "true"), "status": d(num, "the target's HTTP status")}, ["ok", "status"]),
        obj({"ok": d(boolean, "false"), "error": d(txt, "what went wrong (HTTP status, connection, private address, …)")}, ["ok", "error"]),
