@@ -1,10 +1,10 @@
 // TQL input with autocompletion (fields, operators, values) and live validation.
-import { t } from '../i18n'
+import { locale, t } from '../i18n'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Search, CircleQuestionMark } from 'lucide-react'
+import { Search, CircleQuestionMark, Sparkles } from 'lucide-react'
 import { api } from '../api'
-import { PopButton } from '../ui'
+import { PopButton, useMe } from '../ui'
 
 const OPERATORS = ['=', '!=', '~', 'in', 'not in', '>', '>=', '<', '<=', 'is empty', 'is not empty']
 
@@ -31,7 +31,9 @@ function context(text: string): { kind: 'field' | 'op' | 'value'; field?: string
   return { kind: 'field', prefix, start }
 }
 
-export default function QueryBar({ value, onChange, placeholder }: { value: string; onChange: (q: string) => void; placeholder?: string }) {
+export default function QueryBar({ value, onChange, placeholder, project }: { value: string; onChange: (q: string) => void; placeholder?: string; project?: string }) {
+  const ai = !!useMe().data?.workspace?.ai
+  const [explained, setExplained] = useState<string | null>(null)
   const [text, setText] = useState(value)
   const [focus, setFocus] = useState(false)
   const [sel, setSel] = useState(0)
@@ -117,12 +119,64 @@ export default function QueryBar({ value, onChange, placeholder }: { value: stri
           )}
         </div>
         <button className="btn" onClick={() => onChange(text)}>{t('Search')}</button>
+        {ai && (
+          <PopButton className="icon-btn" title={t('Ask in plain words')} label={<Sparkles size={16} />} align="end" width={380}>
+            {(close) => (
+              <AskForm
+                project={project}
+                onQuery={(tql, explanation) => {
+                  close()
+                  setText(tql)
+                  setExplained(explanation)
+                  onChange(tql)
+                }}
+              />
+            )}
+          </PopButton>
+        )}
         <PopButton className="icon-btn" title={t('Query help')} label={<CircleQuestionMark size={16} />} align="end" width={420}>
           {() => <TqlHelp />}
         </PopButton>
       </div>
       {invalid && <div className="query-error">{valid.data?.message}</div>}
+      {explained && !invalid && text && (
+        <div className="query-explained faint small">
+          <Sparkles size={12} aria-hidden /> {explained}{' '}
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setExplained(null)}>{t('Hide')}</button>
+        </div>
+      )}
     </div>
+  )
+}
+
+/** A question in plain words, turned into TQL by the workspace's AI. */
+function AskForm({ project, onQuery }: { project?: string; onQuery: (tql: string, explanation: string) => void }) {
+  const [question, setQuestion] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const ask = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setErr('')
+    try {
+      const r = await api.post<{ tql: string; explanation: string }>('/ai/tql', { question, project, lang: locale() })
+      onQuery(r.tql, r.explanation)
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <form onSubmit={ask} style={{ padding: 10, display: 'grid', gap: 8 }}>
+      <label htmlFor="ask-question" className="field-label">{t('What are you looking for?')}</label>
+      <input id="ask-question" className="input" autoFocus maxLength={500} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder={t('e.g. bugs about payments nobody has touched for two weeks')} />
+      {err && <span className="error-text small" role="alert">{err}</span>}
+      <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
+        <span className="faint small">{t('AI writes the TQL query; it stays in the search field to check and change.')}</span>
+        <button className="btn btn-primary btn-sm" disabled={busy || !question.trim()}>{busy ? t('Thinking…') : t('Find')}</button>
+      </div>
+    </form>
   )
 }
 

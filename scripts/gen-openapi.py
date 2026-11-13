@@ -623,7 +623,8 @@ schemas["Me"] = obj(
                     "dateFormat": null(enum("dmy", "mdy", "ymd"), "how dates are written (null: as the language writes them)"),
                     "announcement": null(obj({"id": uuid, "text": txt, "tone": enum("info", "warning"), "until": null(dt, "shown until"), "at": dt}, ["id", "text", "tone"]),
                                          "the announcement for everyone while it's current"),
-                    "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean}), "parts of TaskCraft that are on"),
+                    "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean}), "parts of TaskCraft that are on"),
+                    "ai": d(boolean, "AI assistance can be used (the server has a key and the workspace hasn't turned it off)"),
                     "logo": null(txt, "the logo's address (/api/workspace/logo?v=…); null: TaskCraft's mark"),
                 },
                 ["id", "name"],
@@ -1475,6 +1476,18 @@ op("get", "/projects/{key}/export", "exportProject", "Projects", "Export a proje
    "(the project, its workflow, types, fields, sprints, releases, components and issues with their history, comments, time logs, watchers and links between them) "
    "and the files as files/<attachment id>; another TaskCraft imports it with POST /admin/backup-imports. People are matched by e-mail address there. Not the trash.",
    auth="session", res=raw("application/zip", "KEY-yyyy-mm-dd.taskcraft.zip (attachment)"))
+op("get", "/issues/similar", "similarIssues", "Issues", "Issues with a similar title or description",
+   desc="For the create dialog: maybe it's there already. Found in the database (no AI); at least two words of three letters or more; private issues only for those who see them.",
+   query=[q("q", "the title (and words) being written", required=True), q("project", "a project key (else every project you see)"), q("exclude", "an issue key to leave out")],
+   res=ok(arr(S("Issue"))))
+op("post", "/issues/{key}/summary", "summarizeIssue", "Issues", "Summarize an issue's thread with AI",
+   desc="When the server has an Anthropic API key and the workspace uses AI (400 otherwise). Only the description and the comments the caller may read are sent. "
+   "A fair share per person and hour (429).", query=[q("lang", "the summary's language (en, de, …)")],
+   res=ok(obj({"markdown": txt, "doc": d(anyval, "the summary as a document"), "comments": d(num, "comments it read")}, ["markdown", "doc", "comments"])), err="429")
+op("post", "/ai/tql", "askTql", "Search & TQL", "A question in plain words as a TQL query",
+   desc="AI writes the query (checked, with one retry); run it with /search. Only the question and the names of projects, statuses, types, fields and labels are sent.",
+   req=body(obj({"question": d(txt, "up to 500 characters"), "project": d(txt, "a project key: the question is about it"), "lang": d(txt, "the explanation's language")}, ["question"])),
+   res=ok(obj({"tql": txt, "explanation": txt}, ["tql", "explanation"])), err="429")
 op("get", "/projects/{key}/trash", "listTrash", "Issues", "Deleted issues of a project (the trash)",
    desc="Project members; the latest 200, last deleted first.", res=ok(arr(S("TrashedIssue"))))
 op("get", "/my-work", "getMyWork", "Issues", "The caller's work: assigned, reported, done this week, watching, recently viewed",
@@ -3129,7 +3142,7 @@ op("put", "/admin/workspace", "updateWorkspace", "Administration", "Rename the w
        "dateFormat": null(enum("auto", "dmy", "mdy", "ymd"), "how dates are written (auto or null: as the language writes them)"),
        "announcement": null(obj({"text": d(txt, "up to 500 characters (empty: taken down)"), "tone": enum("info", "warning"), "until": null(dt, "shown until (null: until taken down)")}, ["text"]),
                             "a message at the top of every page (null: taken down)"),
-       "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean}),
+       "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean}),
                      "false turns a part off: it's hidden and the API refuses it (400; the portal answers 404); left out: on"),
        "uploads": obj(
            {

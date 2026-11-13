@@ -166,6 +166,9 @@ pub fn api() -> Router<AppState> {
         .route("/attachments/{id}", get(attachments::download).delete(attachments::delete))
         // search, views, activity, notifications
         .route("/search", get(issues::search))
+        .route("/issues/similar", get(crate::ai::similar))
+        .route("/issues/{key}/summary", post(crate::ai::summary))
+        .route("/ai/tql", post(crate::ai::tql))
         .route("/search.csv", get(issues::search_csv))
         .route("/search.xlsx", get(issues::search_xlsx))
         .route("/search/groups", get(dashboards::groups))

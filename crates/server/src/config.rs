@@ -55,6 +55,23 @@ pub struct Config {
     #[arg(long, env = "TASKCRAFT_CLAMAV_ADDRESS")]
     pub clamav_address: Option<String>,
 
+    /// AI assistance (thread summaries, searching in plain words) through Claude: the Anthropic
+    /// API key (also read from `ANTHROPIC_API_KEY`). Without one, nothing is sent anywhere.
+    #[arg(long, env = "TASKCRAFT_ANTHROPIC_API_KEY", hide_env_values = true)]
+    pub anthropic_api_key: Option<String>,
+
+    /// The Anthropic API's address (a gateway in between, for example).
+    #[arg(long, env = "TASKCRAFT_ANTHROPIC_BASE_URL", default_value = "https://api.anthropic.com")]
+    pub anthropic_base_url: String,
+
+    /// The Claude model for AI assistance.
+    #[arg(long, env = "TASKCRAFT_AI_MODEL", default_value = "claude-opus-5-5")]
+    pub ai_model: String,
+
+    /// AI requests per person and hour.
+    #[arg(long, env = "TASKCRAFT_AI_PER_HOUR", default_value_t = 60)]
+    pub ai_per_hour: i64,
+
     /// Store files when the scanner can't be reached (default: refuse them).
     #[arg(long, env = "TASKCRAFT_CLAMAV_FAIL_OPEN", default_value_t = false)]
     pub clamav_fail_open: bool,

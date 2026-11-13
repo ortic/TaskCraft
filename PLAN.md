@@ -69,7 +69,7 @@
 - [x] Project export that imports into another TaskCraft (one project with its history and files), next to the whole-workspace backup
 - [x] Workspace settings: logo, default time zone and date format, an announcement banner, feature switches; profile photos
 - [x] Public read-only projects and share links (expiry, password) for roadmaps and status pages
-- [ ] AI (optional, with your own model): similar issues and duplicates while typing, summaries of long threads, semantic search
+- [x] AI (optional, with your own model): similar issues and duplicates while typing, summaries of long threads, semantic search
 - [x] Guides in `docs/`: user guide, admin guide, migrating from another tracker, translating
 
 ## Next (round 4): what established trackers have and TaskCraft doesn't

@@ -30,7 +30,8 @@ projects, saved filters and actions — "create issue", "go to board", "toggle d
 `WEB-12` jumps straight to that issue.
 
 **Create** (or the `c` key) opens a new issue in the project you're in. The dialog asks only for
-what the project requires; the rest can be filled in later.
+what the project requires; the rest can be filled in later. While you type the title, issues with
+a similar title or description show below it — maybe it's there already.
 
 ## Issues
 
@@ -100,6 +101,11 @@ assignee reporter creator labels sprint version affects component parent points 
 created updated resolved due start watcher votes blocked` and custom fields by name; operators
 `= != ~ !~ > >= < <= in, not in, is empty`; dates like `2026-11-01`, `-7d`, `+2w`, `today()`,
 `startOfWeek()`, `endOfMonth()`. The **?** next to the field shows more examples.
+
+When the workspace uses AI, **✨ Ask in plain words** next to the search turns a question — *bugs
+about payments nobody has touched for two weeks* — into a TQL query; it stays in the field to check
+and change. On issues with a longer discussion, **Summarize the thread** writes a short summary
+(what it's about, decisions, open questions, next steps) from the comments you can read.
 
 **Save** a query as a filter (just for you or shared with everyone), star it to keep it in the
 sidebar, and **subscribe** to it to get its results by e-mail daily, on weekdays, weekly or

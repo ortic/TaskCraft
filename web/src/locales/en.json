@@ -203,6 +203,10 @@
     "one": "Sprint completed; {n} issue moved",
     "other": "Sprint completed; {n} issues moved"
   },
+  "Summary of {count} comments": {
+    "one": "Summary of {count} comment",
+    "other": "Summary of {count} comments"
+  },
   "Team · {count} people": {
     "one": "Team · {count} person",
     "other": "Team · {count} people"

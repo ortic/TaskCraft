@@ -4,6 +4,13 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 `v*` tag, which publishes the container image and the Linux binaries (see
 `.github/workflows/release.yml`).
 
+## [Unreleased]
+
+- **AI assistance** (optional, with your own Anthropic API key): summaries of long issue threads
+  from what the reader may see, and searching in plain words (a question becomes a TQL query);
+  similar issues while typing a new one (no AI needed).
+- Checklist boxes in texts are 24 px targets.
+
 ## [0.1.0] - 2026-11-13
 
 The first release.

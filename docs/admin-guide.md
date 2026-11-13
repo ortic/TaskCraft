@@ -41,7 +41,7 @@ projects if you like). Then *Administration → Overview*:
   as information or a warning, until a date or until you take it down. People can close it; a new
   one shows again.
 - **Features**: turn off what the workspace doesn't use — time tracking, votes, the service desk
-  portal, automation, sharing with links. They disappear for everyone and the API refuses them;
+  portal, automation, sharing with links, AI assistance. They disappear for everyone and the API refuses them;
   turning one on again brings everything back as it was.
 - **Uploads**: blocked file endings (`exe, bat, cmd, …`) and a size limit. With a virus scanner set
   up on the server every file is checked before it's stored; the card says whether one is.
@@ -130,6 +130,10 @@ reports can then include the whole tree.
   from issues, sprints and releases — see [WikiCraft integration](../README.md#wikicraft-integration).
 - **AI assistants** through the built-in MCP server, with each person's own permissions — see
   [AI assistants (MCP)](../README.md#ai-assistants-mcp).
+- **AI assistance**: with `TASKCRAFT_ANTHROPIC_API_KEY` on the server, people can summarize long
+  threads and search in plain words through Claude. Only what the person asking may read is sent,
+  and only when they ask; each person gets `TASKCRAFT_AI_PER_HOUR` requests an hour. Turn it off
+  for the workspace under *Features*.
 - **The REST API** with personal tokens, described in OpenAPI at `/api/openapi.yaml` and in the
   app's API reference.
 

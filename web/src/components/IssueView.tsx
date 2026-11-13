@@ -1,12 +1,12 @@
 // An issue in full: title, description, children, links, wiki pages, files, comments, history,
 // time logs, and every field on the side. Used in the side panel and on /issues/:key.
-import { t } from '../i18n'
+import { locale, t } from '../i18n'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Link2, Paperclip, Eye, EyeOff, Ellipsis, Heart, FolderInput, Pencil, Copy, Trash, ExternalLink, Plus, X, Ban, BookOpen, Clock, CornerDownRight, MessageSquare, Activity, Timer, FileText, Check,
-  Mail, MailCheck, LifeBuoy, ClipboardList, Lock, ThumbsUp, Printer,
+  Mail, MailCheck, LifeBuoy, ClipboardList, Lock, ThumbsUp, Printer, Sparkles,
 } from 'lucide-react'
 import {
   api, ago, dateTime, duration, may, shortDate, type Comment, type HistoryEvent, type Issue, type IssueDetail, type Named, type Project, type TimeCategory, type WikiPage, type Worklog,
@@ -80,6 +80,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
   const [tab, setTab] = useState<'comments' | 'history' | 'work'>('comments')
   const timeTracking = useFeature('timeTracking')
   const votes = useFeature('votes')
+  const ai = !!me?.workspace?.ai
   const fileRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const upload = async (files: FileList | File[]) => {
@@ -250,6 +251,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
               ...(timeTracking ? [{ id: 'work' as const, label: <span className="row" style={{ gap: 6 }}><Timer size={14} />{t('Time [[tracking]]')}</span> }] : []),
             ]}
           />
+          {tab === 'comments' && ai && issue.commentCount >= 3 && <ThreadSummary key={issue.key} issueKey={issue.key} />}
           {tab === 'comments' && <Comments issue={issue} meId={me?.user?.id} />}
           {tab === 'history' && <History issueKey={issue.key} />}
           {tab === 'work' && timeTracking && <WorkLog issue={issue} project={project} />}
@@ -1424,5 +1426,41 @@ function MoveDialog({ issue, inPanel, onClose }: { issue: IssueDetail; inPanel: 
       )}
       {preview.error && <p className="error-text">{(preview.error as Error).message}</p>}
     </Modal>
+  )
+}
+
+/** A summary of a long thread by the workspace's AI, from what this person may read. */
+function ThreadSummary({ issueKey }: { issueKey: string }) {
+  const [state, setState] = useState<{ doc: unknown; comments: number } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const run = async () => {
+    setBusy(true)
+    setErr('')
+    try {
+      setState(await api.post<{ doc: unknown; comments: number }>(`/issues/${issueKey}/summary?lang=${encodeURIComponent(locale())}`))
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (!state) {
+    return (
+      <div className="ai-summary-bar">
+        <button className="btn btn-sm" onClick={run} disabled={busy}><Sparkles size={14} /> {busy ? t('Summarizing…') : t('Summarize the thread')}</button>
+        {err && <span className="error-text small" role="alert">{err}</span>}
+      </div>
+    )
+  }
+  return (
+    <section className="ai-summary" aria-label={t('Summary of the thread')}>
+      <div className="ai-summary-head">
+        <span className="ai-summary-title"><Sparkles size={14} aria-hidden /> {t('Summary of {count} comments', { count: state.comments })}</span>
+        <button className="icon-btn" onClick={() => setState(null)} aria-label={t('Close the summary')} title={t('Close')}><X size={14} /></button>
+      </div>
+      <div className="ai-summary-body"><RichView doc={state.doc} label={t('Summary of the thread')} /></div>
+      <p className="faint small">{t('Written by AI from the comments you can read; check the thread for details.')}</p>
+    </section>
   )
 }

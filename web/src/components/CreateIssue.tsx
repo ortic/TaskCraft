@@ -2,7 +2,7 @@ import { t } from '../i18n'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Issue, type Priority } from '../api'
-import { Modal, useProject, useProjects, useToast } from '../ui'
+import { Lozenge, Modal, useProject, useProjects, useToast } from '../ui'
 import { TypeIcon } from '../icons'
 import { RichText, EMPTY_DOC, isEmptyDoc } from './Editor'
 import { DateValue, LabelsEditor, ParentPicker, PersonPicker, PriorityPicker, SecurityPicker } from './fields'
@@ -231,6 +231,7 @@ export default function CreateIssue({ defaults, onClose, onCreated }: { defaults
             }
           }}
         />
+        <SimilarIssues project={projectKey} title={title} />
       </div>
       <div className="field">
         <span className="field-label">{t('Description')}</span>
@@ -309,4 +310,37 @@ function AssigneeName({ assignee, setAssignee }: { assignee: { id: string; name:
     }
   }, [assignee, people, setAssignee])
   return null
+}
+
+/** Issues with a similar title or description while one is being written: maybe it's there already. */
+function SimilarIssues({ project, title }: { project?: string; title: string }) {
+  const [q, setQ] = useState('')
+  useEffect(() => {
+    const id = setTimeout(() => setQ(title.trim()), 450)
+    return () => clearTimeout(id)
+  }, [title])
+  const enough = q.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3).length >= 2
+  const found = useQuery({
+    queryKey: ['similar', project, q],
+    queryFn: () => api.get<Issue[]>(`/issues/similar?q=${encodeURIComponent(q)}${project ? `&project=${encodeURIComponent(project)}` : ''}`),
+    enabled: enough,
+    staleTime: 60_000,
+  })
+  const list = enough ? (found.data ?? []) : []
+  if (list.length === 0) return null
+  return (
+    <div className="ci-similar" role="status">
+      <span className="faint small">{t('Maybe it’s there already:')}</span>
+      <ul>
+        {list.map((i) => (
+          <li key={i.id}>
+            <a href={`/issues/${i.key}`} target="_blank" rel="noopener noreferrer">
+              <span className="ci-similar-key">{i.key}</span> {i.title}
+            </a>
+            <Lozenge name={i.status.name} category={i.status.category} color={i.status.color} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }

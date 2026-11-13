@@ -194,6 +194,7 @@ pub async fn me(
             "timeZone": settings["timeZone"], "dateFormat": settings["dateFormat"],
             "announcement": crate::features::announcement(&settings),
             "features": crate::features::all(&settings),
+            "ai": crate::ai::available(&state, user.workspace_id).await,
             "logo": crate::features::logo_url(&settings),
             "virusScanning": user.is_admin() && state.config.clamav_address.as_deref().is_some_and(|a| !a.is_empty()),
             "maxUploadMb": state.config.max_upload_mb,

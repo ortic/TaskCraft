@@ -7044,6 +7044,140 @@
     }
    }
   },
+  "/issues/similar": {
+   "get": {
+    "tags": [
+     "Issues"
+    ],
+    "summary": "Issues with a similar title or description",
+    "operationId": "similarIssues",
+    "description": "For the create dialog: maybe it's there already. Found in the database (no AI); at least two words of three letters or more; private issues only for those who see them.",
+    "parameters": [
+     {
+      "name": "q",
+      "in": "query",
+      "required": true,
+      "description": "the title (and words) being written",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "project",
+      "in": "query",
+      "required": false,
+      "description": "a project key (else every project you see)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "exclude",
+      "in": "query",
+      "required": false,
+      "description": "an issue key to leave out",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/Issue"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/issues/{key}/summary": {
+   "post": {
+    "tags": [
+     "Issues"
+    ],
+    "summary": "Summarize an issue's thread with AI",
+    "operationId": "summarizeIssue",
+    "description": "When the server has an Anthropic API key and the workspace uses AI (400 otherwise). Only the description and the comments the caller may read are sent. A fair share per person and hour (429).",
+    "parameters": [
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "issue key (e.g. WEB-12; former keys keep working) or issue id",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "lang",
+      "in": "query",
+      "required": false,
+      "description": "the summary's language (en, de, …)",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "markdown": {
+           "type": "string"
+          },
+          "doc": {
+           "description": "the summary as a document"
+          },
+          "comments": {
+           "type": "integer",
+           "description": "comments it read"
+          }
+         },
+         "required": [
+          "markdown",
+          "doc",
+          "comments"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "429": {
+      "$ref": "#/components/responses/TooMany"
+     }
+    }
+   }
+  },
   "/projects/{key}/trash": {
    "get": {
     "tags": [
@@ -8473,6 +8607,79 @@
      },
      "404": {
       "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/ai/tql": {
+   "post": {
+    "tags": [
+     "Search & TQL"
+    ],
+    "summary": "A question in plain words as a TQL query",
+    "operationId": "askTql",
+    "description": "AI writes the query (checked, with one retry); run it with /search. Only the question and the names of projects, statuses, types, fields and labels are sent.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "question": {
+          "type": "string",
+          "description": "up to 500 characters"
+         },
+         "project": {
+          "type": "string",
+          "description": "a project key: the question is about it"
+         },
+         "lang": {
+          "type": "string",
+          "description": "the explanation's language"
+         }
+        },
+        "required": [
+         "question"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "tql": {
+           "type": "string"
+          },
+          "explanation": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "tql",
+          "explanation"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "429": {
+      "$ref": "#/components/responses/TooMany"
      }
     }
    }
@@ -13750,6 +13957,9 @@
            },
            "sharing": {
             "type": "boolean"
+           },
+           "ai": {
+            "type": "boolean"
            }
           },
           "description": "false turns a part off: it's hidden and the API refuses it (400; the portal answers 404); left out: on"
@@ -17307,9 +17517,16 @@
          },
          "sharing": {
           "type": "boolean"
+         },
+         "ai": {
+          "type": "boolean"
          }
         },
         "description": "parts of TaskCraft that are on"
+       },
+       "ai": {
+        "type": "boolean",
+        "description": "AI assistance can be used (the server has a key and the workspace hasn't turned it off)"
        },
        "logo": {
         "type": [

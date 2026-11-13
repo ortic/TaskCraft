@@ -148,6 +148,13 @@ small JSON format) appear on the issues whose keys they mention, with state badg
 its cards; rules move issues when a branch is pushed or a pull request is merged; a branch name
 helper on every issue. See [Git integration](#git-integration).
 
+**AI assistance** (optional): *Summarize the thread* on issues with longer discussions, and
+*Ask in plain words* next to every search (a question becomes a TQL query you see and can change),
+through Claude with your own Anthropic API key (`TASKCRAFT_ANTHROPIC_API_KEY`). Only what the person
+asking may read is sent, and only when they ask; without a key nothing leaves the server, and a
+workspace can turn it off. **Similar issues** show while someone types a new issue's title — found in
+the database, no AI needed.
+
 **AI assistants**: a built-in [MCP](https://modelcontextprotocol.io) server — Claude & co. search
 (TQL), read, create and update issues, comment, log time and read sprints, boards and reports with
 the user's permissions. See [AI assistants (MCP)](#ai-assistants-mcp).
@@ -589,6 +596,10 @@ set it under `images:` in `kustomization.yaml`.
 | `TASKCRAFT_MAX_UPLOAD_MB` | `256` | largest attachment |
 | `TASKCRAFT_CLAMAV_ADDRESS` | — | scan uploads with ClamAV: clamd's TCP address (`clamav:3310`) |
 | `TASKCRAFT_CLAMAV_FAIL_OPEN` | `false` | `true` stores files when the scanner can't be reached (default: they're refused) |
+| `TASKCRAFT_ANTHROPIC_API_KEY` | — | turns on AI assistance (thread summaries, searching in plain words) through Claude; also read from `ANTHROPIC_API_KEY` |
+| `TASKCRAFT_AI_MODEL` | `claude-opus-5-5` | the Claude model; refusals fall back to another model on the server's side where the model supports it |
+| `TASKCRAFT_ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | the Anthropic API's address (a gateway in between) |
+| `TASKCRAFT_AI_PER_HOUR` | `60` | AI requests per person and hour |
 | `TASKCRAFT_SECURE_COOKIES` | `false` | `true` behind HTTPS (an `https://` base URL also enables HSTS) |
 | `TASKCRAFT_SESSION_DAYS` | `30` | session lifetime |
 | `TASKCRAFT_SESSION_IDLE_MINUTES` | `0` | sign people out after this many minutes without a request (`0`: never; at least 10) |

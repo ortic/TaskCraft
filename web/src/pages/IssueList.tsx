@@ -112,7 +112,7 @@ export default function IssueList() {
         <span className="faint small">{result.data ? t('{count} issues', { count: result.data.total }) : ''}</span>
       </div>
       <div className="toolbar no-print">
-        <QueryBar value={query} onChange={setQuery} />
+        <QueryBar value={query} onChange={setQuery} project={key} />
       </div>
       <div className="toolbar no-print">
         <QuickFilters query={query} setQuery={setQuery} project={project.data} />

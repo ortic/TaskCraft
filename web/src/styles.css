@@ -397,8 +397,12 @@ table.list tr:hover td { background: var(--bg-soft); }
 .ProseMirror ul, .ProseMirror ol { padding-inline-start: 1.4em; margin: .3em 0; }
 .ProseMirror ul[data-type='taskList'] { list-style: none; padding-inline-start: .2em; }
 .ProseMirror ul[data-type='taskList'] li { display: flex; gap: 8px; align-items: flex-start; }
-.ProseMirror ul[data-type='taskList'] li > label { margin-top: 0; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; }
-.ProseMirror ul[data-type='taskList'] li > label input { width: 16px; height: 16px; margin: 0; cursor: pointer; accent-color: var(--accent); }
+.ProseMirror ul[data-type='taskList'] li > label { margin-top: 0; position: relative; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex: none; }
+/* the checkbox is the whole 24 px target (WCAG 2.5.8); the box people see is drawn on the label */
+.ProseMirror ul[data-type='taskList'] li > label input { position: absolute; inset: 0; width: 24px; height: 24px; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
+.ProseMirror ul[data-type='taskList'] li > label::before { content: ''; width: 16px; height: 16px; box-sizing: border-box; border: 1.5px solid var(--border-strong); border-radius: 4px; background: var(--bg); }
+.ProseMirror ul[data-type='taskList'] li[data-checked='true'] > label::before { background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px no-repeat; border-color: var(--accent); }
+.ProseMirror ul[data-type='taskList'] li > label:has(input:focus-visible)::before { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ProseMirror ul[data-type='taskList'] li > div { flex: 1; }
 .ProseMirror blockquote { border-inline-start: 3px solid var(--border-strong); margin: .6em 0; padding: 2px 0 2px 12px; color: var(--text-soft); }
 .ProseMirror code { background: var(--bg-hover); border-radius: 4px; padding: .1em .35em; font-size: .88em; }
@@ -582,3 +586,17 @@ body.print-view .issue-side { border: 0; background: none; padding: 0 28px; }
   .page-wide, .page { padding: 0 !important; max-width: none !important; }
   table.list input[type='checkbox'] { display: none; }
 }
+
+/* AI: a thread's summary, plain-words search, similar issues while creating */
+.ai-summary-bar { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; }
+.ai-summary { margin: 12px 0 6px; padding: 10px 14px 6px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); border-radius: 10px; background: color-mix(in srgb, var(--accent) 5%, var(--bg)); }
+.ai-summary-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ai-summary-title { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; color: var(--accent-text); }
+.ai-summary-body .ProseMirror { padding: 0; min-height: 0; }
+.ai-summary > p { margin: 4px 0 6px; }
+.query-explained { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.ci-similar { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg-soft); border: 1px solid var(--border); }
+.ci-similar ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; }
+.ci-similar li { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13.5px; }
+.ci-similar a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.ci-similar-key { font-family: var(--mono); font-size: 12px; color: var(--text-soft); }
