@@ -18,7 +18,8 @@ The first release.
   flag, a weekly timesheet and a time report with CSV export.
 - **Views**: board with WIP limits and swimlanes, backlog with sprints and a velocity hint, list
   with TQL, timeline, calendar, timesheet, dashboards, portfolio, your work, command palette;
-  saved filters with e-mailed subscriptions; Excel and CSV export; a print view.
+  saved filters with e-mailed subscriptions; Excel and CSV export; a print view. Search
+  understands word forms in the workspace's language and finds the text inside files.
 - **Reports** replayed from history: burndown, velocity, cumulative flow, cycle and lead time,
   created vs resolved, workload.
 - **Automation** on events and schedules; service-level goals with a queue and alerts; signed

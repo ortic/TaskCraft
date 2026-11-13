@@ -162,6 +162,17 @@ async fn seed_project(app: &TestApp, workspace: Uuid, project: Uuid, count: i64,
     .execute(db)
     .await
     .unwrap();
+    // a file on every twentieth issue, its text already read
+    sqlx::query(
+        "INSERT INTO attachments (id, issue_id, name, mime, size, storage_key, created_at, text_content, search_lang)
+         SELECT gen_random_uuid(), id, 'notes-' || number || '.txt', 'text/plain', 2000, 'attachments/none/' || id, created_at,
+                repeat(description_text || ' ', 4), 'english'
+           FROM issues WHERE project_id = $1 AND number % 20 = 0",
+    )
+    .bind(project)
+    .execute(db)
+    .await
+    .unwrap();
     sqlx::query(
         "INSERT INTO worklogs (id, issue_id, user_id, minutes, work_date, created_at)
          SELECT gen_random_uuid(), id, assignee_id, 30 + number % 240, (created_at + interval '1 day')::date, created_at + interval '1 day'

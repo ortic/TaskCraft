@@ -62,8 +62,14 @@ type = Bug and priority >= high and created > -14d
 due < endOfWeek() and category != done
 labels is empty or assignee is empty
 "Customer tier" = Gold                      (custom fields by name)
-login timeout                               (bare words search titles and descriptions)
+login timeout                               (bare words search titles, descriptions and files)
 ```
+
+Words are matched as they start (`log` finds `login`) and by their stem in the workspace's
+language (`invoices` finds `invoice`, `Häuser` finds `Haus`; English, German, French or Italian,
+following *Administration → Default language*). Bare words and `text ~` also search the names of
+files on issues and the text inside them: PDFs, Word, Excel and PowerPoint files, OpenDocument
+files, HTML and plain text (the first 100 000 characters, read in the background after an upload).
 
 Fields: `project key title text description comment type status category priority assignee
 reporter creator labels sprint version affects component parent/epic points estimate spent created

@@ -31,6 +31,8 @@ pub struct Ctx {
     pub visible: Vec<Uuid>,
     pub now: DateTime<Utc>,
     pub custom: HashMap<String, FieldDef>,
+    /// The text search configuration of the workspace's language (`english`, `german`, …).
+    pub lang: String,
 }
 
 pub const PRIORITIES: [&str; 5] = ["none", "low", "medium", "high", "urgent"];
@@ -99,7 +101,8 @@ pub async fn context_with(state: &AppState, workspace: Uuid, user: Uuid, visible
             }
         }
     }
-    Ok(Ctx { user, workspace, visible, now: Utc::now(), custom })
+    let lang: String = sqlx::query_scalar("SELECT tc_search_lang($1)::text").bind(workspace).fetch_one(&state.db).await?;
+    Ok(Ctx { user, workspace, visible, now: Utc::now(), custom, lang })
 }
 
 const BUILTIN: &[&str] = &[
@@ -217,7 +220,7 @@ fn expr(qb: &mut Qb, ctx: &Ctx, e: &Expr, positive: bool) -> ApiResult<()> {
         }
         Expr::Text { text } => {
             qb.push(open);
-            text_search(qb, text);
+            text_search(qb, ctx, text);
             qb.push(close);
         }
         Expr::Compare { field, op, value } => {
@@ -239,24 +242,50 @@ fn expr(qb: &mut Qb, ctx: &Ctx, e: &Expr, positive: bool) -> ApiResult<()> {
     Ok(())
 }
 
-/// Words for a prefix search: `log in` → `log:* & in:*`.
-fn tsquery(text: &str) -> Option<String> {
-    let words: Vec<String> = text.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).take(12).map(|w| format!("{}:*", w.to_lowercase())).collect();
-    (!words.is_empty()).then(|| words.join(" & "))
+/// The words of a search (at most twelve).
+fn words(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).take(12).map(str::to_lowercase).collect()
+}
+
+/// A text search query: every word, either as the start of a word (`log` finds `login`) or in
+/// its stem in the workspace's language (`invoices` finds `invoice`).
+fn push_tsquery(qb: &mut Qb, ctx: &Ctx, words: &[String]) {
+    qb.push("(");
+    for (n, w) in words.iter().enumerate() {
+        if n > 0 {
+            qb.push(" && ");
+        }
+        qb.push("(to_tsquery('simple', ");
+        qb.push_bind(format!("{w}:*"));
+        qb.push(") || plainto_tsquery(");
+        qb.push_bind(ctx.lang.clone());
+        qb.push("::regconfig, ");
+        qb.push_bind(w.clone());
+        qb.push("))");
+    }
+    qb.push(")");
 }
 
 fn like(text: &str) -> String {
     format!("%{}%", text.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"))
 }
 
-fn text_search(qb: &mut Qb, text: &str) {
+fn text_search(qb: &mut Qb, ctx: &Ctx, text: &str) {
     qb.push("(i.title ILIKE ");
     qb.push_bind(like(text));
-    if let Some(tq) = tsquery(text) {
-        qb.push(" OR i.search @@ to_tsquery('simple', ");
-        qb.push_bind(tq);
-        qb.push(")");
+    let words = words(text);
+    if !words.is_empty() {
+        qb.push(" OR i.search @@ ");
+        push_tsquery(qb, ctx, &words);
     }
+    // files: their names and the text inside them (each part in its own index)
+    qb.push(" OR i.id = ANY(ARRAY(SELECT a.issue_id FROM attachments a WHERE a.name ILIKE ");
+    qb.push_bind(like(text));
+    if !words.is_empty() {
+        qb.push(" UNION SELECT a.issue_id FROM attachments a WHERE a.search @@ ");
+        push_tsquery(qb, ctx, &words);
+    }
+    qb.push("))");
     if let Some((k, n)) = split_key(text) {
         // on issues' own columns, so the three can be looked up in indexes together
         qb.push(" OR (i.project_id = ANY(ARRAY(SELECT id FROM projects WHERE upper(key) = ");
@@ -402,7 +431,7 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
                     qb.push_bind(like(&t));
                     qb.push(")");
                 }
-                _ => text_search(qb, &t),
+                _ => text_search(qb, ctx, &t),
             }
         }
         "type" | "issuetype" => {
@@ -1065,7 +1094,14 @@ mod tests {
     use super::*;
 
     fn ctx() -> Ctx {
-        Ctx { user: Uuid::nil(), workspace: Uuid::nil(), visible: vec![], now: Utc.with_ymd_and_hms(2026, 11, 12, 10, 30, 0).unwrap(), custom: HashMap::new() }
+        Ctx {
+            user: Uuid::nil(),
+            workspace: Uuid::nil(),
+            visible: vec![],
+            now: Utc.with_ymd_and_hms(2026, 11, 12, 10, 30, 0).unwrap(),
+            custom: HashMap::new(),
+            lang: "english".into(),
+        }
     }
 
     fn sql(q: &str) -> String {
@@ -1083,7 +1119,8 @@ mod tests {
         assert!(s.contains("NOT (lower(s.name) = ANY("), "{s}");
         assert!(s.contains("ORDER BY i.priority DESC NULLS LAST, i.id"), "{s}");
         let s = sql("login crash");
-        assert!(s.contains("to_tsquery('simple'"), "{s}");
+        assert!(s.contains("to_tsquery('simple'") && s.contains("plainto_tsquery($"), "{s}");
+        assert!(s.contains("a.search @@"), "{s}");
         let s = sql("labels is empty or sprint in openSprints()");
         assert!(s.contains("NOT EXISTS (SELECT 1 FROM issue_labels"), "{s}");
         assert!(s.contains("i.sprint_id IN (SELECT id FROM sprints"), "{s}");

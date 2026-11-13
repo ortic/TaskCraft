@@ -37,6 +37,7 @@ object_store = { version = "0.14.2", features = ["aws"] }
 openidconnect = "4.1.0"
 # XML site backups from other trackers (crate::site_backup): streaming XML in a zip
 quick-xml = "0.41.0"
+pdf-extract = "0.12.1"
 qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 rand = "0.10.3"
 # wiki markup in imported descriptions

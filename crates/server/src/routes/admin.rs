@@ -31,6 +31,10 @@ pub async fn put_workspace(State(state): State<AppState>, CurrentUser(user): Cur
         }
     }
     sqlx::query("UPDATE workspaces SET settings = $2 WHERE id = $1").bind(user.workspace_id).bind(settings).execute(&state.db).await?;
+    if req.get("defaultLanguage").is_some() {
+        // search understands the new language (stems) once issues and files are indexed again
+        crate::extract::set_language_soon(&state, user.workspace_id);
+    }
     audit(&state, user.workspace_id, Some(user.id), "workspace.updated", None, req).await;
     Ok(StatusCode::NO_CONTENT)
 }

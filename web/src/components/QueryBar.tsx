@@ -135,7 +135,7 @@ function TqlHelp() {
     ['labels is empty or assignee is empty', t('issues needing triage')],
     ['updated > -7d and watcher = me()', t('what changed on issues I watch')],
     ['"Customer tier" = Gold', t('a custom field (quote names with spaces)')],
-    ['login timeout', t('bare words search titles and descriptions')],
+    ['login timeout', t('bare words search titles, descriptions and the text in files')],
   ]
   return (
     <div style={{ padding: 8 }} className="small">

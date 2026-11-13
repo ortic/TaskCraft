@@ -272,7 +272,7 @@ function WorkspaceForm({ me }: { me: Me }) {
             {AVAILABLE.map((l) => <option key={l.code} value={l.code} lang={l.code}>{l.name}</option>)}
             {lang && !AVAILABLE.some((l) => l.code === lang) && <option value={lang}>{LANGUAGES.find((l) => l.code === lang)?.name ?? lang}</option>}
           </select>
-          <span className="field-hint">{t('People can still pick their own language in their profile.')}</span>
+          <span className="field-hint">{t('People can still pick their own language in their profile. Search understands word forms in this language (English when none is set).')}</span>
         </div>
         <div className="field">
           <span className="field-label" id="adm-ws-week">{t('Weeks start on')}</span>

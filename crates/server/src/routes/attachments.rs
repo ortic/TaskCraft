@@ -93,6 +93,8 @@ pub async fn store(
     issues::record(&mut tx, issue, project, uploader, "attachment", Some(&Change { field: "attachment", old: Value::Null, new })).await?;
     sqlx::query("UPDATE issues SET updated_at = now() WHERE id = $1").bind(issue).execute(&mut *tx).await?;
     tx.commit().await?;
+    // its text, for search
+    crate::extract::index_soon(state, id);
     Ok(json!({"id": id, "name": name, "mime": mime, "size": size, "url": format!("/api/attachments/{id}")}))
 }
 

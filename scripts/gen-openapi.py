@@ -3275,7 +3275,7 @@ updated resolved resolution security due start remaining watcher voter votes blo
 `= != ~ !~ > >= < <=`, `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `openSprints()`,
 `futureSprints()`, `closedSprints()`, `releasedVersions()`, `unreleasedVersions()`, `withSubprojects(KEY)` (`project in withSubprojects(SHOP)`); relative dates like `-7d`, `+2w`,
-`-1m`. Bare words search titles and descriptions. See [TQL in the README](https://github.com/ortic/TaskCraft#features);
+`-1m`. Bare words search titles, descriptions and the names and text of files on issues (words also match by their stem in the workspace's language). See [TQL in the README](https://github.com/ortic/TaskCraft#features);
 `POST /query/validate` checks a query and `GET /query/suggest` completes field names and values.
 
 ## Pagination
