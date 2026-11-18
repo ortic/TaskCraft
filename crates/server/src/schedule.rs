@@ -157,6 +157,9 @@ pub async fn tick(state: &AppState) {
     if let Err(e) = crate::extract::index_pending(state).await {
         tracing::warn!(error = %e, "reading files for search");
     }
+    if let Err(e) = crate::extensions::tick(state).await {
+        tracing::warn!(error = %e, "extensions");
+    }
     if let Err(e) = crate::approvals::tick(state).await {
         tracing::warn!(error = %e, "approvals");
     }
@@ -243,7 +246,10 @@ async fn run_rules(state: &AppState) -> anyhow::Result<()> {
             let s = crate::issues::summary(state, row);
             match crate::automation::execute(state, &bot, &s, &actions).await {
                 Ok(()) => ran += 1,
-                Err(e) => tracing::warn!(rule = %name, issue = %s.key, error = %e, "scheduled rule failed"),
+                Err(e) => {
+                    tracing::warn!(rule = %name, issue = %s.key, error = %e, "scheduled rule failed");
+                    crate::automation::failed(state, id, &s.key, &e).await;
+                }
             }
         }
         if ran > 0 {

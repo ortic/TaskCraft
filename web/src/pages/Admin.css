@@ -134,3 +134,6 @@
 .adm-feature input { margin-top: 3px; }
 .adm-feature > span { display: grid; gap: 2px; }
 .adm-subhead { display: flex; align-items: center; gap: 6px; font-size: 14px; margin: 8px 0 10px; }
+.ext-logs { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
+.ext-log { display: flex; gap: 8px; align-items: baseline; font-size: 13px; }
+.ext-log-text { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }

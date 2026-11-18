@@ -201,6 +201,17 @@ reports can then include the whole tree.
 - **The REST API** with personal tokens, described in OpenAPI at `/api/openapi.yaml` and in the
   app's API reference.
 
+## Extensions
+
+*Administration → Extensions* is for what's special about your organization: small sandboxed
+scripts that add custom actions to automation rules, react to issue events, run on a schedule or
+answer routes of their own under `/api/ext/<name>/`. An extension does only what its manifest
+asks for — read or change issues as the person it runs as, call the hosts it names, keep a
+little state, use the secrets you set — and you see that list before installing. Each has a log,
+its last error and a switch that turns it off at once. Project admins can also put a short
+script straight into an automation rule to compute fields of the issue. How to write both is in
+[Extensions and scripts](extensions.md).
+
 ## Privacy and retention
 
 - Everyone downloads what TaskCraft keeps about them (*Profile & settings → Your data*);

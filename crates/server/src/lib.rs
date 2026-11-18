@@ -16,6 +16,7 @@ pub mod demo;
 pub mod doc;
 pub mod error;
 pub mod events;
+pub mod extensions;
 pub mod extract;
 pub mod features;
 pub mod files;

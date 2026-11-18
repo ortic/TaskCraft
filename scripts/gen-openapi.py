@@ -1279,7 +1279,12 @@ schemas["AutomationTrigger"] = obj(
 )
 schemas["AutomationAction"] = obj(
     {
-        "action": enum("setStatus", "assign", "setPriority", "addLabel", "removeLabel", "setSprint", "comment", "notify", "chat"),
+        "action": enum("setStatus", "assign", "setPriority", "addLabel", "removeLabel", "setSprint", "comment", "notify", "chat", "script", "extension"),
+        "script": d(txt, "script: a sandboxed script (Rhai) with the issue in scope as `issue`; it changes that issue with set(field, value), set_field(custom field, value), "
+                         "add_label, remove_label and comment. Checked when the rule is saved; up to 64 KB"),
+        "extension": d(txt, "extension: the installed extension's name"),
+        "name": d(txt, "extension: which of its actions (GET /extensions/actions)"),
+        "params": d(anyval, "extension: handed to the action"),
         "statusId": d(uuid, "setStatus"),
         "to": d(
             txt,
@@ -1318,6 +1323,7 @@ schemas["AutomationRule"] = obj(
         "runs": d(num, "how often it acted"),
         "lastRunAt": ndt(),
         "nextRunAt": ndt("scheduled rules: the next run"),
+        "lastError": ntxt("why its last run failed (a script's mistake, a missing extension); cleared by the next run that works"),
     },
     ["id", "name", "enabled", "trigger", "condition", "actions", "runs"],
 )
@@ -3422,6 +3428,51 @@ op("delete", "/admin/workspace/logo", "deleteWorkspaceLogo", "Administration", "
    desc="Workspace admins, in the browser.", auth="session", res=NO)
 op("get", "/workspace/logo", "getWorkspaceLogo", "Administration", "The workspace's logo",
    desc="Anyone in the workspace (404 without one).", res=raw("image/png", "the image (or JPEG, GIF, WebP)"))
+# ---- extensions ----
+schemas["ExtensionManifest"] = obj(
+    {
+        "name": d(txt, "2 to 40 lower-case letters, digits and hyphens: its address (/api/ext/<name>/…) and how rules name it"),
+        "title": txt, "version": txt, "description": txt,
+        "apiVersion": d(num, "the extension API it was written for (this server: 1)"),
+        "capabilities": obj({
+            "issues": enum("read", "write", desc="search, get_issue (and update_issue, add_comment) with the permissions of the person it runs as"),
+            "http": arr(txt, "host names it may call (erp.example.com, *.example.com)"),
+            "state": d(boolean, "state_get / state_set: up to 64 KB of its own"),
+            "secrets": arr(txt, "names of secrets an admin sets for it (secret(name))"),
+        }, desc="what it may do; nothing unless asked for here"),
+        "actions": arr(obj({"name": txt, "label": txt}, ["name"]), "automation actions: the script's action_<name>(issue, params)"),
+        "events": arr(enum("created", "status", "assigned", "commented", "changed"), "the script's on_event(event, issue) hears of these"),
+        "schedule": d(anyval, "a schedule like an automation rule's: the script's scheduled() runs then"),
+        "routes": arr(obj({"method": enum("GET", "POST", "PUT", "DELETE"), "path": txt}, ["path"]), "served at /api/ext/<name>/<path> for signed-in people by the script's route(request)"),
+    },
+    ["name"],
+    "What an extension is and asks for.",
+)
+schemas["Extension"] = obj(
+    {"id": uuid, "name": txt, "title": txt, "version": txt, "description": ntxt(), "manifest": S("ExtensionManifest"), "script": d(txt, "Rhai, up to 64 KB"), "enabled": boolean,
+     "runAs": null(S("Named"), "whose permissions its reads and writes of issues have"),
+     "secrets": arr(obj({"name": txt, "set": boolean}, ["name", "set"]), "the secrets it asks for and whether each is set (never the values)"),
+     "nextRunAt": null(dt), "lastRunAt": null(dt), "runs": num, "lastError": ntxt(), "lastErrorAt": null(dt), "updatedAt": dt},
+    ["id", "name", "title", "version", "manifest", "script", "enabled", "secrets", "runs"],
+    "An installed extension: a sandboxed script with hooks (automation actions, event handlers, a scheduled job, routes) and the capabilities it was granted. "
+    "Its routes answer at /api/ext/<name>/<path>; they're the extension's own and not part of this description.",
+)
+op("get", "/admin/extensions", "listExtensions", "Administration", "Installed extensions (workspace admins)",
+   res=ok(obj({"apiVersion": num, "extensions": arr(S("Extension"))}, ["apiVersion", "extensions"])))
+op("post", "/admin/extensions", "installExtension", "Administration", "Install an extension (workspace admins)",
+   desc="The manifest is checked against the script (a function per hook) and the extension gets the capabilities the manifest asks for. It runs as the installing admin unless `runAs` names someone (null: nobody).",
+   req=body(obj({"manifest": S("ExtensionManifest"), "script": txt, "runAs": nuuid()}, ["manifest", "script"])), res=created(S("Extension")), err="409")
+op("patch", "/admin/extensions/{id}", "updateExtension", "Administration", "Change an extension: on / off, a new version, who it runs as, its secrets (workspace admins)",
+   desc="`enabled: false` turns everything of it off at once. A new manifest or script replaces the old (the name stays). `secrets`: name → value, or null to clear; only names the manifest asks for.",
+   req=body(obj({"enabled": boolean, "manifest": S("ExtensionManifest"), "script": txt, "runAs": nuuid(), "secrets": d(anyobj, "name → value or null")})), res=ok(S("Extension")))
+op("delete", "/admin/extensions/{id}", "removeExtension", "Administration", "Remove an extension with its state, secrets and logs (workspace admins)", res=NO)
+op("get", "/admin/extensions/{id}/logs", "getExtensionLogs", "Administration", "What an extension printed and what went wrong (latest 200)", desc="Workspace admins.",
+   res=ok(arr(obj({"at": dt, "level": enum("info", "error"), "hook": d(txt, "action:<name>, event:<kind>, scheduled, route:<METHOD path>"), "message": txt}, ["at", "level", "hook", "message"]))))
+op("post", "/admin/extensions/{id}/run", "runExtensionJob", "Administration", "Run an extension's scheduled job now (workspace admins)",
+   res=ok(obj({"ok": boolean, "result": anyval, "error": txt}, ["ok"])))
+op("get", "/extensions/actions", "listExtensionActions", "Project configuration", "The actions of installed extensions that automation rules can use", desc="Not for guests.",
+   res=ok(arr(obj({"extension": txt, "extensionTitle": txt, "name": txt, "label": txt}, ["extension", "name", "label"]))))
+
 # ---- signing in to the command-line client ----
 op("post", "/cli/logins", "startCliLogin", "Auth & account", "Start a sign-in of the command-line client",
    desc="No account needed. The client shows `url` (and `code`); the person approves there; the client polls POST /cli/token with `verifier`. Codes live ten minutes and work once.",

@@ -127,6 +127,11 @@ pub fn api() -> Router<AppState> {
         .route("/issues/{key}/organization", put(crate::organizations::set_for_issue))
         .route("/portal/colleagues", get(crate::organizations::colleagues))
         .route("/portal/requests/{key}/share", put(crate::organizations::share))
+        .route("/admin/extensions", get(crate::extensions::list).post(crate::extensions::install))
+        .route("/admin/extensions/{id}", patch(crate::extensions::update).delete(crate::extensions::remove))
+        .route("/admin/extensions/{id}/logs", get(crate::extensions::logs))
+        .route("/admin/extensions/{id}/run", post(crate::extensions::run_now))
+        .route("/extensions/actions", get(crate::extensions::actions))
         .route("/cli/logins", post(crate::cli_login::start))
         .route("/cli/logins/{code}", get(crate::cli_login::show).delete(crate::cli_login::deny))
         .route("/cli/logins/{code}/approve", post(crate::cli_login::approve))
@@ -288,6 +293,7 @@ pub fn router(state: AppState) -> Router {
     let max_upload = (state.config.max_upload_mb as usize).saturating_mul(1024 * 1024);
     // route_layer: counted under the matched route pattern (unknown paths aren't routes)
     let api = api()
+        .merge(extension_routes())
         .merge(portal_routes().route_layer(axum::middleware::from_fn_with_state(state.clone(), crate::features::portal_switch)))
         .route_layer(axum::middleware::from_fn_with_state(state.clone(), crate::metrics::track))
         .layer(DefaultBodyLimit::max(max_upload.max(2 * 1024 * 1024)));
@@ -337,4 +343,10 @@ pub fn router(state: AppState) -> Router {
         None => app,
     }
     .with_state(state)
+}
+
+/// The routes installed extensions answer (`/api/ext/<name>/…`): theirs to define, so they
+/// aren't part of this API's description.
+fn extension_routes() -> Router<AppState> {
+    Router::new().route("/ext/{name}/{*path}", axum::routing::any(crate::extensions::route))
 }

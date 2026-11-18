@@ -177,6 +177,13 @@ OpenAI-compatible API — also one running in your own network, so nothing leave
 ask; until a model is set up nothing is sent anywhere, and a workspace can turn it off. **Similar issues** show while someone types a new issue's title — found in
 the database, no AI needed.
 
+**Extensions and scripts**: automation rules can run a short sandboxed script that computes
+fields of the issue; admins install *extensions* — a manifest and a script — for custom
+automation actions, event handlers, scheduled jobs and API routes (`/api/ext/<name>/…`), each
+granted only the capabilities it asks for (issues as a chosen person, HTTP to named hosts, state,
+secrets), with limits on time and work, a log and an off switch. See
+[docs/extensions.md](docs/extensions.md).
+
 **AI assistants**: a built-in [MCP](https://modelcontextprotocol.io) server — Claude & co. search
 (TQL), read, create, update and link issues, comment, log time, run a timer and read sprints, boards and reports with
 the user's permissions. See [AI assistants (MCP)](#ai-assistants-mcp).

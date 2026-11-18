@@ -112,11 +112,23 @@ async fn run_inner(state: &AppState, actor: &Actor, s: &Summary, changes: &[Chan
         let bot = Actor { user: None, workspace: actor.workspace, depth: actor.depth + 1 };
         if let Err(e) = execute(state, &bot, s, &rule.actions).await {
             tracing::warn!(rule = %rule.name, issue = %s.key, error = %e, "automation rule failed");
-            let _ = sqlx::query("UPDATE automation_rules SET last_run_at = now() WHERE id = $1").bind(rule.id).execute(&state.db).await;
+            failed(state, rule.id, &s.key, &e).await;
             continue;
         }
-        let _ = sqlx::query("UPDATE automation_rules SET runs = runs + 1, last_run_at = now() WHERE id = $1").bind(rule.id).execute(&state.db).await;
+        let _ = sqlx::query("UPDATE automation_rules SET runs = runs + 1, last_run_at = now(), last_error = NULL WHERE id = $1")
+            .bind(rule.id)
+            .execute(&state.db)
+            .await;
     }
+}
+
+/// Remembers why a rule failed, for its page.
+pub async fn failed(state: &AppState, rule: Uuid, key: &str, e: &crate::error::ApiError) {
+    let _ = sqlx::query("UPDATE automation_rules SET last_run_at = now(), last_error = $2 WHERE id = $1")
+        .bind(rule)
+        .bind(format!("{key}: {e}").chars().take(500).collect::<String>())
+        .execute(&state.db)
+        .await;
 }
 
 pub async fn execute(state: &AppState, bot: &Actor, s: &Summary, actions: &Value) -> crate::error::ApiResult<()> {
@@ -165,6 +177,9 @@ pub async fn execute(state: &AppState, bot: &Actor, s: &Summary, actions: &Value
                 patch.insert("sprintId".into(), sprint);
             }
             "comment" => comments.push(a["text"].as_str().unwrap_or("").to_string()),
+            // a sandboxed script computing fields of this issue, or an installed extension's action
+            "script" => crate::extensions::run_inline(state, bot, s, a["script"].as_str().unwrap_or("")).await?,
+            "extension" => crate::extensions::run_action(state, bot, s, a).await?,
             // a message in a chat channel (never about a private issue: channels are shared)
             "chat" if s.security.is_none() => {
                 let template = a["message"].as_str().filter(|m| !m.trim().is_empty()).unwrap_or("{key} {title}");

@@ -1313,6 +1313,17 @@ pub async fn after_change(state: &AppState, actor: &Actor, s: &Summary, changes:
     if created || changes.iter().any(|c| c.field == "status") {
         crate::approvals::asked(state, s.id).await;
     }
+    // extensions that listen
+    let kind = if created {
+        "created"
+    } else if changes.iter().any(|c| c.field == "status") {
+        "status"
+    } else if changes.iter().any(|c| c.field == "assignee") {
+        "assigned"
+    } else {
+        "changed"
+    };
+    crate::extensions::on_event(state, actor, s, kind);
     let mut e = Event::new(actor.workspace, "issue").project(s.project_id).issue(s.id, &s.key);
     e.actor_id = actor.user;
     events::publish(state, e).await;

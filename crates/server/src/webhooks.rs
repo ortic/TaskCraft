@@ -94,6 +94,19 @@ async fn resolve(u: &Url, allow_private: bool) -> Result<SocketAddr, String> {
     Ok(first)
 }
 
+/// A client for one request to `u`, pinned to an address that was checked (private ones only
+/// with `TASKCRAFT_WEBHOOK_ALLOW_PRIVATE`); it follows no redirects.
+pub async fn pinned_client(state: &AppState, u: &Url, timeout_secs: u64) -> Result<reqwest::Client, String> {
+    let addr = resolve(u, state.config.webhook_allow_private).await?;
+    reqwest::Client::builder()
+        .resolve(u.host_str().unwrap_or_default(), addr)
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(timeout_secs))
+        .user_agent(concat!("TaskCraft/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|e| e.to_string())
+}
+
 /// Sends one delivery; Ok(status) or Err(reason).
 pub async fn deliver(state: &AppState, url: &str, secret: &str, payload: &Value) -> Result<u16, String> {
     let body = serde_json::to_vec(payload).map_err(|e| e.to_string())?;

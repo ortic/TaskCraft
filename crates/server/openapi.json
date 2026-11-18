@@ -6597,6 +6597,56 @@
     }
    }
   },
+  "/extensions/actions": {
+   "get": {
+    "tags": [
+     "Project configuration"
+    ],
+    "summary": "The actions of installed extensions that automation rules can use",
+    "operationId": "listExtensionActions",
+    "description": "Not for guests.",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "extension": {
+            "type": "string"
+           },
+           "extensionTitle": {
+            "type": "string"
+           },
+           "name": {
+            "type": "string"
+           },
+           "label": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "extension",
+           "name",
+           "label"
+          ]
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
   "/projects/{key}/boards": {
    "post": {
     "tags": [
@@ -17536,6 +17586,355 @@
     }
    }
   },
+  "/admin/extensions": {
+   "get": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "Installed extensions (workspace admins)",
+    "operationId": "listExtensions",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "apiVersion": {
+           "type": "integer"
+          },
+          "extensions": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Extension"
+           }
+          }
+         },
+         "required": [
+          "apiVersion",
+          "extensions"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "Install an extension (workspace admins)",
+    "operationId": "installExtension",
+    "description": "The manifest is checked against the script (a function per hook) and the extension gets the capabilities the manifest asks for. It runs as the installing admin unless `runAs` names someone (null: nobody).",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "manifest": {
+          "$ref": "#/components/schemas/ExtensionManifest"
+         },
+         "script": {
+          "type": "string"
+         },
+         "runAs": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "uuid"
+         }
+        },
+        "required": [
+         "manifest",
+         "script"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Extension"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   }
+  },
+  "/admin/extensions/{id}": {
+   "patch": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "Change an extension: on / off, a new version, who it runs as, its secrets (workspace admins)",
+    "operationId": "updateExtension",
+    "description": "`enabled: false` turns everything of it off at once. A new manifest or script replaces the old (the name stays). `secrets`: name → value, or null to clear; only names the manifest asks for.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "enabled": {
+          "type": "boolean"
+         },
+         "manifest": {
+          "$ref": "#/components/schemas/ExtensionManifest"
+         },
+         "script": {
+          "type": "string"
+         },
+         "runAs": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "uuid"
+         },
+         "secrets": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "name → value or null"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Extension"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "Remove an extension with its state, secrets and logs (workspace admins)",
+    "operationId": "removeExtension",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/admin/extensions/{id}/logs": {
+   "get": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "What an extension printed and what went wrong (latest 200)",
+    "operationId": "getExtensionLogs",
+    "description": "Workspace admins.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "at": {
+            "type": "string",
+            "format": "date-time"
+           },
+           "level": {
+            "type": "string",
+            "enum": [
+             "info",
+             "error"
+            ]
+           },
+           "hook": {
+            "type": "string",
+            "description": "action:<name>, event:<kind>, scheduled, route:<METHOD path>"
+           },
+           "message": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "at",
+           "level",
+           "hook",
+           "message"
+          ]
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/admin/extensions/{id}/run": {
+   "post": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "Run an extension's scheduled job now (workspace admins)",
+    "operationId": "runExtensionJob",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "ok": {
+           "type": "boolean"
+          },
+          "result": {
+           "description": "any JSON value"
+          },
+          "error": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "ok"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
   "/admin/scim": {
    "get": {
     "tags": [
@@ -22910,8 +23309,25 @@
        "setSprint",
        "comment",
        "notify",
-       "chat"
+       "chat",
+       "script",
+       "extension"
       ]
+     },
+     "script": {
+      "type": "string",
+      "description": "script: a sandboxed script (Rhai) with the issue in scope as `issue`; it changes that issue with set(field, value), set_field(custom field, value), add_label, remove_label and comment. Checked when the rule is saved; up to 64 KB"
+     },
+     "extension": {
+      "type": "string",
+      "description": "extension: the installed extension's name"
+     },
+     "name": {
+      "type": "string",
+      "description": "extension: which of its actions (GET /extensions/actions)"
+     },
+     "params": {
+      "description": "extension: handed to the action"
      },
      "statusId": {
       "type": "string",
@@ -23042,6 +23458,13 @@
       ],
       "format": "date-time",
       "description": "scheduled rules: the next run"
+     },
+     "lastError": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "why its last run failed (a script's mistake, a missing extension); cleared by the next run that works"
      }
     },
     "required": [
@@ -27955,6 +28378,233 @@
      "expiresAt"
     ],
     "description": "An upload of another tracker's XML site backup, or a connection to its API, and the import."
+   },
+   "ExtensionManifest": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "2 to 40 lower-case letters, digits and hyphens: its address (/api/ext/<name>/…) and how rules name it"
+     },
+     "title": {
+      "type": "string"
+     },
+     "version": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "apiVersion": {
+      "type": "integer",
+      "description": "the extension API it was written for (this server: 1)"
+     },
+     "capabilities": {
+      "type": "object",
+      "properties": {
+       "issues": {
+        "type": "string",
+        "enum": [
+         "read",
+         "write"
+        ],
+        "description": "search, get_issue (and update_issue, add_comment) with the permissions of the person it runs as"
+       },
+       "http": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "description": "host names it may call (erp.example.com, *.example.com)"
+       },
+       "state": {
+        "type": "boolean",
+        "description": "state_get / state_set: up to 64 KB of its own"
+       },
+       "secrets": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "description": "names of secrets an admin sets for it (secret(name))"
+       }
+      },
+      "description": "what it may do; nothing unless asked for here"
+     },
+     "actions": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "label": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "name"
+       ]
+      },
+      "description": "automation actions: the script's action_<name>(issue, params)"
+     },
+     "events": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "enum": [
+        "created",
+        "status",
+        "assigned",
+        "commented",
+        "changed"
+       ]
+      },
+      "description": "the script's on_event(event, issue) hears of these"
+     },
+     "schedule": {
+      "description": "a schedule like an automation rule's: the script's scheduled() runs then"
+     },
+     "routes": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "method": {
+         "type": "string",
+         "enum": [
+          "GET",
+          "POST",
+          "PUT",
+          "DELETE"
+         ]
+        },
+        "path": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "path"
+       ]
+      },
+      "description": "served at /api/ext/<name>/<path> for signed-in people by the script's route(request)"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "description": "What an extension is and asks for."
+   },
+   "Extension": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "name": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "version": {
+      "type": "string"
+     },
+     "description": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "manifest": {
+      "$ref": "#/components/schemas/ExtensionManifest"
+     },
+     "script": {
+      "type": "string",
+      "description": "Rhai, up to 64 KB"
+     },
+     "enabled": {
+      "type": "boolean"
+     },
+     "runAs": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Named"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "whose permissions its reads and writes of issues have"
+     },
+     "secrets": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "set": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "name",
+        "set"
+       ]
+      },
+      "description": "the secrets it asks for and whether each is set (never the values)"
+     },
+     "nextRunAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "lastRunAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "runs": {
+      "type": "integer"
+     },
+     "lastError": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "lastErrorAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "title",
+     "version",
+     "manifest",
+     "script",
+     "enabled",
+     "secrets",
+     "runs"
+    ],
+    "description": "An installed extension: a sandboxed script with hooks (automation actions, event handlers, a scheduled job, routes) and the capabilities it was granted. Its routes answer at /api/ext/<name>/<path>; they're the extension's own and not part of this description."
    },
    "ScimToken": {
     "type": "object",

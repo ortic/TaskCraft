@@ -6,6 +6,14 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 
 ## [Unreleased]
 
+- **Scripts and extensions**: automation rules can *run a script* — a few sandboxed lines
+  (Rhai) that see the issue and set its fields, labels and comments. *Administration →
+  Extensions* installs packages (a manifest and a script) with custom automation actions, event
+  handlers, a scheduled job and routes under `/api/ext/<name>/`, each limited to the
+  capabilities its manifest asks for: issues as the person it runs as, HTTP to named hosts, a
+  little state, secrets. Limits on time and work, a log per extension, one switch to turn it
+  off, a versioned extension API (`docs/extensions.md`). Rules show why their last run failed.
+
 - **`tc`, a command-line client** (a small separate binary in the release archives and the
   image): `tc issue list` (TQL) / `view` / `create` / `edit` / `move` / `assign`, `tc comment`,
   `tc link`, `tc log`, `tc timer`, `tc branch` (locally or on the Git server), `tc open`. The

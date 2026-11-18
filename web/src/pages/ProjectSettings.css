@@ -237,3 +237,6 @@ a.field-hint { display: inline-flex; align-items: center; gap: 4px; }
 @media (max-width: 560px) { .ps-grid2 { grid-template-columns: 1fr; } }
 ul.ps-list { padding: 0; margin-top: 0; list-style: none; }
 .ps-approval-on { border-color: var(--warning); color: var(--warning-text, var(--warning)); }
+.ps-script-action { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.ps-script-input { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 12.5px; line-height: 1.45; tab-size: 4; white-space: pre; overflow-x: auto; }
+.ps-rule-error { display: flex; gap: 4px; align-items: baseline; overflow-wrap: anywhere; }

@@ -1532,17 +1532,18 @@ pub async fn delete_field(State(state): State<AppState>, CurrentUser(user): Curr
 
 pub async fn rules(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>) -> ApiResult<Json<Value>> {
     let (p, _) = by_key(&state, &user, &key, Role::Viewer).await?;
-    type RuleRow = (Uuid, String, bool, Value, String, Value, i32, Option<chrono::DateTime<chrono::Utc>>, Option<chrono::DateTime<chrono::Utc>>);
+    type RuleRow =
+        (Uuid, String, bool, Value, String, Value, i32, Option<chrono::DateTime<chrono::Utc>>, Option<chrono::DateTime<chrono::Utc>>, Option<String>);
     let rows: Vec<RuleRow> = sqlx::query_as(
-        "SELECT id, name, enabled, trigger, condition, actions, runs, last_run_at, next_run_at FROM automation_rules WHERE project_id = $1 ORDER BY created_at",
+        "SELECT id, name, enabled, trigger, condition, actions, runs, last_run_at, next_run_at, last_error FROM automation_rules WHERE project_id = $1 ORDER BY created_at",
     )
     .bind(p.id)
     .fetch_all(&state.db)
     .await?;
     Ok(Json(json!(
         rows.into_iter()
-            .map(|(id, n, e, t, c, a, r, l, nx)| {
-                json!({"id": id, "name": n, "enabled": e, "trigger": t, "condition": c, "actions": a, "runs": r, "lastRunAt": l, "nextRunAt": nx})
+            .map(|(id, n, e, t, c, a, r, l, nx, err)| {
+                json!({"id": id, "name": n, "enabled": e, "trigger": t, "condition": c, "actions": a, "runs": r, "lastRunAt": l, "nextRunAt": nx, "lastError": err})
             })
             .collect::<Vec<_>>()
     )))
@@ -1594,9 +1595,15 @@ fn check_rule(req: &Value) -> ApiResult<()> {
     for a in actions {
         if !matches!(
             a["action"].as_str(),
-            Some("setStatus" | "assign" | "setPriority" | "addLabel" | "removeLabel" | "setSprint" | "comment" | "notify" | "chat")
+            Some("setStatus" | "assign" | "setPriority" | "addLabel" | "removeLabel" | "setSprint" | "comment" | "notify" | "chat" | "script" | "extension")
         ) {
             return Err(ApiError::bad("unknown action"));
+        }
+        if a["action"] == "script" {
+            crate::extensions::check_inline(a["script"].as_str().unwrap_or(""))?;
+        }
+        if a["action"] == "extension" && (a["extension"].as_str().is_none_or(str::is_empty) || a["name"].as_str().is_none_or(str::is_empty)) {
+            return Err(ApiError::bad("an extension's action names the extension and the action"));
         }
         if a["action"] == "chat" {
             crate::webhooks::validate_url(a["url"].as_str().unwrap_or("")).map_err(ApiError::BadRequest)?;

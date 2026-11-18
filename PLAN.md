@@ -83,7 +83,7 @@
 - [x] SCIM provisioning: people created / taken over / deactivated (sessions and tokens end), groups as teams, tokens per identity provider with last sync and errors (#11)
 - [x] Branches and draft pull requests from an issue (GitHub, GitLab, Gitea / Forgejo APIs; a project permission; MCP `create_branch`); pull requests with checks, reviews and reviewers from webhooks (#8)
 - [x] Command-line client `tc`: browser sign-in and profiles, issues (TQL list, view, create, edit, move, assign), comments, links, time and timer, branches; the key from the Git branch; `--json`; a test against the OpenAPI description (#9)
-- [ ] Extensions: scripted automation actions (#10)
+- [x] Extensions: sandboxed scripts as automation actions; installed extensions with declared capabilities (issues, HTTP hosts, state, secrets), custom actions, event handlers, scheduled jobs, routes, logs and a switch; extension API 1 (#10)
 - [ ] AI coding agents (#7)
 
 ## Next (round 4): what established trackers have and TaskCraft doesn't

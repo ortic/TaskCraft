@@ -7,7 +7,8 @@ import {
   Archive, ArchiveRestore, CalendarOff, Check, Link2, RotateCcw, ChevronDown, CircleDot, Clock, Download, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, Mail, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, ShieldOff, Trash,
   UserCheck, UserPlus, UserX, Users, Webhook, Upload, ImageOff,
 } from 'lucide-react'
-import { KeyRound } from 'lucide-react'
+import { KeyRound, Puzzle } from 'lucide-react'
+import ExtensionsTab from './Extensions'
 import ProvisioningTab from './Provisioning'
 import { api, ago, dateTime, shortDate, type Feature, type LinkType, type Me, type TimeCategory } from '../api'
 import { linkTypeLabel, useLinkTypes } from '../components/IssueView'
@@ -20,8 +21,8 @@ import { SignInBadges, useSignInOptions, type SignInMethods } from '../component
 import { ResetTwoFactor, TwoFactorPolicy, canResetTwoFactor, useTwoFactorPolicy } from '../components/Security'
 import './Admin.css'
 
-type Tab = 'overview' | 'users' | 'teams' | 'provisioning' | 'timeoff' | 'links' | 'time' | 'webhooks' | 'import' | 'audit'
-const TABS: Tab[] = ['overview', 'users', 'teams', 'provisioning', 'timeoff', 'links', 'time', 'webhooks', 'import', 'audit']
+type Tab = 'overview' | 'users' | 'teams' | 'provisioning' | 'timeoff' | 'links' | 'time' | 'webhooks' | 'extensions' | 'import' | 'audit'
+const TABS: Tab[] = ['overview', 'users', 'teams', 'provisioning', 'timeoff', 'links', 'time', 'webhooks', 'extensions', 'import', 'audit']
 
 export default function Admin() {
   const me = useMe().data
@@ -59,6 +60,7 @@ export default function Admin() {
           { id: 'links', label: <><Link2 size={14} /> {t('Link types')}</> },
           ...(timeTracking ? [{ id: 'time' as const, label: <><Clock size={14} /> {t('Time tracking')}</> }] : []),
           { id: 'webhooks', label: <><Webhook size={14} /> {t('Webhooks')}</> },
+          { id: 'extensions', label: <><Puzzle size={14} /> {t('Extensions')}</> },
           { id: 'import', label: <><ArchiveRestore size={14} /> {t('Import')}</> },
           { id: 'audit', label: <><ScrollText size={14} /> {t('Audit log')}</> },
         ]}
@@ -71,6 +73,7 @@ export default function Admin() {
       {tab === 'links' && <LinkTypesTab />}
       {tab === 'time' && <TimeTab />}
       {tab === 'webhooks' && <WebhooksTab />}
+      {tab === 'extensions' && <ExtensionsTab />}
       {tab === 'import' && <BackupImportTab />}
       {tab === 'audit' && <AuditTab />}
     </div>

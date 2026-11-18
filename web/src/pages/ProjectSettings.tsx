@@ -35,10 +35,11 @@ type MembersData = { defaultRole: Role; grants: Grant[]; people: { id: string; n
 type Team = { id: string; name: string; memberIds: string[]; color?: string | null }
 type TriggerEvent = 'created' | 'status' | 'assigned' | 'field' | 'commented' | 'approved' | 'rejected' | 'schedule'
 type Trigger = { event: TriggerEvent; toStatusId?: string; fromStatusId?: string; toCategory?: Category; field?: string; schedule?: Schedule }
-type ActionKind = 'setStatus' | 'assign' | 'setPriority' | 'addLabel' | 'removeLabel' | 'setSprint' | 'comment' | 'notify' | 'chat'
+type ActionKind = 'setStatus' | 'assign' | 'setPriority' | 'addLabel' | 'removeLabel' | 'setSprint' | 'comment' | 'notify' | 'chat' | 'script' | 'extension'
+type ExtensionAction = { extension: string; extensionTitle: string; name: string; label: string }
 type NotifyTo = 'assignee' | 'reporter' | 'watchers' | 'lead'
-type RuleAction = { action: ActionKind; statusId?: string; to?: 'reporter' | 'nobody' | NotifyTo; userId?: string; priority?: Priority; label?: string; sprint?: 'active' | null; text?: string; message?: string; url?: string; format?: 'slack' | 'teams' | 'google-chat' }
-type Rule = { id: string; name: string; enabled: boolean; trigger: Trigger; condition: string; actions: RuleAction[]; runs: number; lastRunAt: string | null; nextRunAt?: string | null }
+type RuleAction = { action: ActionKind; statusId?: string; to?: 'reporter' | 'nobody' | NotifyTo; userId?: string; priority?: Priority; label?: string; sprint?: 'active' | null; text?: string; message?: string; url?: string; format?: 'slack' | 'teams' | 'google-chat'; script?: string; extension?: string; name?: string; params?: unknown }
+type Rule = { id: string; name: string; enabled: boolean; trigger: Trigger; condition: string; actions: RuleAction[]; runs: number; lastRunAt: string | null; nextRunAt?: string | null; lastError?: string | null }
 type TrashItem = { id: string; key: string; title: string; deletedAt: string | null; deletedBy: string | null }
 type WikiSpace = { key: string; name: string; url: string }
 
@@ -2538,6 +2539,8 @@ const ACTIONS: { id: ActionKind; label: () => string }[] = [
   { id: 'comment', label: () => t('add a comment') },
   { id: 'notify', label: () => t('notify someone') },
   { id: 'chat', label: () => t('post to a chat channel') },
+  { id: 'script', label: () => t('run a script') },
+  { id: 'extension', label: () => t('run an extension’s action') },
 ]
 
 function describeTrigger(tr: Trigger, project: Project): string {
@@ -2588,6 +2591,10 @@ function describeAction(a: RuleAction, project: Project, people: Named[]): strin
       return t('notify {who}', { who: a.to === 'reporter' ? t('the reporter') : a.to === 'watchers' ? t('the watchers') : a.to === 'lead' ? t('the project lead') : t('the assignee') })
     case 'chat':
       return t('post to a chat channel')
+    case 'script':
+      return t('run a script')
+    case 'extension':
+      return t('run {action} of the extension {name}', { action: a.name ?? '?', name: a.extension ?? '?' })
   }
   return ''
 }
@@ -2656,6 +2663,7 @@ function AutomationSection() {
                 {r.enabled && r.nextRunAt && <> · {t('next run {when}', { when: dateTime(r.nextRunAt) })}</>}
                 {!r.enabled && <> · {t('paused')}</>}
               </div>
+              {r.lastError && <div className="error-text small ps-rule-error" role="status"><TriangleExclamationPoint size={12} aria-hidden /> {t('Last run failed: {error}', { error: r.lastError })}</div>}
             </div>
             <button className="icon-btn" title={t('Edit')} aria-label={t('Edit {name}', { name: r.name })} onClick={() => setEditing(r)}><Pencil size={15} /></button>
             <button className="icon-btn" title={t('Delete')} aria-label={t('Delete {name}', { name: r.name })} onClick={() => setDeleting(r)}><Trash size={15} /></button>
@@ -2700,6 +2708,10 @@ function actionReady(a: RuleAction): boolean {
       return !!a.message?.trim()
     case 'chat':
       return /^https?:\/\/\S+$/i.test(a.url?.trim() ?? '')
+    case 'script':
+      return !!a.script?.trim()
+    case 'extension':
+      return !!a.extension && !!a.name
     default:
       return true
   }
@@ -2724,6 +2736,10 @@ function cleanAction(a: RuleAction): RuleAction {
       return { action: a.action, to: a.to ?? 'assignee', message: a.message ?? '' }
     case 'chat':
       return { action: a.action, url: (a.url ?? '').trim(), format: a.format ?? 'slack', message: a.message ?? '' }
+    case 'script':
+      return { action: a.action, script: a.script ?? '' }
+    case 'extension':
+      return { action: a.action, extension: a.extension, name: a.name, ...(a.params !== undefined ? { params: a.params } : {}) }
   }
 }
 
@@ -2741,6 +2757,10 @@ function newAction(kind: ActionKind, project: Project): RuleAction {
       return { action: kind, to: 'assignee', message: '' }
     case 'chat':
       return { action: kind, url: '', format: 'slack', message: '{key} {title}: {status}' }
+    case 'script':
+      return { action: kind, script: '// the issue is in scope as `issue`\nif issue.title.to_lower().contains("urgent") {\n    set("priority", "urgent");\n    add_label("triage");\n}\n' }
+    case 'extension':
+      return { action: kind }
     default:
       return { action: kind, label: '', text: '' }
   }
@@ -2896,7 +2916,45 @@ function RuleDialog({ rule, onClose }: { rule: Rule | null; onClose: () => void 
 function ActionParams({ a, onChange }: { a: RuleAction; onChange: (a: RuleAction) => void }) {
   const { project } = useSettings()
   const people = usePeople().data ?? []
+  const offered = useQuery({ queryKey: ['extension-actions'], queryFn: () => api.get<ExtensionAction[]>('/extensions/actions'), enabled: a.action === 'extension', staleTime: 60_000 })
   switch (a.action) {
+    case 'script':
+      return (
+        <div className="ps-script-action">
+          <textarea
+            className="textarea ps-script-input"
+            rows={7}
+            spellCheck={false}
+            aria-label={t('Script')}
+            value={a.script ?? ''}
+            onChange={(e) => onChange({ ...a, script: e.target.value })}
+          />
+          <span className="field-hint">
+            {t('A small script (Rhai) that sees the issue as `issue` and changes it: set("priority", "high"), set_field("Field name", value), add_label("x"), remove_label("x"), comment("text"). It can’t reach anything else, and it’s stopped when it runs long.')}
+          </span>
+        </div>
+      )
+    case 'extension': {
+      const list = offered.data ?? []
+      const value = a.extension && a.name ? `${a.extension}/${a.name}` : ''
+      return (
+        <>
+          <select
+            className="select input-sm ps-auto"
+            aria-label={t('Extension action')}
+            value={value}
+            onChange={(e) => {
+              const x = list.find((o) => `${o.extension}/${o.name}` === e.target.value)
+              onChange({ ...a, extension: x?.extension, name: x?.name })
+            }}
+          >
+            <option value="" disabled>{list.length ? t('Choose an action') : t('No extension offers actions')}</option>
+            {value && !list.some((o) => `${o.extension}/${o.name}` === value) && <option value={value}>{value}</option>}
+            {list.map((o) => <option key={`${o.extension}/${o.name}`} value={`${o.extension}/${o.name}`}>{o.extensionTitle}: {o.label}</option>)}
+          </select>
+        </>
+      )
+    }
     case 'setStatus':
       return (
         <select className="select input-sm ps-auto" aria-label={t('Status')} value={a.statusId ?? ''} onChange={(e) => onChange({ ...a, statusId: e.target.value })}>

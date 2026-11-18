@@ -514,6 +514,46 @@ test('command line: approving a sign-in', async ({ page, request }) => {
   await expect(page.getByRole('heading', { name: 'This sign-in doesn’t exist any more' })).toBeVisible()
 })
 
+test('extensions: install one, use its action in a rule, and a script action', async ({ page }) => {
+  await login(page)
+  await page.goto('/admin/extensions')
+  await page.getByRole('button', { name: 'Install an extension' }).click()
+  let dialog = page.getByRole('dialog')
+  // the example in the dialog is a working extension
+  await expect(dialog.getByLabel(/Manifest/)).toHaveValue(/"name": "hello"/)
+  await a11y(page, '[role=dialog]')
+  await dialog.getByRole('button', { name: 'Install', exact: true }).click()
+  await expect(page.getByText('Hello', { exact: true })).toBeVisible()
+  await expect(page.getByText('1 rule actions')).toBeVisible()
+  await a11y(page)
+  // a rule with the extension's action and a script
+  await page.goto('/projects/OPS/settings/automation')
+  await page.getByRole('button', { name: /Add rule|New rule/ }).first().click()
+  dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Name', { exact: true }).fill('Greet and tag')
+  await dialog.getByLabel('Action', { exact: true }).last().selectOption({ label: 'run an extension’s action' })
+  await dialog.getByLabel('Extension action').selectOption({ label: 'Hello: Say hello on the issue' })
+  await dialog.getByRole('button', { name: 'Add action' }).click()
+  await dialog.getByLabel('Action', { exact: true }).last().selectOption({ label: 'run a script' })
+  await dialog.getByLabel('Script').fill('add_label("scripted");\nset("priority", "low");')
+  await a11y(page, '[role=dialog]')
+  await dialog.getByRole('button', { name: 'Create rule' }).click()
+  await expect(page.getByText('Greet and tag')).toBeVisible()
+  // a new issue: greeted by the extension, tagged by the script
+  const key = await page.evaluate(async () => {
+    const r = await fetch('/api/issues', { method: 'POST', headers: { 'content-type': 'application/json', 'x-taskcraft': '1' }, body: JSON.stringify({ projectKey: 'OPS', title: 'Greet me' }) })
+    return (await r.json()).key as string
+  })
+  await page.goto(`/issues/${key}`)
+  await expect(page.getByText('Hello from an extension, Olivia Owner!')).toBeVisible()
+  await expect(page.getByText('scripted')).toBeVisible()
+  // the rule is gone again for the steps after this one
+  await page.evaluate(async () => {
+    const rules = await (await fetch('/api/projects/OPS/automation')).json()
+    for (const r of rules.filter((x: { name: string }) => x.name === 'Greet and tag')) await fetch(`/api/automation/${r.id}`, { method: 'DELETE', headers: { 'x-taskcraft': '1' } })
+  })
+})
+
 test('private issues with security levels', async ({ page }) => {
   await login(page)
   await page.goto('/projects/WEB/settings/permissions')
