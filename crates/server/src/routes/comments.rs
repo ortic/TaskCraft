@@ -221,6 +221,7 @@ pub async fn add_with(state: &AppState, actor: &Actor, issue: Uuid, body: Value,
     .await;
     crate::automation::run_commented(state, actor, &s).await;
     crate::extensions::on_event(state, actor, &s, "commented");
+    crate::agents::mentioned(state, actor, &s, &body).await;
     Ok(id)
 }
 

@@ -6,6 +6,16 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 
 ## [Unreleased]
 
+- **AI coding agents** (*Administration → Agents*): define agents — name, `@handle`,
+  instructions, repository and base branch — and assign them issues or mention them in comments.
+  A runner (`taskcraft-runner`, in the release archives; register it with a one-time token) works
+  on a checkout and the result becomes a branch and a **draft pull request** linked to the
+  issue, or an answer in a comment. Git and model credentials stay on the server; the runner
+  gets a token for one run. The issue shows queued / working, a live log and *Stop*; agents are
+  their own accounts with their own permissions, start in a testing mode for admins, and their
+  runs (with token use) are listed and audited. A workspace switch turns them off. See
+  `docs/agents.md`.
+
 - **Scripts and extensions**: automation rules can *run a script* — a few sandboxed lines
   (Rhai) that see the issue and set its fields, labels and comments. *Administration →
   Extensions* installs packages (a manifest and a script) with custom automation actions, event

@@ -96,6 +96,8 @@ export interface Person extends Named {
   photo?: string | null
   /** away today: back after this day (why is theirs to know) */
   awayUntil?: string | null
+  /** an AI agent's @handle: assigning or mentioning it starts it */
+  agent?: string | null
 }
 
 /** Time someone is away; kind and note only for the person and admins. */
@@ -504,7 +506,7 @@ export function userColor(seed: string): string {
 }
 
 /** Parts of TaskCraft a workspace can turn off. */
-export type Feature = 'timeTracking' | 'votes' | 'portal' | 'automation' | 'sharing' | 'ai' | 'calendarFeeds'
+export type Feature = 'timeTracking' | 'votes' | 'portal' | 'automation' | 'sharing' | 'ai' | 'calendarFeeds' | 'agents'
 export type DateFormat = 'dmy' | 'mdy' | 'ymd'
 export interface Announcement {
   id: string

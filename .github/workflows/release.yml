@@ -3,8 +3,8 @@ name: Release
 # A version tag (v0.1.0) publishes:
 #   - the container image ghcr.io/<owner>/taskcraft — amd64 and arm64, each built natively, then
 #     joined under one tag (version, major.minor, latest)
-#   - Linux binaries (x86_64, aarch64; the server with the web app built in, and `tc`, the
-#     command-line client) on the GitHub release, with the
+#   - Linux binaries (x86_64, aarch64; the server with the web app built in, `tc`, the
+#     command-line client, and `taskcraft-runner` for AI agents) on the GitHub release, with the
 #     changelog's section as release notes
 # Started by hand it builds and smoke-tests everything without publishing (tick "publish" on a
 # tag to publish from there).
@@ -149,14 +149,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-${{ matrix.target }}
-      - run: cargo build --release --locked -p taskcraft -p taskcraft-cli
+      - run: cargo build --release --locked -p taskcraft -p taskcraft-cli -p taskcraft-runner
       - name: Smoke test
-        run: ./target/release/taskcraft --version && ./target/release/tc --version
+        run: ./target/release/taskcraft --version && ./target/release/tc --version && ./target/release/taskcraft-runner --version
       - name: Package
         run: |
           name="taskcraft-${{ needs.check.outputs.version }}-${{ matrix.target }}"
           mkdir -p "dist/$name"
-          cp target/release/taskcraft target/release/tc README.md LICENSE-MIT LICENSE-APACHE CHANGELOG.md "dist/$name/"
+          cp target/release/taskcraft target/release/tc target/release/taskcraft-runner README.md LICENSE-MIT LICENSE-APACHE CHANGELOG.md "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
       - uses: actions/upload-artifact@v4

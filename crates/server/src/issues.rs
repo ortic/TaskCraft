@@ -1324,6 +1324,10 @@ pub async fn after_change(state: &AppState, actor: &Actor, s: &Summary, changes:
         "changed"
     };
     crate::extensions::on_event(state, actor, s, kind);
+    // an issue handed to an AI agent
+    if changes.iter().any(|c| c.field == "assignee") || (created && s.assignee.is_some()) {
+        crate::agents::assigned(state, actor, s).await;
+    }
     let mut e = Event::new(actor.workspace, "issue").project(s.project_id).issue(s.id, &s.key);
     e.actor_id = actor.user;
     events::publish(state, e).await;

@@ -554,6 +554,52 @@ test('extensions: install one, use its action in a rule, and a script action', a
   })
 })
 
+test('agents: define one, start it on an issue, watch and stop the run', async ({ page }) => {
+  await login(page)
+  await page.goto('/admin/agents')
+  await page.getByRole('button', { name: 'Add an agent' }).click()
+  let dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Name').fill('Cody')
+  await dialog.getByLabel('Handle (for @mentions)').fill('cody')
+  await dialog.getByLabel('Instructions').fill('Keep changes small.')
+  await a11y(page, '[role=dialog]')
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByText('@cody')).toBeVisible()
+  await expect(page.getByText('Being tried out')).toBeVisible()
+  // a runner: the registration commands are shown once
+  await page.getByRole('button', { name: 'Add a runner' }).click()
+  dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Name').fill('build-box')
+  await dialog.getByRole('button', { name: 'Add a runner' }).click()
+  await expect(dialog.getByLabel('Commands to register and start the runner')).toContainText('taskcraft-runner register --server')
+  await dialog.getByRole('button', { name: 'Done' }).click()
+  await expect(page.getByText('Not registered yet')).toBeVisible()
+  await a11y(page)
+  // assign an issue to the agent (the owner may, while it's being tried out): the run is queued
+  const key = await page.evaluate(async () => {
+    const agents = await (await fetch('/api/admin/agents')).json()
+    const r = await fetch('/api/issues', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-taskcraft': '1' },
+      body: JSON.stringify({ projectKey: 'OPS', title: 'For the agent', assigneeId: agents.agents[0].userId }),
+    })
+    return (await r.json()).key as string
+  })
+  await page.goto(`/issues/${key}`)
+  const runs = page.locator('.agent-runs')
+  await expect(runs.getByRole('heading', { name: 'AI agents' })).toBeVisible()
+  await expect(runs.getByText('Queued')).toBeVisible()
+  await expect(runs.getByText('Waiting for a runner to pick it up.')).toBeVisible()
+  await a11y(page, '.agent-runs')
+  await runs.getByRole('button', { name: 'Stop' }).click()
+  await expect(runs.getByText('Stopped')).toBeVisible()
+  // off again for the steps after this one
+  await page.evaluate(async () => {
+    const agents = await (await fetch('/api/admin/agents')).json()
+    for (const a of agents.agents) await fetch(`/api/admin/agents/${a.id}`, { method: 'DELETE', headers: { 'x-taskcraft': '1' } })
+  })
+})
+
 test('private issues with security levels', async ({ page }) => {
   await login(page)
   await page.goto('/projects/WEB/settings/permissions')

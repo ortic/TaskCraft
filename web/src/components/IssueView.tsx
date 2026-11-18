@@ -18,6 +18,7 @@ import { RichText, RichView, EMPTY_DOC, isEmptyDoc } from './Editor'
 import Development, { describeDevEvent } from './Development'
 import { SlaList } from './SlaBadges'
 import { ApprovalPanel } from './Approvals'
+import AgentRuns from './AgentRuns'
 import { TimerButton } from './Timer'
 import { useOrganizations } from '../pages/Organizations'
 import { resolutionLabel, resolutionsOf, useTransition } from './Transition'
@@ -245,6 +246,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
         )}
 
         <ApprovalPanel issue={issue} onChanged={() => { qc.invalidateQueries({ queryKey: ['issue', issue.key] }); qc.invalidateQueries({ queryKey: ['history', issue.key] }); refreshIssues(qc) }} />
+        <AgentRuns issue={issue} />
         <Development issue={issue} />
         <div className="section">
           <Tabs

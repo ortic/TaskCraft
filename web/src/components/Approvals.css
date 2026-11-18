@@ -27,3 +27,10 @@
 .ap-options { display: flex; flex-direction: column; }
 .ap-options .row { min-height: 28px; margin: 0; }
 .ap-options input[type=checkbox] { width: 16px; height: 16px; margin: 0; }
+
+/* AI agents' runs on an issue */
+.agent-runs .section-head h3 { display: inline-flex; align-items: center; gap: 6px; }
+.agent-run-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.agent-run-note { margin: 2px 0 0 30px; overflow-wrap: anywhere; }
+.agent-log { list-style: none; margin: 6px 0 0 30px; padding: 8px 10px; background: var(--bg-soft); border-radius: var(--radius); font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; line-height: 1.5; max-height: 260px; overflow-y: auto; overflow-wrap: anywhere; }
+.agent-badge { display: inline-flex; align-items: center; gap: 2px; font-size: 10.5px; font-weight: 600; padding: 0 5px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); margin-inline-start: 4px; }

@@ -76,6 +76,8 @@ rsa = { version = "0.9.10", features = ["getrandom"] }
 tempfile = "3.27.0"
 # the command-line client, run against the test server (tests/cli.rs)
 taskcraft-cli = { path = "../cli" }
+# the agents' runner, run against the test server (tests/agents.rs)
+taskcraft-runner = { path = "../runner" }
 
 [features]
 default = []

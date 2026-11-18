@@ -7,7 +7,8 @@ import {
   Archive, ArchiveRestore, CalendarOff, Check, Link2, RotateCcw, ChevronDown, CircleDot, Clock, Download, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, Mail, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, ShieldOff, Trash,
   UserCheck, UserPlus, UserX, Users, Webhook, Upload, ImageOff,
 } from 'lucide-react'
-import { KeyRound, Puzzle } from 'lucide-react'
+import { Bot, KeyRound, Puzzle } from 'lucide-react'
+import AgentsTab from './Agents'
 import ExtensionsTab from './Extensions'
 import ProvisioningTab from './Provisioning'
 import { api, ago, dateTime, shortDate, type Feature, type LinkType, type Me, type TimeCategory } from '../api'
@@ -21,8 +22,8 @@ import { SignInBadges, useSignInOptions, type SignInMethods } from '../component
 import { ResetTwoFactor, TwoFactorPolicy, canResetTwoFactor, useTwoFactorPolicy } from '../components/Security'
 import './Admin.css'
 
-type Tab = 'overview' | 'users' | 'teams' | 'provisioning' | 'timeoff' | 'links' | 'time' | 'webhooks' | 'extensions' | 'import' | 'audit'
-const TABS: Tab[] = ['overview', 'users', 'teams', 'provisioning', 'timeoff', 'links', 'time', 'webhooks', 'extensions', 'import', 'audit']
+type Tab = 'overview' | 'users' | 'teams' | 'provisioning' | 'timeoff' | 'links' | 'time' | 'webhooks' | 'extensions' | 'agents' | 'import' | 'audit'
+const TABS: Tab[] = ['overview', 'users', 'teams', 'provisioning', 'timeoff', 'links', 'time', 'webhooks', 'extensions', 'agents', 'import', 'audit']
 
 export default function Admin() {
   const me = useMe().data
@@ -61,6 +62,7 @@ export default function Admin() {
           ...(timeTracking ? [{ id: 'time' as const, label: <><Clock size={14} /> {t('Time tracking')}</> }] : []),
           { id: 'webhooks', label: <><Webhook size={14} /> {t('Webhooks')}</> },
           { id: 'extensions', label: <><Puzzle size={14} /> {t('Extensions')}</> },
+          { id: 'agents', label: <><Bot size={14} /> {t('Agents')}</> },
           { id: 'import', label: <><ArchiveRestore size={14} /> {t('Import')}</> },
           { id: 'audit', label: <><ScrollText size={14} /> {t('Audit log')}</> },
         ]}
@@ -74,6 +76,7 @@ export default function Admin() {
       {tab === 'time' && <TimeTab />}
       {tab === 'webhooks' && <WebhooksTab />}
       {tab === 'extensions' && <ExtensionsTab />}
+      {tab === 'agents' && <AgentsTab />}
       {tab === 'import' && <BackupImportTab />}
       {tab === 'audit' && <AuditTab />}
     </div>
@@ -480,6 +483,7 @@ function FeaturesForm({ me }: { me: Me }) {
     { id: 'automation', label: () => t('Automation'), hint: () => t('Rules that act on changes and on schedules. Existing rules are kept, but don’t run.') },
     { id: 'sharing', label: () => t('Sharing with links'), hint: () => t('Read-only pages projects share by link (status pages, roadmaps). Turned off, every link stops working.') },
     { id: 'calendarFeeds', label: () => t('Calendar feeds'), hint: () => t('Secret addresses calendar apps subscribe to (due dates, sprints, releases). Turned off, every feed stops.') },
+    { id: 'agents', label: () => t('AI coding agents'), hint: () => t('Agents that prepare pull requests for issues assigned to them. Turned off, no agent starts and runners get no work.') },
     { id: 'ai', label: () => t('AI assistance'), hint: () => `${t('Summaries of long threads and searching in plain words. Only what the person asking may read is sent, and only when they ask.')} ${aiSetupText(me)}` },
   ]
   const saved = me.workspace?.features ?? {}

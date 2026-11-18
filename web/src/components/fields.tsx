@@ -4,7 +4,7 @@ import { t } from '../i18n'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Check, X, Plus, Lock } from 'lucide-react'
-import { api, PRIORITIES, shortDate, type CustomField, type Issue, type Named, type Priority, type Project, type StatusRef } from '../api'
+import { api, PRIORITIES, shortDate, type CustomField, type Issue, type Named, type Person, type Priority, type Project, type StatusRef } from '../api'
 import { Avatar, AwayBadge, Choices, Lozenge, PopButton, Unassigned, useMe, usePeople } from '../ui'
 import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
 
@@ -51,6 +51,7 @@ export function PersonLabel({ person, size = 22, empty }: { person: Named | null
     <>
       <Avatar name={person.name} id={person.id} size={size} decorative />
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{person.name}</span>
+      {(person as Person).agent && <span className="agent-badge" title={t('An AI agent: assigning the issue to it starts it')}>{t('AI')}</span>}
     </>
   ) : (
     <>

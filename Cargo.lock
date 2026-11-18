@@ -4683,6 +4683,7 @@ dependencies = [
  "sqlx",
  "tar",
  "taskcraft-cli",
+ "taskcraft-runner",
  "taskcraft-tql",
  "tempfile",
  "thiserror 2.0.21",
@@ -4705,6 +4706,20 @@ dependencies = [
  "clap",
  "reqwest 0.13.5",
  "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "taskcraft-runner"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "clap",
+ "flate2",
+ "reqwest 0.13.5",
+ "serde_json",
+ "tar",
+ "tempfile",
  "tokio",
 ]
 

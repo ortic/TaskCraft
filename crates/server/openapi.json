@@ -9435,6 +9435,234 @@
     }
    }
   },
+  "/issues/{key}/agent-runs": {
+   "get": {
+    "tags": [
+     "Issues"
+    ],
+    "summary": "The AI agents' work on an issue, latest first",
+    "operationId": "listIssueAgentRuns",
+    "parameters": [
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "issue key (e.g. WEB-12; former keys keep working) or issue id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/AgentRun"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/agent-runs/{id}/log": {
+   "get": {
+    "tags": [
+     "Issues"
+    ],
+    "summary": "A run's state and log",
+    "operationId": "getAgentRunLog",
+    "description": "For everyone who sees the run's issue.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "after",
+      "in": "query",
+      "required": false,
+      "description": "only lines after this line id",
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "state": {
+           "type": "string"
+          },
+          "lines": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "integer"
+             },
+             "at": {
+              "type": "string",
+              "format": "date-time"
+             },
+             "line": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "id",
+             "at",
+             "line"
+            ]
+           }
+          }
+         },
+         "required": [
+          "state",
+          "lines"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "Integrations (WikiCraft, Git)"
+    ],
+    "summary": "Write lines to a run's log",
+    "operationId": "writeAgentRunLog",
+    "description": "For the runner, with the token of this one run (`Authorization: Bearer tcx_…`, from the claim); 409 once the run has ended or was cancelled.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "lines": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         }
+        },
+        "required": [
+         "lines"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    },
+    "security": [
+     {}
+    ]
+   }
+  },
+  "/agent-runs/{id}/cancel": {
+   "post": {
+    "tags": [
+     "Issues"
+    ],
+    "summary": "Stop an agent's run",
+    "operationId": "cancelAgentRun",
+    "description": "Whoever started it, project admins and workspace admins.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   }
+  },
   "/issues/{key}/comments": {
    "get": {
     "tags": [
@@ -14310,6 +14538,442 @@
     }
    }
   },
+  "/agent-runner/register": {
+   "post": {
+    "tags": [
+     "Integrations (WikiCraft, Git)"
+    ],
+    "summary": "Register a runner with its one-time token",
+    "operationId": "registerAgentRunner",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "token": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "token"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "name": {
+           "type": "string"
+          },
+          "token": {
+           "type": "string",
+           "description": "the runner's own token"
+          }
+         },
+         "required": [
+          "id",
+          "name",
+          "token"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     }
+    },
+    "security": [
+     {}
+    ]
+   }
+  },
+  "/agent-runner/claim": {
+   "post": {
+    "tags": [
+     "Integrations (WikiCraft, Git)"
+    ],
+    "summary": "Claim the oldest queued run",
+    "operationId": "claimAgentRun",
+    "description": "For the runner program (`taskcraft-runner`), with its own token (`Authorization: Bearer tcr_…`), not a person's. 204 when nothing waits.",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "run": {
+           "type": "object",
+           "properties": {
+            "id": {
+             "type": "string",
+             "format": "uuid"
+            },
+            "token": {
+             "type": "string"
+            },
+            "trigger": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "id",
+            "token"
+           ]
+          },
+          "agent": {
+           "type": "object",
+           "properties": {
+            "name": {
+             "type": "string"
+            },
+            "handle": {
+             "type": "string"
+            },
+            "instructions": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "name"
+           ]
+          },
+          "issue": {
+           "type": "object",
+           "additionalProperties": true,
+           "description": "key, title, type, status, priority, labels, url, description and the comments everyone may read"
+          },
+          "prompt": {
+           "type": [
+            "string",
+            "null"
+           ],
+           "description": "what the mention said"
+          },
+          "repository": {
+           "type": [
+            "object",
+            "null"
+           ],
+           "properties": {
+            "name": {
+             "type": "string"
+            },
+            "baseBranch": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "name",
+            "baseBranch"
+           ]
+          }
+         },
+         "required": [
+          "run",
+          "agent",
+          "issue"
+         ]
+        }
+       }
+      }
+     },
+     "204": {
+      "description": "Nothing waits"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     }
+    },
+    "security": [
+     {}
+    ]
+   }
+  },
+  "/agent-runs/{id}/source": {
+   "get": {
+    "tags": [
+     "Integrations (WikiCraft, Git)"
+    ],
+    "summary": "The repository at the base branch (.tar.gz)",
+    "operationId": "getAgentRunSource",
+    "description": "For the runner, with the token of this one run (`Authorization: Bearer tcx_…`, from the claim); 409 once the run has ended or was cancelled. Fetched by the server with its Git token: the runner needs none.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The archive",
+      "content": {
+       "application/gzip": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    },
+    "security": [
+     {}
+    ]
+   }
+  },
+  "/agent-runs/{id}/model": {
+   "post": {
+    "tags": [
+     "Integrations (WikiCraft, Git)"
+    ],
+    "summary": "One turn with the model",
+    "operationId": "askAgentModel",
+    "description": "For the runner, with the token of this one run (`Authorization: Bearer tcx_…`, from the claim); 409 once the run has ended or was cancelled. Asked by the server with its key and counted on the run (at most 300 a run).",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "system": {
+          "type": "string"
+         },
+         "messages": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "role": {
+             "type": "string",
+             "enum": [
+              "user",
+              "assistant"
+             ]
+            },
+            "content": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "role",
+            "content"
+           ]
+          }
+         }
+        },
+        "required": [
+         "messages"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "text": {
+           "type": "string"
+          },
+          "usage": {
+           "type": "object",
+           "properties": {
+            "input": {
+             "type": "integer"
+            },
+            "output": {
+             "type": "integer"
+            }
+           }
+          }
+         },
+         "required": [
+          "text"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     },
+     "429": {
+      "$ref": "#/components/responses/TooMany"
+     }
+    },
+    "security": [
+     {}
+    ]
+   }
+  },
+  "/agent-runs/{id}/finish": {
+   "post": {
+    "tags": [
+     "Integrations (WikiCraft, Git)"
+    ],
+    "summary": "Hand in a run's result",
+    "operationId": "finishAgentRun",
+    "description": "For the runner, with the token of this one run (`Authorization: Bearer tcx_…`, from the claim); 409 once the run has ended or was cancelled. Changed files (paths inside the repository, up to 300 files and 5 MB) become a branch, one commit and a draft pull request, linked to the issue and announced in a comment by the agent; without files the answer (or summary) becomes the comment; `error` fails the run.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "summary": {
+          "type": "string"
+         },
+         "answer": {
+          "type": "string"
+         },
+         "error": {
+          "type": "string"
+         },
+         "files": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "path": {
+             "type": "string"
+            },
+            "status": {
+             "type": "string",
+             "enum": [
+              "added",
+              "modified",
+              "deleted"
+             ]
+            },
+            "content": {
+             "type": "string",
+             "description": "base64; not for deleted files"
+            }
+           },
+           "required": [
+            "path",
+            "status"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "state": {
+           "type": "string"
+          },
+          "result": {
+           "description": "any JSON value"
+          }
+         },
+         "required": [
+          "state"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     },
+     "413": {
+      "$ref": "#/components/responses/TooLarge"
+     }
+    },
+    "security": [
+     {}
+    ]
+   }
+  },
   "/integrations/mail-in": {
    "post": {
     "tags": [
@@ -17430,6 +18094,9 @@
            },
            "calendarFeeds": {
             "type": "boolean"
+           },
+           "agents": {
+            "type": "boolean"
            }
           },
           "description": "false turns a part off: it's hidden and the API refuses it (400; the portal answers 404); left out: on"
@@ -17582,6 +18249,581 @@
      },
      "403": {
       "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/admin/agents": {
+   "get": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "AI agents, runners and the repositories agents can work in (workspace admins)",
+    "operationId": "listAgents",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "agents": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "name": {
+              "type": "string"
+             },
+             "handle": {
+              "type": "string",
+              "description": "2 to 30 lower-case letters, digits, - or _ (mentioned as @handle)"
+             },
+             "instructions": {
+              "type": "string",
+              "description": "for the model, up to 20,000 characters"
+             },
+             "model": {
+              "type": [
+               "string",
+               "null"
+              ],
+              "description": "another model than the server's, on the same connection"
+             },
+             "integrationId": {
+              "type": [
+               "string",
+               "null"
+              ],
+              "format": "uuid",
+              "description": "the repository it works in: a Git integration with API access"
+             },
+             "baseBranch": {
+              "type": [
+               "string",
+               "null"
+              ],
+              "description": "default: the repository's default branch"
+             },
+             "state": {
+              "type": "string",
+              "enum": [
+               "testing",
+               "active",
+               "off"
+              ],
+              "description": "testing (the default): only workspace admins start it"
+             },
+             "id": {
+              "type": "string",
+              "format": "uuid"
+             },
+             "userId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "its account: give it project roles like anyone"
+             },
+             "repository": {
+              "type": [
+               "string",
+               "null"
+              ],
+              "description": "owner/name"
+             },
+             "runs": {
+              "type": "integer"
+             },
+             "activeRuns": {
+              "type": "integer"
+             },
+             "tokensIn": {
+              "type": "integer"
+             },
+             "tokensOut": {
+              "type": "integer"
+             }
+            },
+            "required": [
+             "id",
+             "userId",
+             "name",
+             "handle",
+             "state"
+            ]
+           }
+          },
+          "runners": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "string",
+              "format": "uuid"
+             },
+             "name": {
+              "type": "string"
+             },
+             "registeredAt": {
+              "type": [
+               "string",
+               "null"
+              ],
+              "format": "date-time"
+             },
+             "lastSeenAt": {
+              "type": [
+               "string",
+               "null"
+              ],
+              "format": "date-time"
+             },
+             "createdAt": {
+              "type": "string",
+              "format": "date-time"
+             }
+            },
+            "required": [
+             "id",
+             "name"
+            ]
+           }
+          },
+          "repositories": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "string",
+              "format": "uuid"
+             },
+             "repo": {
+              "type": "string"
+             },
+             "projectKey": {
+              "type": "string"
+             },
+             "defaultBranch": {
+              "type": [
+               "string",
+               "null"
+              ]
+             }
+            },
+            "required": [
+             "id",
+             "repo"
+            ]
+           }
+          },
+          "modelConfigured": {
+           "type": "boolean",
+           "description": "the server has a model (TASKCRAFT_AI_PROVIDER): agents need one"
+          },
+          "serverUrl": {
+           "type": "string",
+           "format": "uri"
+          }
+         },
+         "required": [
+          "agents",
+          "runners",
+          "repositories",
+          "modelConfigured"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "Define an AI agent (workspace admins)",
+    "operationId": "createAgent",
+    "description": "The agent gets an account of its own (a member without a password): it's assignable and mentionable, sees what its project roles allow, and what it does is its own in the history.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "handle": {
+          "type": "string",
+          "description": "2 to 30 lower-case letters, digits, - or _ (mentioned as @handle)"
+         },
+         "instructions": {
+          "type": "string",
+          "description": "for the model, up to 20,000 characters"
+         },
+         "model": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "description": "another model than the server's, on the same connection"
+         },
+         "integrationId": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "uuid",
+          "description": "the repository it works in: a Git integration with API access"
+         },
+         "baseBranch": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "description": "default: the repository's default branch"
+         },
+         "state": {
+          "type": "string",
+          "enum": [
+           "testing",
+           "active",
+           "off"
+          ],
+          "description": "testing (the default): only workspace admins start it"
+         }
+        },
+        "required": [
+         "name",
+         "handle"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "userId": {
+           "type": "string",
+           "format": "uuid"
+          }
+         },
+         "required": [
+          "id",
+          "userId"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   }
+  },
+  "/admin/agents/{id}": {
+   "patch": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "Change an agent (workspace admins)",
+    "operationId": "updateAgent",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "handle": {
+          "type": "string",
+          "description": "2 to 30 lower-case letters, digits, - or _ (mentioned as @handle)"
+         },
+         "instructions": {
+          "type": "string",
+          "description": "for the model, up to 20,000 characters"
+         },
+         "model": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "description": "another model than the server's, on the same connection"
+         },
+         "integrationId": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "uuid",
+          "description": "the repository it works in: a Git integration with API access"
+         },
+         "baseBranch": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "description": "default: the repository's default branch"
+         },
+         "state": {
+          "type": "string",
+          "enum": [
+           "testing",
+           "active",
+           "off"
+          ],
+          "description": "testing (the default): only workspace admins start it"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "Remove an agent (workspace admins)",
+    "operationId": "removeAgent",
+    "description": "Its account is deactivated: what it wrote stays.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/admin/agents/{id}/runs": {
+   "get": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "An agent's runs with the tokens they took (latest 100)",
+    "operationId": "listAgentRuns",
+    "description": "Workspace admins.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/AgentRun"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/admin/agent-runners": {
+   "post": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "Add a runner (workspace admins)",
+    "operationId": "addAgentRunner",
+    "description": "The answer has the one-time registration token for `taskcraft-runner register`.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "name"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "registrationToken": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "registrationToken"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/admin/agent-runners/{id}": {
+   "delete": {
+    "tags": [
+     "Administration"
+    ],
+    "summary": "Remove a runner (workspace admins)",
+    "operationId": "removeAgentRunner",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
      }
     }
    }
@@ -21625,6 +22867,9 @@
          },
          "calendarFeeds": {
           "type": "boolean"
+         },
+         "agents": {
+          "type": "boolean"
          }
         },
         "description": "parts of TaskCraft that are on"
@@ -22231,6 +23476,13 @@
       ],
       "format": "date",
       "description": "away today, back after this day (see GET /absences)"
+     },
+     "agent": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "an AI agent's @handle: assigning an issue to it or mentioning it starts it"
      }
     },
     "required": [
@@ -28378,6 +29630,157 @@
      "expiresAt"
     ],
     "description": "An upload of another tracker's XML site backup, or a connection to its API, and the import."
+   },
+   "AgentRun": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "agent": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string"
+       },
+       "handle": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "name",
+       "handle"
+      ]
+     },
+     "state": {
+      "type": "string",
+      "enum": [
+       "queued",
+       "running",
+       "succeeded",
+       "failed",
+       "cancelled"
+      ]
+     },
+     "trigger": {
+      "type": "string",
+      "enum": [
+       "assigned",
+       "mentioned"
+      ]
+     },
+     "triggeredBy": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Named"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "startedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "finishedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "result": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "kind": {
+        "type": "string",
+        "enum": [
+         "answer",
+         "pull_request"
+        ]
+       },
+       "summary": {
+        "type": "string"
+       },
+       "branch": {
+        "type": "string"
+       },
+       "url": {
+        "type": "string",
+        "format": "uri"
+       },
+       "number": {
+        "type": [
+         "integer",
+         "null"
+        ]
+       },
+       "files": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "kind"
+      ],
+      "description": "how it ended"
+     },
+     "error": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "modelCalls": {
+      "type": "integer"
+     },
+     "tokensIn": {
+      "type": "integer",
+      "description": "tokens sent to the model, where the provider reports them"
+     },
+     "tokensOut": {
+      "type": "integer"
+     },
+     "issue": {
+      "type": "object",
+      "properties": {
+       "key": {
+        "type": "string"
+       },
+       "title": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "key",
+       "title"
+      ]
+     },
+     "canCancel": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "id",
+     "agent",
+     "state",
+     "trigger",
+     "createdAt",
+     "issue",
+     "canCancel"
+    ],
+    "description": "One piece of work of an AI agent on an issue."
    },
    "ExtensionManifest": {
     "type": "object",

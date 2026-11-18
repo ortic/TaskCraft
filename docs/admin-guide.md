@@ -201,6 +201,17 @@ reports can then include the whole tree.
 - **The REST API** with personal tokens, described in OpenAPI at `/api/openapi.yaml` and in the
   app's API reference.
 
+## AI agents
+
+*Administration → Agents*: define AI coding agents — colleagues of their own kind that take an
+issue assigned to them (or a mention) and prepare a draft pull request, or answer a question in
+a comment. An agent needs the server's model connection, a repository connected with a token,
+and a **runner** you operate (`taskcraft-runner`, registered with a one-time token), which never
+holds the Git token or the model key. New agents are *being tried out* — only workspace admins
+start them — until you open them to everyone. Runs, their logs and their token use are listed
+per agent; the workspace switch *AI coding agents* turns them off. Details:
+[AI coding agents](agents.md).
+
 ## Extensions
 
 *Administration → Extensions* is for what's special about your organization: small sandboxed

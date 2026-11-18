@@ -644,7 +644,7 @@ schemas["Me"] = obj(
                     "dateFormat": null(enum("dmy", "mdy", "ymd"), "how dates are written (null: as the language writes them)"),
                     "announcement": null(obj({"id": uuid, "text": txt, "tone": enum("info", "warning"), "until": null(dt, "shown until"), "at": dt}, ["id", "text", "tone"]),
                                          "the announcement for everyone while it's current"),
-                    "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean, "calendarFeeds": boolean}), "parts of TaskCraft that are on"),
+                    "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean, "calendarFeeds": boolean, "agents": boolean}), "parts of TaskCraft that are on"),
                     "ai": d(boolean, "AI assistance can be used (the server has a model and the workspace hasn't turned it off)"),
                     "aiSetup": null(obj({"provider": enum("anthropic", "openai-compatible"), "model": txt, "local": d(boolean, "the model runs in the server's own network")}), "the AI setup (admins only)"),
                     "logo": null(txt, "the logo's address (/api/workspace/logo?v=…); null: TaskCraft's mark"),
@@ -773,7 +773,8 @@ schemas["SecurityPolicy"] = obj(
 schemas["Person"] = obj(
     {"id": uuid, "name": txt, "email": ntxt("null for guests asking"), "role": enum("owner", "admin", "member", "guest"), "title": ntxt("job title"),
      "photo": null(txt, "the profile photo's address (/api/users/{id}/photo?v=…)"),
-     "awayUntil": null(date, "away today, back after this day (see GET /absences)")},
+     "awayUntil": null(date, "away today, back after this day (see GET /absences)"),
+     "agent": ntxt("an AI agent's @handle: assigning an issue to it or mentioning it starts it")},
     ["id", "name", "role"],
     "Someone active in the workspace (people pickers, mentions).",
 )
@@ -3408,7 +3409,7 @@ op("put", "/admin/workspace", "updateWorkspace", "Administration", "Rename the w
        "dateFormat": null(enum("auto", "dmy", "mdy", "ymd"), "how dates are written (auto or null: as the language writes them)"),
        "announcement": null(obj({"text": d(txt, "up to 500 characters (empty: taken down)"), "tone": enum("info", "warning"), "until": null(dt, "shown until (null: until taken down)")}, ["text"]),
                             "a message at the top of every page (null: taken down)"),
-       "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean, "calendarFeeds": boolean}),
+       "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean, "calendarFeeds": boolean, "agents": boolean}),
                      "false turns a part off: it's hidden and the API refuses it (400; the portal answers 404); left out: on"),
        "uploads": obj(
            {
@@ -3428,6 +3429,62 @@ op("delete", "/admin/workspace/logo", "deleteWorkspaceLogo", "Administration", "
    desc="Workspace admins, in the browser.", auth="session", res=NO)
 op("get", "/workspace/logo", "getWorkspaceLogo", "Administration", "The workspace's logo",
    desc="Anyone in the workspace (404 without one).", res=raw("image/png", "the image (or JPEG, GIF, WebP)"))
+# ---- AI coding agents ----
+schemas["AgentRun"] = obj(
+    {"id": uuid, "agent": obj({"name": txt, "handle": txt}, ["name", "handle"]), "state": enum("queued", "running", "succeeded", "failed", "cancelled"),
+     "trigger": enum("assigned", "mentioned"), "triggeredBy": null(S("Named")), "createdAt": dt, "startedAt": null(dt), "finishedAt": null(dt),
+     "result": null(obj({"kind": enum("answer", "pull_request"), "summary": txt, "branch": txt, "url": uri, "number": null(num), "files": num}, ["kind"]), "how it ended"),
+     "error": ntxt(), "modelCalls": num, "tokensIn": d(num, "tokens sent to the model, where the provider reports them"), "tokensOut": num,
+     "issue": obj({"key": txt, "title": txt}, ["key", "title"]), "canCancel": boolean},
+    ["id", "agent", "state", "trigger", "createdAt", "issue", "canCancel"],
+    "One piece of work of an AI agent on an issue.",
+)
+A_AGENT_INPUT = {"name": txt, "handle": d(txt, "2 to 30 lower-case letters, digits, - or _ (mentioned as @handle)"), "instructions": d(txt, "for the model, up to 20,000 characters"),
+                 "model": ntxt("another model than the server's, on the same connection"), "integrationId": nuuid("the repository it works in: a Git integration with API access"),
+                 "baseBranch": ntxt("default: the repository's default branch"), "state": enum("testing", "active", "off", desc="testing (the default): only workspace admins start it")}
+op("get", "/admin/agents", "listAgents", "Administration", "AI agents, runners and the repositories agents can work in (workspace admins)",
+   res=ok(obj({"agents": arr(obj({**A_AGENT_INPUT, "id": uuid, "userId": d(uuid, "its account: give it project roles like anyone"), "repository": ntxt("owner/name"),
+                                    "runs": num, "activeRuns": num, "tokensIn": num, "tokensOut": num}, ["id", "userId", "name", "handle", "state"])),
+               "runners": arr(obj({"id": uuid, "name": txt, "registeredAt": null(dt), "lastSeenAt": null(dt), "createdAt": dt}, ["id", "name"])),
+               "repositories": arr(obj({"id": uuid, "repo": txt, "projectKey": txt, "defaultBranch": ntxt()}, ["id", "repo"])),
+               "modelConfigured": d(boolean, "the server has a model (TASKCRAFT_AI_PROVIDER): agents need one"), "serverUrl": uri}, ["agents", "runners", "repositories", "modelConfigured"])))
+op("post", "/admin/agents", "createAgent", "Administration", "Define an AI agent (workspace admins)",
+   desc="The agent gets an account of its own (a member without a password): it's assignable and mentionable, sees what its project roles allow, and what it does is its own in the history.",
+   req=body(obj(A_AGENT_INPUT, ["name", "handle"])), res=created(obj({"id": uuid, "userId": uuid}, ["id", "userId"])), err="409")
+op("patch", "/admin/agents/{id}", "updateAgent", "Administration", "Change an agent (workspace admins)", req=body(obj(A_AGENT_INPUT)), res=NO, err="409")
+op("delete", "/admin/agents/{id}", "removeAgent", "Administration", "Remove an agent (workspace admins)", desc="Its account is deactivated: what it wrote stays.", res=NO)
+op("get", "/admin/agents/{id}/runs", "listAgentRuns", "Administration", "An agent's runs with the tokens they took (latest 100)", desc="Workspace admins.", res=ok(arr(S("AgentRun"))))
+op("post", "/admin/agent-runners", "addAgentRunner", "Administration", "Add a runner (workspace admins)",
+   desc="The answer has the one-time registration token for `taskcraft-runner register`.", req=body(obj({"name": txt}, ["name"])),
+   res=created(obj({"id": uuid, "registrationToken": txt}, ["id", "registrationToken"])))
+op("delete", "/admin/agent-runners/{id}", "removeAgentRunner", "Administration", "Remove a runner (workspace admins)", res=NO)
+op("get", "/issues/{key}/agent-runs", "listIssueAgentRuns", "Issues", "The AI agents' work on an issue, latest first", res=ok(arr(S("AgentRun"))))
+op("get", "/agent-runs/{id}/log", "getAgentRunLog", "Issues", "A run's state and log", desc="For everyone who sees the run's issue.",
+   query=[q("after", "only lines after this line id", num)],
+   res=ok(obj({"state": txt, "lines": arr(obj({"id": num, "at": dt, "line": txt}, ["id", "at", "line"]))}, ["state", "lines"])))
+op("post", "/agent-runs/{id}/cancel", "cancelAgentRun", "Issues", "Stop an agent's run", desc="Whoever started it, project admins and workspace admins.", res=NO, err="409")
+D_RUNNER = "For the runner program (`taskcraft-runner`), with its own token (`Authorization: Bearer tcr_…`), not a person's."
+D_RUN = "For the runner, with the token of this one run (`Authorization: Bearer tcx_…`, from the claim); 409 once the run has ended or was cancelled."
+op("post", "/agent-runner/register", "registerAgentRunner", "Integrations (WikiCraft, Git)", "Register a runner with its one-time token", auth="public",
+   req=body(obj({"token": txt, "name": txt}, ["token"])), res=ok(obj({"id": uuid, "name": txt, "token": d(txt, "the runner's own token")}, ["id", "name", "token"])), err="401 -403")
+op("post", "/agent-runner/claim", "claimAgentRun", "Integrations (WikiCraft, Git)", "Claim the oldest queued run", desc=D_RUNNER + " 204 when nothing waits.", auth="public",
+   res={**ok(obj({"run": obj({"id": uuid, "token": txt, "trigger": txt}, ["id", "token"]), "agent": obj({"name": txt, "handle": txt, "instructions": txt}, ["name"]),
+                  "issue": d(anyobj, "key, title, type, status, priority, labels, url, description and the comments everyone may read"), "prompt": ntxt("what the mention said"),
+                  "repository": null(obj({"name": txt, "baseBranch": txt}, ["name", "baseBranch"]))}, ["run", "agent", "issue"])), "204": {"description": "Nothing waits"}}, err="401 -403")
+op("get", "/agent-runs/{id}/source", "getAgentRunSource", "Integrations (WikiCraft, Git)", "The repository at the base branch (.tar.gz)",
+   desc=D_RUN + " Fetched by the server with its Git token: the runner needs none.", auth="public", res=raw("application/gzip", "The archive"), err="409 -401 -403")
+op("post", "/agent-runs/{id}/model", "askAgentModel", "Integrations (WikiCraft, Git)", "One turn with the model",
+   desc=D_RUN + " Asked by the server with its key and counted on the run (at most 300 a run).", auth="public",
+   req=body(obj({"system": txt, "messages": arr(obj({"role": enum("user", "assistant"), "content": txt}, ["role", "content"]))}, ["messages"])),
+   res=ok(obj({"text": txt, "usage": obj({"input": num, "output": num})}, ["text"])), err="409 429 -401 -403")
+op("post", "/agent-runs/{id}/log", "writeAgentRunLog", "Integrations (WikiCraft, Git)", "Write lines to a run's log", desc=D_RUN, auth="public",
+   req=body(obj({"lines": arr(txt)}, ["lines"])), res=NO, err="409 -401 -403")
+op("post", "/agent-runs/{id}/finish", "finishAgentRun", "Integrations (WikiCraft, Git)", "Hand in a run's result",
+   desc=D_RUN + " Changed files (paths inside the repository, up to 300 files and 5 MB) become a branch, one commit and a draft pull request, linked to the issue and announced in a comment by the agent; "
+        "without files the answer (or summary) becomes the comment; `error` fails the run.", auth="public",
+   req=body(obj({"summary": txt, "answer": txt, "error": txt, "files": arr(obj({"path": txt, "status": enum("added", "modified", "deleted"), "content": d(txt, "base64; not for deleted files")}, ["path", "status"]))})),
+   res=ok(obj({"state": txt, "result": anyval}, ["state"])), err="409 413 -401 -403")
+
 # ---- extensions ----
 schemas["ExtensionManifest"] = obj(
     {

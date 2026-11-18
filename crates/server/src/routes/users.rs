@@ -13,21 +13,25 @@ use crate::error::{ApiError, ApiResult};
 
 /// Everyone active in the workspace (people pickers, mentions).
 pub async fn people(State(state): State<AppState>, CurrentUser(user): CurrentUser) -> ApiResult<Json<Value>> {
-    type Row = (Uuid, String, Option<String>, String, Option<String>, Option<chrono::DateTime<chrono::Utc>>);
-    let rows: Vec<Row> =
-        sqlx::query_as("SELECT id, name, email, role, title, photo_at FROM users WHERE workspace_id = $1 AND status = 'active' ORDER BY lower(name)")
-            .bind(user.workspace_id)
-            .fetch_all(&state.db)
-            .await?;
+    type Row = (Uuid, String, Option<String>, String, Option<String>, Option<chrono::DateTime<chrono::Utc>>, Option<String>);
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT u.id, u.name, u.email, u.role, u.title, u.photo_at, (SELECT a.handle FROM agents a WHERE a.user_id = u.id AND a.state <> 'off') FROM users u
+          WHERE u.workspace_id = $1 AND u.status = 'active' ORDER BY lower(u.name)",
+    )
+    .bind(user.workspace_id)
+    .fetch_all(&state.db)
+    .await?;
     // guests don't see e-mail addresses; everyone sees who is away until when (never why)
     let guest = user.is_guest();
     let away = crate::absences::away_now(&state, user.workspace_id).await?;
     Ok(Json(json!(
         rows.into_iter()
-            .map(|(id, name, email, role, title, photo)| {
+            .map(|(id, name, email, role, title, photo, agent)| {
                 json!({
                     "id": id, "name": name, "email": if guest { None } else { email }, "role": role, "title": title, "photo": crate::photos::url(id, photo),
                     "awayUntil": away.get(&id).map(|a| a.0),
+                    // an AI agent: assign an issue to it or mention it to start it
+                    "agent": agent,
                 })
             })
             .collect::<Vec<_>>()

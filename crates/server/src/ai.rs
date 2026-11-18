@@ -253,6 +253,58 @@ async fn openai_compatible(state: &AppState, s: &Setup, a: &Ask<'_>) -> ApiResul
     Err(ApiError::bad("the AI service answered with an error"))
 }
 
+/// One turn of a conversation with the model, for coding agents (crate::agents): the answer's
+/// text and the tokens it took (input, output) where the provider reports them. `model`: another
+/// model than the configured one, on the same connection.
+pub async fn complete(state: &AppState, model: Option<&str>, system: &str, messages: &[(String, String)]) -> ApiResult<(String, i64, i64)> {
+    let s = setup(state).ok_or_else(|| ApiError::bad("AI isn't set up on this server (TASKCRAFT_AI_PROVIDER)"))?;
+    let model = model.map(str::trim).filter(|m| !m.is_empty()).unwrap_or(&s.model);
+    let turns: Vec<Value> =
+        messages.iter().map(|(role, text)| json!({"role": if role == "assistant" { "assistant" } else { "user" }, "content": text})).collect();
+    let timeout = Duration::from_secs(state.config.ai_timeout_secs.max(10) * 4);
+    let (req, anthropic) = match s.provider {
+        Provider::Anthropic => (
+            state
+                .http
+                .post(format!("{}/v1/messages", s.base_url.trim_end_matches('/')))
+                .header("x-api-key", s.key.clone().unwrap_or_default())
+                .header("anthropic-version", ANTHROPIC_VERSION)
+                .json(&json!({"model": model, "max_tokens": 16000, "system": system, "messages": turns})),
+            true,
+        ),
+        Provider::OpenAiCompatible => {
+            let mut all = vec![json!({"role": "system", "content": system})];
+            all.extend(turns);
+            let mut req = state
+                .http
+                .post(format!("{}/chat/completions", s.base_url.trim_end_matches('/')))
+                .json(&json!({"model": model, "messages": all, "stream": false}));
+            if let Some(k) = &s.key {
+                req = req.bearer_auth(k);
+            }
+            (req, false)
+        }
+    };
+    let res = req.timeout(timeout).send().await.map_err(unreachable)?;
+    let status = res.status();
+    let v: Value = res.json().await.unwrap_or(Value::Null);
+    if !status.is_success() {
+        return Err(refused(status, &v));
+    }
+    let (text, tokens_in, tokens_out) = if anthropic {
+        let text =
+            v["content"].as_array().into_iter().flatten().filter(|b| b["type"] == "text").filter_map(|b| b["text"].as_str()).collect::<Vec<_>>().join("");
+        (text, v["usage"]["input_tokens"].as_i64().unwrap_or(0), v["usage"]["output_tokens"].as_i64().unwrap_or(0))
+    } else {
+        (
+            v["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string(),
+            v["usage"]["prompt_tokens"].as_i64().unwrap_or(0),
+            v["usage"]["completion_tokens"].as_i64().unwrap_or(0),
+        )
+    };
+    Ok((strip_thinking(&text), tokens_in, tokens_out))
+}
+
 /// Without the reasoning some models write before their answer (`<think>…</think>`; also when
 /// the opening tag was part of the prompt template, or the answer stopped while thinking).
 fn strip_thinking(text: &str) -> String {

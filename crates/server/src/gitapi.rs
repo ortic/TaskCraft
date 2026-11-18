@@ -228,20 +228,27 @@ impl Repo {
         body: &str,
         message: &str,
     ) -> GitResult<(Option<i64>, String)> {
+        if self.kind == "github" {
+            let sha = self.head(state, branch).await?;
+            let (s, c) = self.call(state, Method::GET, &format!("{}/git/commits/{sha}", self.repo_api()), None).await?;
+            let tree = c["tree"]["sha"].as_str().ok_or_else(|| self.refused("Reading the branch", s, &c))?.to_string();
+            let (s, c) = self
+                .call(state, Method::POST, &format!("{}/git/commits", self.repo_api()), Some(json!({"message": message, "tree": tree, "parents": [sha]})))
+                .await?;
+            let commit = c["sha"].as_str().ok_or_else(|| self.refused("Starting the branch", s, &c))?.to_string();
+            let (s, r) =
+                self.call(state, Method::PATCH, &format!("{}/git/refs/heads/{}", self.repo_api(), enc_ref(branch)), Some(json!({"sha": commit}))).await?;
+            if s != 200 {
+                return Err(self.refused("Starting the branch", s, &r));
+            }
+        }
+        self.open_pull_request(state, branch, base, title, body).await
+    }
+
+    /// Opens a draft pull / merge request for a branch that has commits of its own.
+    pub async fn open_pull_request(&self, state: &AppState, branch: &str, base: &str, title: &str, body: &str) -> GitResult<(Option<i64>, String)> {
         let (status, v) = match self.kind.as_str() {
             "github" => {
-                let sha = self.head(state, branch).await?;
-                let (s, c) = self.call(state, Method::GET, &format!("{}/git/commits/{sha}", self.repo_api()), None).await?;
-                let tree = c["tree"]["sha"].as_str().ok_or_else(|| self.refused("Reading the branch", s, &c))?.to_string();
-                let (s, c) = self
-                    .call(state, Method::POST, &format!("{}/git/commits", self.repo_api()), Some(json!({"message": message, "tree": tree, "parents": [sha]})))
-                    .await?;
-                let commit = c["sha"].as_str().ok_or_else(|| self.refused("Starting the branch", s, &c))?.to_string();
-                let (s, r) =
-                    self.call(state, Method::PATCH, &format!("{}/git/refs/heads/{}", self.repo_api(), enc_ref(branch)), Some(json!({"sha": commit}))).await?;
-                if s != 200 {
-                    return Err(self.refused("Starting the branch", s, &r));
-                }
                 self.call(
                     state,
                     Method::POST,
@@ -281,6 +288,150 @@ impl Repo {
                 number.map(|n| if self.kind == "gitlab" { format!("{}/-/merge_requests/{n}", self.web) } else { format!("{}/pull/{n}", self.web) })
             });
         Ok((number, url.ok_or_else(|| GitError::Other("the Git server opened the pull request but didn't say where".into()))?))
+    }
+}
+
+/// One file of a commit made through the API.
+#[derive(Debug, Clone)]
+pub struct FileChange {
+    pub path: String,
+    /// added | modified | deleted
+    pub status: String,
+    pub content: Vec<u8>,
+}
+
+impl Repo {
+    /// Commits `files` onto `branch` (which exists) in one commit.
+    pub async fn commit_files(&self, state: &AppState, branch: &str, message: &str, files: &[FileChange]) -> GitResult<()> {
+        use base64::Engine;
+        let b64 = |c: &[u8]| base64::engine::general_purpose::STANDARD.encode(c);
+        match self.kind.as_str() {
+            "github" => {
+                let head = self.head(state, branch).await?;
+                let (s, c) = self.call(state, Method::GET, &format!("{}/git/commits/{head}", self.repo_api()), None).await?;
+                let base_tree = c["tree"]["sha"].as_str().ok_or_else(|| self.refused("Reading the branch", s, &c))?.to_string();
+                let mut tree = Vec::new();
+                for f in files {
+                    if f.status == "deleted" {
+                        tree.push(json!({"path": f.path, "mode": "100644", "type": "blob", "sha": null}));
+                        continue;
+                    }
+                    let (s, b) = self
+                        .call(state, Method::POST, &format!("{}/git/blobs", self.repo_api()), Some(json!({"content": b64(&f.content), "encoding": "base64"})))
+                        .await?;
+                    let sha = b["sha"].as_str().ok_or_else(|| self.refused("Uploading a file", s, &b))?;
+                    tree.push(json!({"path": f.path, "mode": "100644", "type": "blob", "sha": sha}));
+                }
+                let (s, t) =
+                    self.call(state, Method::POST, &format!("{}/git/trees", self.repo_api()), Some(json!({"base_tree": base_tree, "tree": tree}))).await?;
+                let tree = t["sha"].as_str().ok_or_else(|| self.refused("Writing the files", s, &t))?.to_string();
+                let (s, c) = self
+                    .call(state, Method::POST, &format!("{}/git/commits", self.repo_api()), Some(json!({"message": message, "tree": tree, "parents": [head]})))
+                    .await?;
+                let commit = c["sha"].as_str().ok_or_else(|| self.refused("Committing", s, &c))?.to_string();
+                let (s, r) =
+                    self.call(state, Method::PATCH, &format!("{}/git/refs/heads/{}", self.repo_api(), enc_ref(branch)), Some(json!({"sha": commit}))).await?;
+                if s != 200 {
+                    return Err(self.refused("Committing", s, &r));
+                }
+                Ok(())
+            }
+            "gitlab" => {
+                let actions: Vec<Value> = files
+                    .iter()
+                    .map(|f| match f.status.as_str() {
+                        "deleted" => json!({"action": "delete", "file_path": f.path}),
+                        st => json!({"action": if st == "added" { "create" } else { "update" }, "file_path": f.path, "content": b64(&f.content), "encoding": "base64"}),
+                    })
+                    .collect();
+                let (s, v) = self
+                    .call(
+                        state,
+                        Method::POST,
+                        &format!("{}/repository/commits", self.repo_api()),
+                        Some(json!({"branch": branch, "commit_message": message, "actions": actions})),
+                    )
+                    .await?;
+                if !matches!(s, 200 | 201) {
+                    return Err(self.refused("Committing", s, &v));
+                }
+                Ok(())
+            }
+            _ => {
+                let mut changes = Vec::new();
+                for f in files {
+                    let operation = match f.status.as_str() {
+                        "added" => "create",
+                        "deleted" => "delete",
+                        _ => "update",
+                    };
+                    let mut c = json!({"operation": operation, "path": f.path});
+                    if f.status != "deleted" {
+                        c["content"] = json!(b64(&f.content));
+                    }
+                    if f.status != "added" {
+                        // Gitea changes a file it's told the current version of
+                        let (s, cur) =
+                            self.call(state, Method::GET, &format!("{}/contents/{}?ref={}", self.repo_api(), enc_ref(&f.path), enc(branch)), None).await?;
+                        c["sha"] = json!(cur["sha"].as_str().ok_or_else(|| self.refused("Reading a file", s, &cur))?);
+                    }
+                    changes.push(c);
+                }
+                let (s, v) = self
+                    .call(state, Method::POST, &format!("{}/contents", self.repo_api()), Some(json!({"branch": branch, "message": message, "files": changes})))
+                    .await?;
+                if !matches!(s, 200 | 201) {
+                    return Err(self.refused("Committing", s, &v));
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// The repository at `reference` as a .tar.gz (up to `max` bytes); one redirect is followed
+    /// (GitHub hands archives out from another host), without the token.
+    pub async fn archive(&self, state: &AppState, reference: &str, max: usize) -> GitResult<Vec<u8>> {
+        let url = match self.kind.as_str() {
+            "github" => format!("{}/tarball/{}", self.repo_api(), enc_ref(reference)),
+            "gitlab" => format!("{}/repository/archive.tar.gz?sha={}", self.repo_api(), enc(reference)),
+            _ => format!("{}/archive/{}.tar.gz", self.repo_api(), enc_ref(reference)),
+        };
+        let mut res = self.raw(state, &url, true).await?;
+        if res.status().is_redirection() {
+            let next = res
+                .headers()
+                .get("location")
+                .and_then(|l| l.to_str().ok())
+                .map(str::to_string)
+                .ok_or_else(|| GitError::Other("the Git server redirected nowhere".into()))?;
+            res = self.raw(state, &next, false).await?;
+        }
+        if !res.status().is_success() {
+            return Err(GitError::Other(format!("Downloading the repository: HTTP {}", res.status().as_u16())));
+        }
+        let mut out = Vec::new();
+        while let Some(chunk) = res.chunk().await.map_err(|e| GitError::Other(e.without_url().to_string()))? {
+            out.extend_from_slice(&chunk);
+            if out.len() > max {
+                return Err(GitError::Other(format!("the repository is larger than {} MB", max / (1024 * 1024))));
+            }
+        }
+        Ok(out)
+    }
+
+    /// A GET whose answer is read as it comes (archives), pinned like every other request.
+    async fn raw(&self, state: &AppState, url: &str, with_token: bool) -> GitResult<reqwest::Response> {
+        let u = crate::webhooks::validate_url(url).map_err(GitError::Other)?;
+        let client = crate::webhooks::pinned_client(state, &u, 120).await.map_err(GitError::Other)?;
+        let mut req = client.get(u);
+        if with_token {
+            req = match self.kind.as_str() {
+                "gitlab" => req.header("private-token", &self.token),
+                "gitea" => req.header("authorization", format!("token {}", self.token)),
+                _ => req.header("authorization", format!("Bearer {}", self.token)).header("accept", "application/vnd.github+json"),
+            };
+        }
+        req.send().await.map_err(|e| GitError::Other(format!("the Git server didn't answer: {}", e.without_url())))
     }
 }
 

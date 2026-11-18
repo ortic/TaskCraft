@@ -177,6 +177,15 @@ OpenAI-compatible API — also one running in your own network, so nothing leave
 ask; until a model is set up nothing is sent anywhere, and a workspace can turn it off. **Similar issues** show while someone types a new issue's title — found in
 the database, no AI needed.
 
+**AI coding agents**: admins define agents — a name, an `@handle`, instructions, a repository —
+and people assign them issues or mention them in comments. A runner you operate
+(`taskcraft-runner`) works on a checkout and hands the result back: a branch and a **draft pull
+request** linked to the issue, or an answer in a comment. The runner never holds the Git token
+or the model key — it gets the source and asks the model through TaskCraft, with a token for
+one run. Agents are accounts of their own (they see what their roles allow), start in a testing
+mode, and their runs show on the issue with a live log and *Stop*. See
+[docs/agents.md](docs/agents.md).
+
 **Extensions and scripts**: automation rules can run a short sandboxed script that computes
 fields of the issue; admins install *extensions* — a manifest and a script — for custom
 automation actions, event handlers, scheduled jobs and API routes (`/api/ext/<name>/…`), each

@@ -2,6 +2,7 @@
 
 pub mod absences;
 pub mod access;
+pub mod agents;
 pub mod ai;
 pub mod app;
 pub mod approvals;
