@@ -89,6 +89,21 @@ export interface Person extends Named {
   title?: string | null
   /** the profile photo's address, when they set one */
   photo?: string | null
+  /** away today: back after this day (why is theirs to know) */
+  awayUntil?: string | null
+}
+
+/** Time someone is away; kind and note only for the person and admins. */
+export interface Absence {
+  id: string
+  user: Named
+  start: string
+  end: string
+  half: 'am' | 'pm' | null
+  kind: 'vacation' | 'sick' | 'training' | 'other' | null
+  note: string | null
+  substitute: Named | null
+  editable: boolean
 }
 
 export interface StatusRef {
@@ -405,7 +420,7 @@ export interface Notification {
   id: string
   actor: Named | null
   kind: 'assigned' | 'mentioned' | 'commented' | 'status' | string
-  data: { key: string; title: string; from?: string; to?: string; excerpt?: string; commentId?: string; message?: string; goal?: string; by?: string; hours?: number; stopped?: boolean }
+  data: { key: string; title: string; from?: string; to?: string; excerpt?: string; commentId?: string; message?: string; goal?: string; by?: string; hours?: number; stopped?: boolean; for?: string; until?: string }
   createdAt: string
   read: boolean
 }

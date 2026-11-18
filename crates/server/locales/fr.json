@@ -1,6 +1,7 @@
 {
   "1 issue": "1 ticket",
   "1 update": "1 changement",
+  "A service-level goal of {name}, who is away, was missed: you're the substitute": "Un objectif de niveau de service de {name}, absent, a été manqué : vous êtes le remplaçant",
   "Accept the invitation": "Accepter l’invitation",
   "Answer online: {address} (replies to this e-mail don't reach us)": "Répondez en ligne : {address} (les réponses à cet e-mail ne nous parviennent pas)",
   "Automation": "Automatisation",
@@ -68,6 +69,7 @@
   "{n} updates": "{n} changements",
   "{updates} on {issues}": "{updates} sur {issues}",
   "{who} assigned it to you": "{who} vous l’a assigné",
+  "{who} assigned it to {name}, who is away until {until}: you're the substitute": "{who} l’a assigné à {name}, absent jusqu’au {until} : vous êtes le remplaçant",
   "{who} changed the status": "{who} a changé le statut",
   "{who} changed the status from {from} to {to}": "{who} a changé le statut de {from} à {to}",
   "{who} changed the status to {to}": "{who} a changé le statut en {to}",

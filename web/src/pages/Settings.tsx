@@ -2,12 +2,13 @@ import { t, AVAILABLE, LANGUAGES, chooseLanguage, locale, rememberLanguage } fro
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, BookOpen, CalendarDays, Camera, Check, Contrast, Copy, Download, ExternalLink, KeyRound, Lock, Monitor, Moon, Palette, ShieldCheck, Sun, Trash, User } from 'lucide-react'
+import { Bell, BookOpen, CalendarDays, CalendarOff, Camera, Check, Contrast, Copy, Download, ExternalLink, KeyRound, Lock, Monitor, Moon, Palette, ShieldCheck, Sun, Trash, User } from 'lucide-react'
 import { api, ago, shortDate, type Me } from '../api'
 import { Avatar, Confirm, ErrorBox, Loading, useMe, useSetup, useToast } from '../ui'
 import { providerName, type SignInMethods } from '../components/Sso'
 import { SecuritySettings } from '../components/Security'
 import { CalendarFeedsSettings } from '../components/CalendarFeeds'
+import { MyTimeOff } from '../components/TimeOff'
 import './Settings.css'
 
 // ---- small shared pieces (Admin uses them too) ----
@@ -74,6 +75,7 @@ const SECTIONS = [
   { id: 'notifications', icon: <Bell size={15} />, label: () => t('Notifications') },
   { id: 'tokens', icon: <KeyRound size={15} />, label: () => t('API tokens') },
   { id: 'calendar', icon: <CalendarDays size={15} />, label: () => t('Calendar feeds') },
+  { id: 'timeoff', icon: <CalendarOff size={15} />, label: () => t('Time off') },
   { id: 'wikicraft', icon: <BookOpen size={15} />, label: () => t('WikiCraft') },
   { id: 'data', icon: <Download size={15} />, label: () => t('Your data') },
 ]
@@ -119,6 +121,9 @@ export default function Settings() {
           <TokensSection me={data} preset={preset} />
           <Section id="calendar" icon={<CalendarDays size={16} />} title={t('Calendar feeds')} desc={t('Due dates, sprints and releases in your own calendar app: it subscribes to a secret address and stays up to date. A feed shows only what you may see.')}>
             <CalendarFeedsSettings />
+          </Section>
+          <Section id="timeoff" icon={<CalendarOff size={16} />} title={t('Time off')} desc={t('When you’re away. Others see that you’re away and until when, never why; sprint planning counts your days. A substitute hears about what’s assigned to you meanwhile.')}>
+            <MyTimeOff />
           </Section>
           <WikiSection
             me={data}

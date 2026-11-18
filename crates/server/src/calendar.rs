@@ -173,6 +173,31 @@ async fn plan_events(state: &AppState, projects: &[Uuid], sprints: bool, release
     Ok(out)
 }
 
+/// Absences of these people (from 30 days back): "away" for others; one's own say why.
+async fn absence_events(state: &AppState, people: &[Uuid], me: Uuid) -> ApiResult<Vec<Event>> {
+    let host = host(state);
+    type A = (Uuid, Uuid, String, NaiveDate, NaiveDate, Option<String>, String, DateTime<Utc>);
+    let rows: Vec<A> = sqlx::query_as(
+        "SELECT a.id, a.user_id, u.name, a.start_date, a.end_date, a.half, a.kind, a.created_at FROM absences a JOIN users u ON u.id = a.user_id
+          WHERE a.user_id = ANY($1) AND a.end_date >= now()::date - 30 ORDER BY a.start_date LIMIT 1000",
+    )
+    .bind(people)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, uid, name, start, end, half, kind, at)| {
+            let half = match half.as_deref() {
+                Some("am") => " (morning)",
+                Some("pm") => " (afternoon)",
+                _ => "",
+            };
+            let summary = if uid == me { format!("Away: {kind}{half}") } else { format!("{name} away{half}") };
+            Event { uid: format!("absence-{id}@{host}"), start, end, summary, description: String::new(), url: None, stamp: at, categories: "ABSENCE" }
+        })
+        .collect())
+}
+
 fn ics(name: &str, body: String) -> Response {
     let file = format!("{}.ics", name.chars().map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' }).collect::<String>());
     (
@@ -208,9 +233,9 @@ pub async fn search_ics(
 
 // ---- feeds ----
 
-fn parts(v: &Value) -> (bool, bool, bool) {
+fn parts(v: &Value) -> (bool, bool, bool, bool) {
     let on = |k: &str| v.get(k).and_then(Value::as_bool).unwrap_or(true);
-    (on("issues"), on("sprints"), on("releases"))
+    (on("issues"), on("sprints"), on("releases"), on("absences"))
 }
 
 fn feed_url(state: &AppState, token: &str) -> String {
@@ -220,7 +245,7 @@ fn feed_url(state: &AppState, token: &str) -> String {
 /// The projects a person belongs to: as a member, through a team, or leading them.
 async fn my_projects(state: &AppState, user: &User) -> ApiResult<Vec<Uuid>> {
     Ok(sqlx::query_scalar(
-        "SELECT p.id FROM projects p WHERE p.workspace_id = $1 AND (
+        "SELECT p.id FROM projects p WHERE p.workspace_id = $1 AND p.archived_at IS NULL AND (
             p.lead_id = $2
             OR EXISTS (SELECT 1 FROM project_members m WHERE m.project_id = p.id AND m.subject_type = 'user' AND m.subject_id = $2)
             OR EXISTS (SELECT 1 FROM project_members m JOIN team_members tm ON tm.team_id = m.subject_id
@@ -234,13 +259,16 @@ async fn my_projects(state: &AppState, user: &User) -> ApiResult<Vec<Uuid>> {
 
 /// A feed's name, events and owner, read as its owner.
 async fn build(state: &AppState, user: &User, kind: &str, view: Option<Uuid>, project: Option<Uuid>, p: &Value) -> ApiResult<(String, Vec<Event>)> {
-    let (issues, sprints, releases) = parts(p);
+    let (issues, sprints, releases, absences) = parts(p);
     let visible = crate::access::visible_projects(state, user).await?;
     match kind {
         "mine" => {
             let mut ev = if issues { issue_events(state, &due_issues(state, user, "assignee = me() and category != done", None).await?) } else { vec![] };
             let mine: Vec<Uuid> = my_projects(state, user).await?.into_iter().filter(|p| visible.contains(p)).collect();
             ev.extend(plan_events(state, &mine, sprints, releases).await?);
+            if absences {
+                ev.extend(absence_events(state, &[user.id], user.id).await?);
+            }
             Ok((format!("TaskCraft · {}", user.name), ev))
         }
         "filter" => {
@@ -261,6 +289,16 @@ async fn build(state: &AppState, user: &User, kind: &str, view: Option<Uuid>, pr
             let (key, name): (String, String) = sqlx::query_as("SELECT key, name FROM projects WHERE id = $1").bind(pid).fetch_one(&state.db).await?;
             let mut ev = if issues { issue_events(state, &due_issues(state, user, "due is not empty", Some(&key)).await?) } else { vec![] };
             ev.extend(plan_events(state, &[pid], sprints, releases).await?);
+            if absences {
+                let members: Vec<Uuid> = sqlx::query_scalar(
+                    "SELECT m.subject_id FROM project_members m WHERE m.project_id = $1 AND m.subject_type = 'user'
+                     UNION SELECT tm.user_id FROM project_members m JOIN team_members tm ON tm.team_id = m.subject_id WHERE m.project_id = $1 AND m.subject_type = 'team'",
+                )
+                .bind(pid)
+                .fetch_all(&state.db)
+                .await?;
+                ev.extend(absence_events(state, &members, user.id).await?);
+            }
             Ok((name, ev))
         }
         _ => Err(ApiError::NotFound("calendar feed")),
@@ -335,7 +373,7 @@ pub async fn create(State(state): State<AppState>, CurrentUser(user): CurrentUse
         Value::Null => json!({}),
         Value::Object(o) => {
             let mut out = serde_json::Map::new();
-            for k in ["issues", "sprints", "releases"] {
+            for k in ["issues", "sprints", "releases", "absences"] {
                 if let Some(v) = o.get(k) {
                     out.insert(k.into(), json!(v.as_bool().ok_or_else(|| ApiError::bad(format!("parts.{k} is true or false")))?));
                 }

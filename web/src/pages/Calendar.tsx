@@ -10,6 +10,7 @@ import { PriorityIcon, TypeIcon } from '../icons'
 import { useCreateIssue, useOpenIssue } from '../components/Layout'
 import { refreshIssues } from '../components/IssueView'
 import { CalendarExport } from '../components/CalendarFeeds'
+import { useAbsences } from '../components/TimeOff'
 
 interface SearchResult {
   total: number
@@ -129,6 +130,20 @@ function CalendarView({ project }: { project: Project }) {
     queryKey: unschedKey,
     queryFn: () => api.get<SearchResult>(`/search${qs({ project: project.key, limit: 300, order: 'rank', q: `${tql} is empty and category != done` })}`),
   })
+
+  // who of the project is away on each day (never why)
+  const absences = useAbsences(diso(gridStart), diso(gridEnd), undefined, project.key)
+  const awayOn = useMemo(() => {
+    const m = new Map<number, string[]>()
+    for (const a of absences.data ?? []) {
+      for (let n = Math.max(dnum(a.start), gridStart); n <= Math.min(dnum(a.end), gridEnd); n++) {
+        const wd = weekday(n)
+        if (wd === 0 || wd === 6) continue
+        m.set(n, [...(m.get(n) ?? []), a.half ? `${a.user.name} (½)` : a.user.name])
+      }
+    }
+    return m
+  }, [absences.data, gridStart, gridEnd])
 
   const q = text.trim().toLowerCase()
   const visible = (i: Issue) => (!q || `${i.key} ${i.title}`.toLowerCase().includes(q)) && (!mine || i.assignee?.id === meId) && (showDone || i.status.category !== 'done')
@@ -390,6 +405,9 @@ function CalendarView({ project }: { project: Project }) {
                       </button>
                     )}
                   </div>
+                  {(awayOn.get(n)?.length ?? 0) > 0 && (
+                    <span className="cal-away" title={t('Away: {names}', { names: awayOn.get(n)!.join(', ') })}>{t('Away: {names}', { names: awayOn.get(n)!.join(', ') })}</span>
+                  )}
                   <div className="cal-chips">
                     {shownChips.map((i) => chip(i, 'grid'))}
                     {rest.map((i) => chip(i, 'grid', true))}

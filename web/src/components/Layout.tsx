@@ -283,7 +283,10 @@ function Notifications() {
       case 'automation':
         return x.data.message || t('A rule needs your attention')
       case 'sla':
+        if (x.data.for) return t('Goal missed for {name}, who is away: you substitute', { name: x.data.for })
         return x.data.goal === 'response' ? t('First-response goal missed') : t('Resolution goal missed')
+      case 'substitute':
+        return t('{who} assigned {name}, who is away: you substitute', { who, name: x.data.for ?? '' })
       case 'timer':
         return x.data.stopped ? t('Your timer stopped after 24 hours: the time waits as a draft') : t('Your timer has been running for {hours} hours', { hours: x.data.hours ?? '' })
       default:

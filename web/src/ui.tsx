@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffe
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Bot, X } from 'lucide-react'
-import { api, initials, userColor, type Category, type Feature, type Me, type Person, type Project, type ProjectSummary } from './api'
+import { api, initials, shortDate, userColor, type Category, type Feature, type Me, type Person, type Project, type ProjectSummary } from './api'
 
 export function useMe() {
   return useQuery({ queryKey: ['me'], queryFn: () => api.get<Me>('/me'), staleTime: 60_000 })
@@ -12,6 +12,18 @@ export function useMe() {
 /** Whether the workspace still needs setting up, and what this server offers (`mail`: e-mail is configured). */
 export function useSetup() {
   return useQuery({ queryKey: ['setup'], queryFn: () => api.get<{ needsSetup: boolean; mail?: boolean }>('/setup') })
+}
+
+/** "Away until …" for someone who's away today. */
+export function AwayBadge({ until }: { until: string | null | undefined }) {
+  if (!until) return null
+  return <span className="badge badge-away" title={t('Away until {date}', { date: shortDate(until) })}>{t('away until {date}', { date: shortDate(until) })}</span>
+}
+
+/** When someone is away today: back after this day. */
+export function useAwayUntil() {
+  const people = usePeople().data
+  return (id: string | null | undefined) => (id ? people?.find((p) => p.id === id)?.awayUntil ?? null : null)
 }
 
 export function usePeople() {

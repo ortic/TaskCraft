@@ -6,6 +6,13 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 
 ## [Unreleased]
 
+- **Time off**: absences (whole or half days, with a substitute) in *Profile & settings*, entered
+  by admins for others too; why someone is away only they and admins see. Public holidays per
+  region calendar (*Administration → Time off*). "Away until …" in people pickers, mentions, the
+  portfolio and on the project calendar; a sprint's capacity in the backlog (working days minus
+  holidays and absences, per person); substitutes hear about assignments and missed goals;
+  absences in calendar feeds.
+
 - **Calendar feeds** (*Profile & settings → Calendar feeds*): secret addresses calendar apps
   subscribe to — your work, a saved filter or a project, with due dates (from the start date),
   sprints and releases — read as their owner; shown once, renewable; the workspace can turn them

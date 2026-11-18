@@ -1,6 +1,7 @@
 {
   "1 issue": "1 Vorgang",
   "1 update": "1 Änderung",
+  "A service-level goal of {name}, who is away, was missed: you're the substitute": "Ein Service-Level-Ziel von {name} (abwesend) wurde verfehlt: Sie sind die Vertretung",
   "Accept the invitation": "Einladung annehmen",
   "Answer online: {address} (replies to this e-mail don't reach us)": "Antworten Sie online: {address} (Antworten auf diese E-Mail erreichen uns nicht)",
   "Automation": "Automatisierung",
@@ -68,6 +69,7 @@
   "{n} updates": "{n} Änderungen",
   "{updates} on {issues}": "{updates} an {issues}",
   "{who} assigned it to you": "{who} hat ihn Ihnen zugewiesen",
+  "{who} assigned it to {name}, who is away until {until}: you're the substitute": "{who} hat ihn {name} zugewiesen, abwesend bis {until}: Sie sind die Vertretung",
   "{who} changed the status": "{who} hat den Status geändert",
   "{who} changed the status from {from} to {to}": "{who} hat den Status von {from} auf {to} geändert",
   "{who} changed the status to {to}": "{who} hat den Status auf {to} geändert",

@@ -9,7 +9,7 @@ import { Placeholder } from '@tiptap/extensions'
 import Mention from '@tiptap/extension-mention'
 import type { SuggestionKeyDownProps, SuggestionOptions, SuggestionProps } from '@tiptap/suggestion'
 import { Bold, Italic, Strikethrough, Code, List, ListOrdered, ListTodo, Quote, SquareCode, Link as LinkIcon } from 'lucide-react'
-import { api, type Issue, type Person } from '../api'
+import { api, shortDate, type Issue, type Person } from '../api'
 import { Avatar } from '../ui'
 import { TypeIcon } from '../icons'
 import { queryClient } from '../queryClient'
@@ -118,7 +118,7 @@ async function people(query: string): Promise<Item[]> {
   return list
     .filter((p) => p.name.toLowerCase().includes(q) || (p.email ?? '').toLowerCase().includes(q))
     .slice(0, 8)
-    .map((p) => ({ id: p.id, label: p.name, sub: p.title ?? p.email ?? '' }))
+    .map((p) => ({ id: p.id, label: p.name, sub: p.awayUntil ? t('away until {date}', { date: shortDate(p.awayUntil) }) : p.title ?? p.email ?? '' }))
 }
 
 async function issues(query: string): Promise<Item[]> {

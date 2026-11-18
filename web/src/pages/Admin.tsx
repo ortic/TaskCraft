@@ -4,11 +4,12 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { BackupImportTab } from './BackupImport'
 import {
-  Archive, ArchiveRestore, Check, Link2, RotateCcw, ChevronDown, CircleDot, Clock, Download, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, Mail, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, ShieldOff, Trash,
+  Archive, ArchiveRestore, CalendarOff, Check, Link2, RotateCcw, ChevronDown, CircleDot, Clock, Download, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, Mail, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, ShieldOff, Trash,
   UserCheck, UserPlus, UserX, Users, Webhook, Upload, ImageOff,
 } from 'lucide-react'
 import { api, ago, dateTime, shortDate, type Feature, type LinkType, type Me, type TimeCategory } from '../api'
 import { linkTypeLabel, useLinkTypes } from '../components/IssueView'
+import { AdminTimeOff } from '../components/TimeOff'
 import { Avatar, Confirm, Empty, ErrorBox, Loading, Logo, Modal, PopButton, Tabs, useMe, usePeople, useProjects, useSetup, useToast } from '../ui'
 import { PROJECT_COLORS } from '../icons'
 import { CopyField, Switch, nowIn, timeZones } from './Settings'
@@ -17,8 +18,8 @@ import { SignInBadges, useSignInOptions, type SignInMethods } from '../component
 import { ResetTwoFactor, TwoFactorPolicy, canResetTwoFactor, useTwoFactorPolicy } from '../components/Security'
 import './Admin.css'
 
-type Tab = 'overview' | 'users' | 'teams' | 'links' | 'time' | 'webhooks' | 'import' | 'audit'
-const TABS: Tab[] = ['overview', 'users', 'teams', 'links', 'time', 'webhooks', 'import', 'audit']
+type Tab = 'overview' | 'users' | 'teams' | 'timeoff' | 'links' | 'time' | 'webhooks' | 'import' | 'audit'
+const TABS: Tab[] = ['overview', 'users', 'teams', 'timeoff', 'links', 'time', 'webhooks', 'import', 'audit']
 
 export default function Admin() {
   const me = useMe().data
@@ -51,6 +52,7 @@ export default function Admin() {
           { id: 'overview', label: <><LayoutDashboard size={14} /> {t('Overview')}</> },
           { id: 'users', label: <><Users size={14} /> {t('Users')}</> },
           { id: 'teams', label: <><CircleDot size={14} /> {t('Teams')}</> },
+          { id: 'timeoff', label: <><CalendarOff size={14} /> {t('Time off')}</> },
           { id: 'links', label: <><Link2 size={14} /> {t('Link types')}</> },
           ...(timeTracking ? [{ id: 'time' as const, label: <><Clock size={14} /> {t('Time tracking')}</> }] : []),
           { id: 'webhooks', label: <><Webhook size={14} /> {t('Webhooks')}</> },
@@ -61,6 +63,7 @@ export default function Admin() {
       {tab === 'overview' && <Overview me={me} />}
       {tab === 'users' && <UsersTab me={me} />}
       {tab === 'teams' && <TeamsTab />}
+      {tab === 'timeoff' && <AdminTimeOff />}
       {tab === 'links' && <LinkTypesTab />}
       {tab === 'time' && <TimeTab />}
       {tab === 'webhooks' && <WebhooksTab />}

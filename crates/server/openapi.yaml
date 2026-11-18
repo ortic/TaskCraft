@@ -778,6 +778,8 @@ paths:
                       type: boolean
                     releases:
                       type: boolean
+                    absences:
+                      type: boolean
                   description: 'default: all'
               required:
               - kind
@@ -1954,6 +1956,381 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /absences:
+    get:
+      tags:
+      - People & teams
+      summary: Absences in a period
+      operationId: listAbsences
+      description: 'Everyone''s (or one person''s, or a project''s members''), overlapping the period; default: the last 30
+        days to the next 180. Why someone is away only for themselves and workspace admins.'
+      parameters:
+      - name: from
+        in: query
+        required: false
+        description: first day
+        schema:
+          type: string
+          format: date
+          description: YYYY-MM-DD
+      - name: to
+        in: query
+        required: false
+        description: last day
+        schema:
+          type: string
+          format: date
+          description: YYYY-MM-DD
+      - name: user
+        in: query
+        required: false
+        description: one person
+        schema:
+          type: string
+          format: uuid
+      - name: project
+        in: query
+        required: false
+        description: the members of this project (key)
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Absence'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - People & teams
+      summary: Enter an absence
+      operationId: createAbsence
+      description: One's own; workspace admins for anyone (`userId`). At most a year; a half day is a single day; the substitute
+        is someone else in the workspace.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                start:
+                  type: string
+                  format: date
+                  description: YYYY-MM-DD
+                end:
+                  type: string
+                  format: date
+                  description: 'default: start'
+                half:
+                  type:
+                  - string
+                  - 'null'
+                  enum:
+                  - am
+                  - pm
+                  - null
+                kind:
+                  type: string
+                  enum:
+                  - vacation
+                  - sick
+                  - training
+                  - other
+                  description: default vacation
+                note:
+                  type: string
+                substituteId:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+                userId:
+                  type: string
+                  format: uuid
+                  description: whose (admins)
+              required:
+              - start
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                required:
+                - id
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /absences/{id}:
+    patch:
+      tags:
+      - People & teams
+      summary: Change an absence
+      operationId: updateAbsence
+      description: The person's own, or workspace admins.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                start:
+                  type: string
+                  format: date
+                  description: YYYY-MM-DD
+                end:
+                  type: string
+                  format: date
+                  description: YYYY-MM-DD
+                half:
+                  type:
+                  - string
+                  - 'null'
+                  enum:
+                  - am
+                  - pm
+                  - null
+                kind:
+                  type: string
+                  enum:
+                  - vacation
+                  - sick
+                  - training
+                  - other
+                note:
+                  type:
+                  - string
+                  - 'null'
+                substituteId:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+      - People & teams
+      summary: Delete an absence
+      operationId: deleteAbsence
+      description: The person's own, or workspace admins.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /holidays:
+    get:
+      tags:
+      - People & teams
+      summary: Public holidays
+      operationId: listHolidays
+      description: The region calendars ('' is the workspace's default one), the caller's, and the holidays from a year back
+        to two years ahead.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  regions:
+                    type: array
+                    items:
+                      type: string
+                  myRegion:
+                    type: string
+                  holidays:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        region:
+                          type: string
+                        day:
+                          type: string
+                          format: date
+                          description: YYYY-MM-DD
+                        name:
+                          type: string
+                      required:
+                      - id
+                      - region
+                      - day
+                      - name
+                required:
+                - regions
+                - myRegion
+                - holidays
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - People & teams
+      summary: Add public holidays (workspace admins)
+      operationId: addHolidays
+      description: One (`day`, `name`, `region`) or up to 500 (`holidays`); a day already in that region's calendar gets the
+        new name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                day:
+                  type: string
+                  format: date
+                  description: YYYY-MM-DD
+                name:
+                  type: string
+                region:
+                  type: string
+                  description: 'a region calendar ('''' or left out: the workspace''s)'
+                holidays:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      day:
+                        type: string
+                        format: date
+                        description: YYYY-MM-DD
+                      name:
+                        type: string
+                      region:
+                        type: string
+                    required:
+                    - day
+                    - name
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  added:
+                    type: integer
+                required:
+                - added
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /holidays/{id}:
+    delete:
+      tags:
+      - People & teams
+      summary: Delete a public holiday (workspace admins)
+      operationId: deleteHoliday
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /me/holiday-region:
+    put:
+      tags:
+      - People & teams
+      summary: Whose public holidays apply
+      operationId: setHolidayRegion
+      description: 'The caller''s region calendar ('''' or null: the workspace''s); workspace admins set it for others with
+        `userId`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                region:
+                  type:
+                  - string
+                  - 'null'
+                userId:
+                  type: string
+                  format: uuid
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /people:
     get:
       tags:
@@ -4316,6 +4693,89 @@ paths:
                 - stats
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /sprints/{id}/capacity:
+    get:
+      tags:
+      - Boards & sprints
+      summary: Who is there in a sprint
+      operationId: getSprintCapacity
+      description: 'For the people with issues in the sprint and the project''s members: working days in the sprint (Monday
+        to Friday), the public holidays of their region calendar, days away (half days count half) and what''s left; `share`
+        is the team''s available part of its working days (null without sprint dates).'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  start:
+                    type:
+                    - string
+                    - 'null'
+                    format: date
+                    description: YYYY-MM-DD
+                  end:
+                    type:
+                    - string
+                    - 'null'
+                    format: date
+                    description: YYYY-MM-DD
+                  people:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        user:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+                        workingDays:
+                          type: number
+                        holidays:
+                          type: number
+                        away:
+                          type: number
+                        available:
+                          type: number
+                      required:
+                      - user
+                      - name
+                      - workingDays
+                      - holidays
+                      - away
+                      - available
+                  workingDays:
+                    type: number
+                  available:
+                    type: number
+                  share:
+                    type:
+                    - number
+                    - 'null'
+                required:
+                - start
+                - end
+                - people
+                - workingDays
+                - available
+                - share
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -13030,11 +13490,77 @@ components:
           - string
           - 'null'
           description: the profile photo's address (/api/users/{id}/photo?v=…)
+        awayUntil:
+          type:
+          - string
+          - 'null'
+          format: date
+          description: away today, back after this day (see GET /absences)
       required:
       - id
       - name
       - role
       description: Someone active in the workspace (people pickers, mentions).
+    Absence:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user:
+          $ref: '#/components/schemas/Named'
+        start:
+          type: string
+          format: date
+          description: YYYY-MM-DD
+        end:
+          type: string
+          format: date
+          description: the last day away
+        half:
+          type:
+          - string
+          - 'null'
+          enum:
+          - am
+          - pm
+          - null
+          description: half a day (start and end are the same day)
+        kind:
+          type:
+          - string
+          - 'null'
+          enum:
+          - vacation
+          - sick
+          - training
+          - other
+          - null
+          description: why — only for the person and workspace admins
+        note:
+          type:
+          - string
+          - 'null'
+          description: only for the person and workspace admins
+        substitute:
+          anyOf:
+          - $ref: '#/components/schemas/Named'
+          - type: 'null'
+          description: told about new assignments and missed service-level goals meanwhile
+        editable:
+          type: boolean
+          description: the caller may change or delete it
+      required:
+      - id
+      - user
+      - start
+      - end
+      - half
+      - kind
+      - note
+      - substitute
+      - editable
+      description: Time someone is away.
     PersonDetail:
       description: A person's profile with their teams.
       allOf:

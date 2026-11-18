@@ -133,3 +133,4 @@
 .adm-feature { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
 .adm-feature input { margin-top: 3px; }
 .adm-feature > span { display: grid; gap: 2px; }
+.adm-subhead { display: flex; align-items: center; gap: 6px; font-size: 14px; margin: 8px 0 10px; }

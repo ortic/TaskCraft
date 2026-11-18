@@ -6,7 +6,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Briefcase, Package, ChevronLeft, ChevronRight } from 'lucide-react'
 import { api, qs, shortDate } from '../api'
-import { Avatar, Empty, ErrorBox, Loading, PopButton, useProjects } from '../ui'
+import { Avatar, AwayBadge, Empty, ErrorBox, Loading, PopButton, useAwayUntil, useProjects } from '../ui'
 import { ProjectIcon } from '../icons'
 import { useOpenIssue } from '../components/Layout'
 
@@ -65,6 +65,7 @@ export default function Portfolio() {
   const [params, setParams] = useSearchParams()
   const selected = params.get('projects') ?? ''
   const all = useProjects()
+  const awayUntil = useAwayUntil()
   const q = useQuery({ queryKey: ['report', 'portfolio', selected], queryFn: () => api.get<PData>(`/portfolio${qs({ projects: selected })}`) })
   const open = useOpenIssue()
   const [offset, setOffset] = useState(0)
@@ -225,7 +226,7 @@ export default function Portfolio() {
                     <tbody>
                       {team.members.map((m) => (
                         <tr key={m.id}>
-                          <td><span className="row" style={{ gap: 6, whiteSpace: 'nowrap' }}><Avatar name={m.name} id={m.id} size={20} decorative />{m.name}</span></td>
+                          <td><span className="row" style={{ gap: 6, whiteSpace: 'nowrap' }}><Avatar name={m.name} id={m.id} size={20} decorative />{m.name}<AwayBadge until={awayUntil(m.id)} /></span></td>
                           <td style={{ width: '40%' }}>
                             <div className="progress" style={{ height: 8 }} title={t('{todo} to do, {doing} in progress', { todo: m.todo, doing: m.inProgress })}>
                               <span className="p-progress" style={{ width: `${(m.inProgress / max) * 100}%` }} />

@@ -64,6 +64,13 @@ personal data.
 levels, restricted comments and assignment. With single sign-on, teams can follow the groups of
 the identity provider.
 
+## Time off
+
+*Administration → Time off*: **public holidays** — in the workspace's calendar, or in region
+calendars people choose in their settings — don't count as working days when sprints are planned;
+and everyone's **absences**, which you can also enter for others (you see why someone is away;
+others see only that they are).
+
 ## Link types
 
 *Administration → Link types*: besides *blocks*, *relates to*, *duplicates* and *clones*, add the

@@ -58,6 +58,10 @@ One binary, PostgreSQL, optional S3. Built with the same stack as WikiCraft.
 - **Timeline**: epics and issues on a calendar, drag to reschedule, dependency arrows with
   conflict warnings; **Calendar**: issues by due or start date, drag to another day
 - **Your work**: assigned, recently viewed, watching, reported, finished; activity of your projects
+- **Time off**: absences (whole or half days; why only for the person and admins) with a
+  substitute who hears about new assignments and missed goals; public holidays per region
+  calendar; "away until …" in pickers, mentions, the portfolio and the calendar; each sprint's
+  capacity — working days minus holidays and absences, per person
 - **Calendar feeds**: secret iCalendar addresses for your own calendar app — your work, a saved
   filter or a project (due dates, sprints, releases), read as you; `.ics` downloads of a search
 - **Command palette** (Ctrl K) and keyboard shortcuts (`c` creates an issue)
@@ -859,7 +863,7 @@ page: operations by section with a filter, their fields and answers, and a `curl
 | Service desk | Staff: `GET/PUT /projects/{KEY}/portal` (`resolve`, `resolveStatus`, `form`: `enabled`, `slug`, `listed`, `title`, `intro`, `success`, `description` / `name`: `off` / `optional` / `required`, `types`, `typeId`, `priority`, `custom`: `[{id, required}]`). Public (the portal; writes need `x-taskcraft: 1`): `GET /portal`, `POST /portal/sign-in` (`email`, `request`), `POST/DELETE /portal/session` (`token` from the link), `GET /portal/requests`, `GET /portal/requests/{KEY}`, `POST /portal/requests/{KEY}/comments` (multipart `text`, `files`), `POST /portal/requests/{KEY}/resolve`, `GET /portal/attachments/{id}`, `GET/POST /portal/forms/{key or slug}` (the form with its `stamp`; a submission: `stamp`, `email`, `name`, `summary`, `description`, `typeId`, `priority`, `custom`) |
 | MCP | `POST /mcp` (streamable HTTP, see above) |
 | Live | `GET /events` (Server-Sent Events) |
-| Account & admin | `/me`, `/me/tokens`, `/notifications`, `/views`, `/me/timer` (`POST /issues/{KEY}/timer` starts, `/me/timer/{pause,resume,stop}`), `/me/time-drafts`, `/me/calendar-feeds` (feeds at `GET /calendar/{token}.ics`, searches at `GET /search.ics?q=`), `/timesheet`, `/time-report`, `/time-categories`, `/people`, `/teams`, `/users`, `/auth/forgot`, `/admin/{workspace,stats,audit,webhooks,mail}`, `POST /admin/mail/test` |
+| Account & admin | `/me`, `/me/tokens`, `/notifications`, `/views`, `/me/timer` (`POST /issues/{KEY}/timer` starts, `/me/timer/{pause,resume,stop}`), `/me/time-drafts`, `/absences`, `/holidays`, `GET /sprints/{id}/capacity`, `/me/calendar-feeds` (feeds at `GET /calendar/{token}.ics`, searches at `GET /search.ics?q=`), `/timesheet`, `/time-report`, `/time-categories`, `/people`, `/teams`, `/users`, `/auth/forgot`, `/admin/{workspace,stats,audit,webhooks,mail}`, `POST /admin/mail/test` |
 | Migration | `GET /admin/backup-imports`, `POST /admin/backup-imports?name=…` (the `.zip` as the body; checked in the background), `GET/DELETE /admin/backup-imports/{id}`, `POST /admin/backup-imports/{id}/run` (`projects`: per key `{"action": "new"\|"into", "key"}` or `{"action": "skip"}`, `people`: `invite`\|`deactivated`, `dryRun`) — administrators in the browser only |
 | Sign-in | `GET /auth/providers`, `GET /auth/sso/{id}/login?next=`, `GET /auth/sso/{id}/callback`, SAML `POST /auth/sso/{id}/acs` and `GET /auth/sso/{id}/metadata`, `GET /me/sign-in` |
 | Security | `POST /auth/mfa` (`mfaToken`, `code` or `passkey`), `POST /auth/mfa/passkey`, `POST /auth/passkey/options`, `POST /auth/passkey`, `GET /me/mfa`, `POST /me/mfa/{setup,enable,disable,recovery-codes}`, `GET/POST /me/passkeys`, `POST /me/passkeys/options`, `PATCH/DELETE /me/passkeys/{id}`, `GET /me/sessions`, `DELETE /me/sessions/{id}`, `POST /me/sessions/revoke-others`, `GET/PUT /admin/security`, `POST /users/{id}/reset-mfa` (browser sessions only for changes) |

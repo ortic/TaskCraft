@@ -768,9 +768,17 @@ schemas["SecurityPolicy"] = obj(
 )
 schemas["Person"] = obj(
     {"id": uuid, "name": txt, "email": ntxt("null for guests asking"), "role": enum("owner", "admin", "member", "guest"), "title": ntxt("job title"),
-     "photo": null(txt, "the profile photo's address (/api/users/{id}/photo?v=…)")},
+     "photo": null(txt, "the profile photo's address (/api/users/{id}/photo?v=…)"),
+     "awayUntil": null(date, "away today, back after this day (see GET /absences)")},
     ["id", "name", "role"],
     "Someone active in the workspace (people pickers, mentions).",
+)
+schemas["Absence"] = obj(
+    {"id": uuid, "user": S("Named"), "start": date, "end": d(date, "the last day away"), "half": null(enum("am", "pm"), "half a day (start and end are the same day)"),
+     "kind": null(enum("vacation", "sick", "training", "other"), "why — only for the person and workspace admins"), "note": ntxt("only for the person and workspace admins"),
+     "substitute": null(S("Named"), "told about new assignments and missed service-level goals meanwhile"), "editable": d(boolean, "the caller may change or delete it")},
+    ["id", "user", "start", "end", "half", "kind", "note", "substitute", "editable"],
+    "Time someone is away.",
 )
 schemas["PersonDetail"] = {
     "description": "A person's profile with their teams.",
@@ -1002,6 +1010,30 @@ op("get", "/me/sign-in", "getMySignInMethods", "Sign-in", "How you sign in",
    res=ok(obj({"passwordLogin": d(boolean, "local passwords sign in here"), "password": d(boolean, "you have a local password that signs in"), "providers": arr(obj({"id": txt, "name": txt, "type": null(A_PROVIDER_TYPE, "null: the provider is no longer configured")}, ["id", "name"]), "single sign-on providers linked to your account")}, ["passwordLogin", "password", "providers"])))
 
 # --- People & teams
+op("get", "/absences", "listAbsences", "People & teams", "Absences in a period",
+   desc="Everyone's (or one person's, or a project's members'), overlapping the period; default: the last 30 days to the next 180. Why someone is away only for themselves and workspace admins.",
+   query=[q("from", "first day", date), q("to", "last day", date), q("user", "one person", uuid), q("project", "the members of this project (key)")], res=ok(arr(S("Absence"))))
+op("post", "/absences", "createAbsence", "People & teams", "Enter an absence",
+   desc="One's own; workspace admins for anyone (`userId`). At most a year; a half day is a single day; the substitute is someone else in the workspace.",
+   req=body(obj({"start": date, "end": d(date, "default: start"), "half": null(enum("am", "pm")), "kind": enum("vacation", "sick", "training", "other", desc="default vacation"),
+                 "note": txt, "substituteId": nuuid(), "userId": d(uuid, "whose (admins)")}, ["start"])),
+   res=created(obj({"id": uuid}, ["id"])), err="403")
+op("patch", "/absences/{id}", "updateAbsence", "People & teams", "Change an absence", desc="The person's own, or workspace admins.",
+   req=body(obj({"start": date, "end": date, "half": null(enum("am", "pm")), "kind": enum("vacation", "sick", "training", "other"), "note": ntxt(), "substituteId": nuuid()})), res=NO, err="404")
+op("delete", "/absences/{id}", "deleteAbsence", "People & teams", "Delete an absence", desc="The person's own, or workspace admins.", res=NO, err="404")
+op("get", "/holidays", "listHolidays", "People & teams", "Public holidays",
+   desc="The region calendars ('' is the workspace's default one), the caller's, and the holidays from a year back to two years ahead.",
+   res=ok(obj({"regions": arr(txt), "myRegion": txt, "holidays": arr(obj({"id": uuid, "region": txt, "day": date, "name": txt}, ["id", "region", "day", "name"]))},
+              ["regions", "myRegion", "holidays"])))
+op("post", "/holidays", "addHolidays", "People & teams", "Add public holidays (workspace admins)",
+   desc="One (`day`, `name`, `region`) or up to 500 (`holidays`); a day already in that region's calendar gets the new name.",
+   req=body(obj({"day": date, "name": txt, "region": d(txt, "a region calendar ('' or left out: the workspace's)"),
+                 "holidays": arr(obj({"day": date, "name": txt, "region": txt}, ["day", "name"]))})),
+   res=created(obj({"added": num}, ["added"])), err="403")
+op("delete", "/holidays/{id}", "deleteHoliday", "People & teams", "Delete a public holiday (workspace admins)", res=NO, err="403 404")
+op("put", "/me/holiday-region", "setHolidayRegion", "People & teams", "Whose public holidays apply",
+   desc="The caller's region calendar ('' or null: the workspace's); workspace admins set it for others with `userId`.",
+   req=body(obj({"region": ntxt(), "userId": uuid})), res=NO)
 op("get", "/people", "listPeople", "People & teams", "Everyone active in the workspace",
    desc="For people pickers and mentions, by name. Guests don't see e-mail addresses.", res=ok(arr(S("Person"))))
 op("get", "/people/{id}", "getPerson", "People & teams", "A person's profile and teams",
@@ -1544,7 +1576,7 @@ op("post", "/me/calendar-feeds", "createCalendarFeed", "Auth & account", "Make a
         "releases of the projects they belong to; `filter`: a saved filter's issues with a due date (one they may see); `project`: a project's issues with a due date, sprints and releases. "
         "When the workspace has calendar feeds turned off: 400.",
    req=body(obj({"kind": enum("mine", "filter", "project"), "viewId": d(uuid, "for filter"), "projectKey": d(txt, "for project"),
-                 "parts": obj({"issues": boolean, "sprints": boolean, "releases": boolean}, [], "default: all")}, ["kind"])),
+                 "parts": obj({"issues": boolean, "sprints": boolean, "releases": boolean, "absences": boolean}, [], "default: all")}, ["kind"])),
    res=created(obj({"id": uuid, "url": d(uri, "the feed's address, shown this once")}, ["id", "url"])), err="404")
 op("post", "/me/calendar-feeds/{id}/renew", "renewCalendarFeed", "Auth & account", "A new address for a calendar feed",
    desc="The old address stops working.", res=ok(obj({"id": uuid, "url": uri}, ["id", "url"])), err="404")
@@ -2154,6 +2186,13 @@ op(
     req=body(obj({"moveTo": d(txt, "a planned sprint id, new or backlog")})),
     res=ok(obj({"moved": d(num, "unfinished issues moved"), "movedTo": nuuid("the sprint they moved to (null: the backlog)"), "stats": S("SprintStats")}, ["moved", "movedTo", "stats"])),
 )
+op("get", "/sprints/{id}/capacity", "getSprintCapacity", "Boards & sprints", "Who is there in a sprint",
+   desc="For the people with issues in the sprint and the project's members: working days in the sprint (Monday to Friday), the public holidays of their region calendar, days away "
+        "(half days count half) and what's left; `share` is the team's available part of its working days (null without sprint dates).",
+   res=ok(obj({"start": ndate(), "end": ndate(),
+               "people": arr(obj({"user": uuid, "name": txt, "workingDays": number, "holidays": number, "away": number, "available": number},
+                                 ["user", "name", "workingDays", "holidays", "away", "available"])),
+               "workingDays": number, "available": number, "share": null(number)}, ["start", "end", "people", "workingDays", "available", "share"])))
 op("get", "/sprints/{id}/burndown", "getBurndown", "Boards & sprints", "Sprint burndown", desc="Replayed from the issues' history, so it stays right when scope or estimates change mid-sprint.", res=ok(S("Burndown")))
 
 # ---- Issues: moving to another project

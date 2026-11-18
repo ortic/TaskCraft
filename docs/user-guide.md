@@ -151,6 +151,16 @@ time: starting another one stops the first. A stopped timer you don't log right 
 **time draft** in the top bar — only you see drafts, and reports don't count them until they're
 logged. A timer that runs on and on reminds you after some hours and stops by itself after 24.
 
+## Time off
+
+*Profile & settings → Time off*: enter when you're away — whole days or a morning or afternoon —
+with a reason only you and the workspace's admins see, and optionally a **substitute**, who is
+told when issues are assigned to you or a service-level goal of yours is missed meanwhile. Others
+see "away until …" next to your name in pickers, mentions and the portfolio, and on the project
+calendar. Pick the public holidays that apply to you when the workspace keeps several region
+calendars. In the backlog, a sprint with dates shows how much of its working days the team is
+there (click it for each person's days).
+
 ## Calendar feeds
 
 *Profile & settings → Calendar feeds*: put due dates, sprints and releases into your own calendar

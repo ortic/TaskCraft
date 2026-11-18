@@ -1,5 +1,6 @@
 //! TaskCraft server: HTTP API, live updates, background workers and CLI.
 
+pub mod absences;
 pub mod access;
 pub mod ai;
 pub mod app;

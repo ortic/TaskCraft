@@ -19,12 +19,16 @@ pub async fn people(State(state): State<AppState>, CurrentUser(user): CurrentUse
             .bind(user.workspace_id)
             .fetch_all(&state.db)
             .await?;
-    // guests don't see e-mail addresses
+    // guests don't see e-mail addresses; everyone sees who is away until when (never why)
     let guest = user.is_guest();
+    let away = crate::absences::away_now(&state, user.workspace_id).await?;
     Ok(Json(json!(
         rows.into_iter()
             .map(|(id, name, email, role, title, photo)| {
-                json!({"id": id, "name": name, "email": if guest { None } else { email }, "role": role, "title": title, "photo": crate::photos::url(id, photo)})
+                json!({
+                    "id": id, "name": name, "email": if guest { None } else { email }, "role": role, "title": title, "photo": crate::photos::url(id, photo),
+                    "awayUntil": away.get(&id).map(|a| a.0),
+                })
             })
             .collect::<Vec<_>>()
     )))

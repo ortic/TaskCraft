@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Check, X, Plus, Lock } from 'lucide-react'
 import { api, PRIORITIES, shortDate, type CustomField, type Issue, type Named, type Priority, type Project, type StatusRef } from '../api'
-import { Avatar, Choices, Lozenge, PopButton, Unassigned, useMe, usePeople } from '../ui'
+import { Avatar, AwayBadge, Choices, Lozenge, PopButton, Unassigned, useMe, usePeople } from '../ui'
 import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
 
 /** Statuses an issue may move to (restricted workflows only allow configured moves). */
@@ -83,7 +83,12 @@ export function PersonPicker({ value, onChange, disabled, allowNone = true, labe
           placeholder={t('Search people…')}
           selected={(p) => (p?.id ?? null) === (value?.id ?? null)}
           filterText={(p) => p?.name ?? none ?? t('Unassigned')}
-          render={(p) => <PersonLabel person={p} empty={none} />}
+          render={(p) => (
+            <>
+              <PersonLabel person={p} empty={none} />
+              <AwayBadge until={p ? people.data?.find((x) => x.id === p.id)?.awayUntil : null} />
+            </>
+          )}
           onPick={(p) => {
             close()
             onChange(p?.id ?? null)

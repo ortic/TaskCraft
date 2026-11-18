@@ -114,6 +114,12 @@ pub async fn alert(state: &AppState) -> anyhow::Result<()> {
             let Some(who) = assignee.or(lead) else { continue };
             let s = crate::issues::summary(state, crate::issues::load(state, id).await?);
             crate::notify::notify(state, workspace, who, &s, None, "sla", json!({"goal": g.goal, "targetMinutes": g.target_minutes})).await;
+            // someone away: their substitute hears of it too
+            if let Some((sub, until)) = crate::absences::substitute(state, workspace, who).await {
+                let name: String = sqlx::query_scalar("SELECT name FROM users WHERE id = $1").bind(who).fetch_one(&state.db).await.unwrap_or_default();
+                let data = json!({"goal": g.goal, "targetMinutes": g.target_minutes, "for": name, "until": until});
+                crate::notify::notify(state, workspace, sub, &s, None, "sla", data).await;
+            }
         }
     }
     Ok(())

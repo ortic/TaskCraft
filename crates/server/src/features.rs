@@ -210,7 +210,10 @@ mod tests {
         let mut s = json!({"name": "x"});
         check(&json!({"features": {"votes": false}, "timeZone": "Europe/Zurich", "dateFormat": "ymd"}), &mut s).unwrap();
         assert_eq!(s["features"], json!({"votes": false}));
-        assert_eq!(all(&s), json!({"timeTracking": true, "votes": false, "portal": true, "automation": true, "sharing": true, "ai": true, "calendarFeeds": true}));
+        assert_eq!(
+            all(&s),
+            json!({"timeTracking": true, "votes": false, "portal": true, "automation": true, "sharing": true, "ai": true, "calendarFeeds": true})
+        );
         assert_eq!(s["timeZone"], "Europe/Zurich");
         assert!(check(&json!({"features": {"teleport": false}}), &mut s).is_err());
         assert!(check(&json!({"timeZone": "Mars/Base"}), &mut s).is_err());

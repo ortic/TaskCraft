@@ -717,6 +717,13 @@ pub fn describe(l: &str, kind: &str, data: &Value, who: &str) -> String {
             (None, Some(to)) => tr(l, "{who} changed the status to {to}", &[("who", who), ("to", to)]),
             _ => tr(l, "{who} changed the status", &w),
         },
+        "substitute" => {
+            let a = [("who", who), ("name", s("for").unwrap_or("")), ("until", s("until").unwrap_or(""))];
+            tr(l, "{who} assigned it to {name}, who is away until {until}: you're the substitute", &a)
+        }
+        "sla" if s("for").is_some() => {
+            tr(l, "A service-level goal of {name}, who is away, was missed: you're the substitute", &[("name", s("for").unwrap_or(""))])
+        }
         "timer" if data["stopped"].as_bool() == Some(true) => tr(l, "Your timer ran for 24 hours and stopped: the time waits as a draft", &[]),
         "timer" => tr(l, "Your timer has been running for {hours} hours", &[("hours", &data["hours"].as_i64().unwrap_or(0).to_string())]),
         "sla" if s("goal") == Some("response") => tr(l, "The goal for the first response was missed", &[]),

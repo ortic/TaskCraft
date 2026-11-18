@@ -66,6 +66,11 @@ pub async fn changes(state: &AppState, actor: &Actor, s: &Summary, changes: &[Ch
             "assignee" => {
                 if let Some(u) = c.new["id"].as_str().and_then(|s| s.parse().ok()) {
                     send(state, actor.workspace, u, s, actor.user, "assigned", json!({})).await;
+                    // assigned to someone away: their substitute is told
+                    if let Some((sub, until)) = crate::absences::substitute(state, actor.workspace, u).await {
+                        let data = json!({"for": c.new["name"], "until": until});
+                        send(state, actor.workspace, sub, s, actor.user, "substitute", data).await;
+                    }
                 }
             }
             "status" => {

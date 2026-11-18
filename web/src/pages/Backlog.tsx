@@ -9,6 +9,7 @@ import { PriorityIcon, TypeIcon } from '../icons'
 import { useOpenIssue } from '../components/Layout'
 import { refreshIssues } from '../components/IssueView'
 import { CompleteSprint } from './Board'
+import { SprintCapacity } from '../components/TimeOff'
 
 interface BacklogData {
   canEdit: boolean
@@ -188,6 +189,7 @@ function BacklogView({ project, data, velocity }: { project: Project; data: Back
               {t('{planned} of ~{usual} pts', { planned: total, usual: Math.round(velocity) })}
             </span>
           )}
+          {sprint && sprint.state !== 'closed' && sprint.startAt && sprint.endAt && <SprintCapacity sprintId={sprint.id} />}
           {sprint && data.canEdit && sprint.state === 'future' && (
             <button className="btn btn-sm" disabled={hasActive} title={hasActive ? t('Complete the running sprint first') : undefined} onClick={() => setStarting(sprint)}>
               <Play size={13} /> {t('Start sprint')}

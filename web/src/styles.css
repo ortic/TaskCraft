@@ -616,3 +616,10 @@ body.print-view .issue-side { border: 0; background: none; padding: 0 28px; }
 .timer-draft-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .timer-start.is-running { border-color: var(--success); color: var(--success); }
 @media (max-width: 720px) { .timer-chip .issue-key { display: none; } }
+
+/* ---- absences ---- */
+.badge-away { background: var(--warning-soft, var(--bg-hover)); color: var(--warning-text); margin-inline-start: 6px; white-space: nowrap; }
+.cal-away { display: block; font-size: 11px; color: var(--warning-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.capacity-pop table { width: 100%; }
+.capacity-pop td, .capacity-pop th { padding: 3px 6px; text-align: end; }
+.capacity-pop td:first-child, .capacity-pop th:first-child { text-align: start; }
