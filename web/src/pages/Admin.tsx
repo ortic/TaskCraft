@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { Bot, KeyRound, Puzzle } from 'lucide-react'
 import AgentsTab from './Agents'
+import BillingSettings from './Billing'
 import ExtensionsTab from './Extensions'
 import ProvisioningTab from './Provisioning'
 import { api, ago, dateTime, shortDate, type Feature, type LinkType, type Me, type TimeCategory } from '../api'
@@ -1326,6 +1327,7 @@ function TimeTab() {
         <p className="small muted adm-intro">{t('Time categories say what time is spent on — like Development, Meetings or Support — and whether such time is billable unless the person logging it says otherwise. They show up when logging time and in the time report.')}</p>
       </div>
       <TimerSettings />
+      <BillingSettings />
       {list.isLoading && <Loading />}
       {list.error && <ErrorBox error={list.error} />}
       {list.data && list.data.length === 0 && <Empty icon={<Clock size={32} />} title={t('No time categories yet')} />}

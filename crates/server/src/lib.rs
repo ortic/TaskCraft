@@ -13,6 +13,7 @@ pub mod calendar;
 pub mod chat;
 pub mod cli_login;
 pub mod config;
+pub mod customers;
 pub mod demo;
 pub mod doc;
 pub mod error;

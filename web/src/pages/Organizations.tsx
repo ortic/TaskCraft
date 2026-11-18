@@ -14,6 +14,9 @@ export interface Organization {
   slaPercent: number
   memberCount: number
   openRequests: number
+  number?: string | null
+  contact?: string | null
+  archived?: boolean
 }
 
 interface OrganizationDetail {
@@ -24,6 +27,10 @@ interface OrganizationDetail {
   slaPercent: number
   members: { email: string; name: string | null }[]
   requests: Issue[]
+  number?: string | null
+  contact?: string | null
+  archived?: boolean
+  projects?: { key: string; name: string }[]
 }
 
 export function useOrganizations(enabled = true) {
@@ -83,12 +90,13 @@ function OrganizationList() {
       {(list.data?.length ?? 0) > 0 && (
         <table className="list">
           <thead>
-            <tr><th>{t('Organization')}</th><th>{t('Mail domains')}</th><th>{t('Members')}</th><th>{t('Open requests')}</th></tr>
+            <tr><th>{t('Organization')}</th><th>{t('Customer number')}</th><th>{t('Mail domains')}</th><th>{t('Members')}</th><th>{t('Open requests')}</th></tr>
           </thead>
           <tbody>
             {list.data!.map((o) => (
               <tr key={o.id}>
-                <td><Link to={`/organizations/${o.id}`}>{o.name}</Link></td>
+                <td><Link to={`/organizations/${o.id}`}>{o.name}</Link>{o.archived && <span className="badge" style={{ marginInlineStart: 6 }}>{t('Archived')}</span>}</td>
+                <td className="small faint">{o.number}</td>
                 <td className="small faint">{o.domains.join(', ')}</td>
                 <td className="small">{o.memberCount}</td>
                 <td className="small">{o.openRequests}</td>
@@ -152,6 +160,26 @@ function OrganizationPage({ id }: { id: string }) {
           </select>
         </div>
       </div>
+      <div className="row-wrap" style={{ gap: 16, alignItems: 'flex-start' }}>
+        <div className="field" style={{ minWidth: 160 }}>
+          <label htmlFor="org-number">{t('Customer number')}</label>
+          <input id="org-number" className="input" maxLength={60} defaultValue={o.number ?? ''} onBlur={(e) => e.target.value.trim() !== (o.number ?? '') && run(() => api.patch(`/organizations/${id}`, { number: e.target.value }))} />
+        </div>
+        <div className="field" style={{ minWidth: 280, flex: 1 }}>
+          <label htmlFor="org-contact">{t('Contact')}</label>
+          <input id="org-contact" className="input" maxLength={300} defaultValue={o.contact ?? ''} placeholder={t('Who to talk to, and how')} onBlur={(e) => e.target.value.trim() !== (o.contact ?? '') && run(() => api.patch(`/organizations/${id}`, { contact: e.target.value }))} />
+        </div>
+        <label className="row small" style={{ gap: 6, marginTop: 26 }}>
+          <input type="checkbox" checked={!!o.archived} onChange={(e) => run(() => api.patch(`/organizations/${id}`, { archived: e.target.checked }))} /> {t('Archived: kept in reports, not offered for new work')}
+        </label>
+      </div>
+      {(o.projects?.length ?? 0) > 0 && (
+        <p className="small">
+          {t('Projects of this customer:')}{' '}
+          {o.projects!.map((p, i) => <span key={p.key}>{i > 0 && ', '}<Link to={`/projects/${p.key}`}>{p.name}</Link></span>)}
+          {' · '}<Link to={`/time-report?group=project&customer=${id}`}>{t('Time for this customer')}</Link>
+        </p>
+      )}
       <div className="field">
         <label htmlFor="org-notes">{t('Notes for the team')}</label>
         <textarea id="org-notes" className="input" rows={3} defaultValue={o.notes ?? ''} onBlur={(e) => e.target.value !== (o.notes ?? '') && run(() => api.patch(`/organizations/${id}`, { notes: e.target.value }))} />

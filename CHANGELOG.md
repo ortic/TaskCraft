@@ -6,6 +6,13 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 
 ## [Unreleased]
 
+- **Customers**: organizations carry a customer number and a contact and can be archived;
+  projects (and their subprojects) belong to a customer, and a time log can name another one.
+  The time report groups and filters by customer, with billable and internal time per month, and
+  a dashboard widget shows time per customer. Optional **hourly rates** (per customer, person,
+  category) give amounts in the report and its CSV for admins; a **closed period** keeps billed
+  time from changing. TQL `customer = "Acme"`.
+
 - **AI coding agents** (*Administration → Agents*): define agents — name, `@handle`,
   instructions, repository and base branch — and assign them issues or mention them in comments.
   A runner (`taskcraft-runner`, in the release archives; register it with a one-time token) works

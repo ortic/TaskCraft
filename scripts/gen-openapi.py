@@ -515,6 +515,7 @@ schemas = {
             "role": enum("viewer", "member", "admin", desc="the caller's role in the project"),
             "starred": boolean,
             "leadName": ntxt(),
+            "customer": null(obj({"id": uuid, "name": txt, "inherited": d(boolean, "it has it from the project above")}, ["id", "name", "inherited"]), "whose project it is: time logged in it is this customer's"),
             "openCount": d(num, "list only: open issues"),
             "doneCount": d(num, "list only: done issues"),
             "activeSprint": ntxt("list only: name of the running sprint"),
@@ -641,6 +642,7 @@ schemas["Me"] = obj(
                     "virusScanning": d(boolean, "uploads are scanned for viruses (shown to admins; false for others)"),
                     "maxUploadMb": d(num, "the server's largest upload (TASKCRAFT_MAX_UPLOAD_MB)"),
                     "timeZone": null(txt, "default time zone (IANA) for people who haven't picked one"),
+                    "currency": ntxt("the currency of hourly rates"), "timeClosedUntil": null(date, "time logs up to this day are closed (billed): only admins change them"),
                     "dateFormat": null(enum("dmy", "mdy", "ymd"), "how dates are written (null: as the language writes them)"),
                     "announcement": null(obj({"id": uuid, "text": txt, "tone": enum("info", "warning"), "until": null(dt, "shown until"), "at": dt}, ["id", "text", "tone"]),
                                          "the announcement for everyone while it's current"),
@@ -1017,19 +1019,21 @@ op("get", "/me/sign-in", "getMySignInMethods", "Sign-in", "How you sign in",
 # --- People & teams
 schemas["Organization"] = obj(
     {"id": uuid, "name": txt, "domains": d(arr(txt), "requesters from these mail domains join by themselves"), "slaPercent": d(num, "service-level goals as a share of the project's (50: twice as fast)"),
-     "memberCount": num, "openRequests": num},
+     "memberCount": num, "openRequests": num, "number": ntxt("customer number"), "contact": ntxt(), "archived": d(boolean, "kept in reports, not offered for new work")},
     ["id", "name", "domains", "slaPercent"],
     "A requester organization: a customer whose people write to the service desk.",
 )
 op("get", "/organizations", "listOrganizations", "Templates & service levels", "Requester organizations", desc="Not for guests.", res=ok(arr(S("Organization"))))
 op("post", "/organizations", "createOrganization", "Templates & service levels", "Add an organization",
-   req=body(obj({"name": d(txt, "unique, up to 120 characters"), "domains": arr(txt), "notes": txt, "slaPercent": d(num, "10 to 500, default 100")}, ["name"])),
+   req=body(obj({"name": d(txt, "unique, up to 120 characters"), "domains": arr(txt), "notes": txt, "slaPercent": d(num, "10 to 500, default 100"),
+                 "number": d(txt, "customer number"), "contact": txt}, ["name"])),
    res=created(obj({"id": uuid}, ["id"])), err="409")
 op("get", "/organizations/{id}", "getOrganization", "Templates & service levels", "An organization with its members and requests",
    desc="The requests the caller may see (latest 50, open ones first).",
    res=ok(obj({"id": uuid, "name": txt, "domains": arr(txt), "notes": ntxt(), "slaPercent": num, "members": arr(obj({"email": email, "name": ntxt()}, ["email"])),
+               "number": ntxt(), "contact": ntxt(), "archived": boolean, "projects": arr(obj({"key": txt, "name": txt}, ["key", "name"]), "the projects that belong to it"),
                "requests": arr(S("IssueSummary"))}, ["id", "name", "members", "requests"])))
-op("patch", "/organizations/{id}", "updateOrganization", "Templates & service levels", "Change an organization", req=body(obj({"name": txt, "domains": arr(txt), "notes": ntxt(), "slaPercent": num})), res=NO, err="404 409")
+op("patch", "/organizations/{id}", "updateOrganization", "Templates & service levels", "Change an organization", req=body(obj({"name": txt, "domains": arr(txt), "notes": ntxt(), "slaPercent": num, "number": ntxt(), "contact": ntxt(), "archived": boolean})), res=NO, err="404 409")
 op("delete", "/organizations/{id}", "deleteOrganization", "Templates & service levels", "Delete an organization (workspace admins)", desc="Its requests keep their requesters.", res=NO, err="404")
 op("post", "/organizations/{id}/members", "addOrganizationMember", "Templates & service levels", "Add a member (an e-mail address)",
    desc="Their requests without an organization join it.", req=body(obj({"email": email, "name": txt}, ["email"])), res=NO, err="404")
@@ -1232,6 +1236,7 @@ schemas["ProjectUpdate"] = obj(
         "color": ntxt(),
         "leadId": nuuid(),
         "parentId": nuuid("make it a subproject of another project the caller sees (not one below it; three levels at most); null: top level"),
+        "customerId": nuuid("the customer the project belongs to (an organization); null: none, or the one of the project above"),
         "defaultRole": d(B_ROLE, "role of workspace members without a grant"),
         "settings": S("ProjectSettings"),
     },
@@ -1954,6 +1959,7 @@ schemas["Worklog"] = obj(
         "note": ntxt(),
         "category": null(S("Named"), "what the time went to (see TimeCategory)"),
         "billable": boolean,
+        "customer": null(S("Named"), "another customer than the project's (null: the project's)"),
     },
     ["id", "user", "minutes", "date", "note", "category", "billable"],
     "A time log.",
@@ -1989,6 +1995,7 @@ schemas["TimeReportRow"] = obj(
         "label": d(txt, "name; issues as `KEY title`"),
         "minutes": num,
         "billableMinutes": num,
+        "amount": d(number, "what the billable time is worth by the hourly rates (workspace admins, when rates are set)"),
         "children": arr({"$ref": "#/components/schemas/TimeReportRow"}, "the second grouping (`then`)"),
     },
     ["id", "label", "minutes", "billableMinutes"],
@@ -2003,6 +2010,8 @@ schemas["TimeReport"] = obj(
         "billableMinutes": num,
         "logCount": num,
         "truncated": d(boolean, "more than 100,000 logs: only those were counted"),
+        "amount": null(number, "what the billable time is worth (workspace admins, when rates are set)"),
+        "currency": ntxt("the workspace's currency (three letters)"),
         "rows": arr(S("TimeReportRow"), "periods in order, everything else most time first"),
     },
     ["from", "to", "group", "totalMinutes", "billableMinutes", "logCount", "truncated", "rows"],
@@ -2050,7 +2059,7 @@ schemas["WidgetConfig"] = obj(
 schemas["Widget"] = obj(
     {
         "id": d(txt, "generated when left out"),
-        "type": enum("issues", "count", "breakdown", "burndown", "velocity", "flow", "created", "activity", "mywork", "note"),
+        "type": enum("issues", "count", "breakdown", "burndown", "velocity", "flow", "created", "activity", "mywork", "note", "customertime"),
         "title": d(txt, "up to 120 characters"),
         "config": S("WidgetConfig"),
         "wide": d(boolean, "spans the full width"),
@@ -2377,6 +2386,7 @@ op(
                 "note": txt,
                 "categoryId": nuuid("a time category (not an archived one)"),
                 "billable": d(boolean, "default: the category's setting, else false"),
+                "customerId": nuuid("book it to another customer than the project's (an organization that isn't archived)"),
                 "draftId": d(uuid, "a time draft of the caller's on this issue, which this log replaces (409 when it was booked already)"),
                 "remaining": one(
                     enum("auto", "keep"),
@@ -2396,7 +2406,7 @@ op(
     "Comments & time",
     "Change a time log",
     desc="The person who logged it or a project admin. Only the fields sent change; an empty or null note clears it.",
-    req=body(obj({"minutes": number, "time": d(txt, "duration such as 1h 30m (instead of minutes)"), "date": date, "note": ntxt(), "categoryId": nuuid(), "billable": boolean})),
+    req=body(obj({"minutes": number, "time": d(txt, "duration such as 1h 30m (instead of minutes)"), "date": date, "note": ntxt(), "categoryId": nuuid(), "billable": boolean, "customerId": nuuid("null: the project's customer")})),
     res=ok(obj({"id": uuid, "minutes": num, "date": date, "note": ntxt(), "categoryId": nuuid(), "billable": boolean}, ["id", "minutes", "date", "note", "categoryId", "billable"])),
 )
 op("get", "/me/timer", "getTimer", "Comments & time", "The caller's running timer",
@@ -2439,17 +2449,18 @@ op(
     "getTimeReport",
     "Comments & time",
     "Time logged in a period, grouped",
-    desc="Over the issues the caller sees (private ones only for those who see them). Grouped by `group` and, inside, by `then`; or, with `format=csv`, every log as a row (Date, Person, Project, Issue, Title, Category, Billable, Hours, Minutes, Note).",
+    desc="Over the issues the caller sees (private ones only for those who see them). Grouped by `group` and, inside, by `then`; or, with `format=csv`, every log as a row (Date, Person, Project, Issue, Title, Category, Customer, Customer number, Billable, Hours, Minutes, Note — and Rate, Amount, Currency for workspace admins when rates are set). Time in a closed period (the workspace's `timeClosedUntil`) can be read but only admins change it.",
     query=[
         q("from", "first day (default: the first of this month)", date),
         q("to", "last day (default: today; at most two years after from)", date),
-        q("group", "person (default), project, issue, category, day, week or month"),
+        q("group", "person (default), project, issue, category, customer, day, week or month"),
         q("then", "a second grouping inside the first (same choices), or none"),
         q("projects", "project keys, comma separated (default: all the caller sees)"),
         q("subprojects", "with projects: the projects below them too", boolean),
         q("user", "only this person's time", uuid),
         q("category", "a time category's id, or none"),
         q("billable", "only billable (true) or not billable (false) time", boolean),
+        q("customer", "a customer's id (the log's own, else its project's), or none"),
         q("format", "csv for a download of every log"),
     ],
     res={"200": {"description": "The report (CSV with format=csv)", "content": {"application/json": {"schema": S("TimeReport")}, "text/csv": {"schema": {"type": "string"}}}}},
@@ -3406,6 +3417,8 @@ op("put", "/admin/workspace", "updateWorkspace", "Administration", "Rename the w
            "how long things are kept, 1–3650 days each; null or left out: kept (applied once an hour)",
        ),
        "timeZone": null(txt, "default time zone (IANA, e.g. Europe/Zurich) for people who haven't picked one: times on screen, digests at 8:00"),
+       "currency": ntxt("three letters (CHF, EUR): the currency of hourly rates"),
+       "timeClosedUntil": null(date, "close time logs up to this day (a billed period): only workspace admins log, change or delete time in it"),
        "dateFormat": null(enum("auto", "dmy", "mdy", "ymd"), "how dates are written (auto or null: as the language writes them)"),
        "announcement": null(obj({"text": d(txt, "up to 500 characters (empty: taken down)"), "tone": enum("info", "warning"), "until": null(dt, "shown until (null: until taken down)")}, ["text"]),
                             "a message at the top of every page (null: taken down)"),
@@ -3429,6 +3442,15 @@ op("delete", "/admin/workspace/logo", "deleteWorkspaceLogo", "Administration", "
    desc="Workspace admins, in the browser.", auth="session", res=NO)
 op("get", "/workspace/logo", "getWorkspaceLogo", "Administration", "The workspace's logo",
    desc="Anyone in the workspace (404 without one).", res=raw("image/png", "the image (or JPEG, GIF, WebP)"))
+# ---- customers: hourly rates ----
+A_RATE_SCOPE = "a rate is for a customer, a time category, a person, or a combination (none of them: the default); the most specific one that fits a time log counts — a customer before a person before a category"
+op("get", "/time-rates", "getTimeRates", "Comments & time", "Hourly rates, the currency and the closed period (workspace admins)", desc=A_RATE_SCOPE[0].upper() + A_RATE_SCOPE[1:] + ".",
+   res=ok(obj({"currency": ntxt(), "closedUntil": null(date),
+               "rates": arr(obj({"id": uuid, "customer": null(S("Named")), "category": null(S("Named")), "user": null(S("Named")), "rate": d(number, "per hour")}, ["id", "rate"]))}, ["rates"])))
+op("put", "/time-rates", "setTimeRates", "Comments & time", "Replace the hourly rates (workspace admins)",
+   desc="Amounts show in the time report and its CSV for workspace admins: billable time at its rate. " + A_RATE_SCOPE[0].upper() + A_RATE_SCOPE[1:] + ".",
+   req=body(obj({"rates": arr(obj({"customerId": nuuid(), "categoryId": nuuid(), "userId": nuuid(), "rate": d(number, "0 to 100000")}, ["rate"]), "up to 500")}, ["rates"])), res=NO)
+
 # ---- AI coding agents ----
 schemas["AgentRun"] = obj(
     {"id": uuid, "agent": obj({"name": txt, "handle": txt}, ["name", "handle"]), "state": enum("queued", "running", "succeeded", "failed", "cancelled"),

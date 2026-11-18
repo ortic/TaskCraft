@@ -12,7 +12,7 @@ import {
 import {
   api, ago, dateTime, duration, may, shortDate, type Comment, type HistoryEvent, type Issue, type IssueDetail, type LinkType, type Named, type Project, type TimeCategory, type WikiPage, type Worklog,
 } from '../api'
-import { Avatar, BotAvatar, Confirm, Empty, Lozenge, Loading, ErrorBox, Modal, PopButton, Tabs, useFeature, useMe, usePeople, useProject, useProjects, useToast } from '../ui'
+import { Avatar, BotAvatar, Confirm, Empty, Lozenge, Loading, ErrorBox, Modal, PopButton, Tabs, useCustomers, useFeature, useMe, usePeople, useProject, useProjects, useToast } from '../ui'
 import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
 import { RichText, RichView, EMPTY_DOC, isEmptyDoc } from './Editor'
 import Development, { describeDevEvent } from './Development'
@@ -1259,6 +1259,8 @@ function WorkLog({ issue, project }: { issue: IssueDetail; project: Project }) {
   const [note, setNote] = useState('')
   const [category, setCategory] = useState('')
   const [billable, setBillable] = useState(false)
+  const [customer, setCustomer] = useState('')
+  const hasCustomers = (useCustomers().data ?? []).some((c) => !c.archived)
   // what happens to the remaining estimate: down by the time logged, kept, or set anew
   const [remaining, setRemaining] = useState<'auto' | 'keep' | 'set'>('auto')
   const [newRemaining, setNewRemaining] = useState('')
@@ -1283,6 +1285,7 @@ function WorkLog({ issue, project }: { issue: IssueDetail; project: Project }) {
                 userId: who?.id,
                 categoryId: category || null,
                 billable,
+                customerId: customer || null,
                 remaining: !hasEstimate ? undefined : remaining === 'set' ? newRemaining.trim() || '0' : remaining,
               })
               setTime('')
@@ -1301,7 +1304,7 @@ function WorkLog({ issue, project }: { issue: IssueDetail; project: Project }) {
           <input type="date" className="input input-sm" style={{ width: 150 }} value={date} onChange={(e) => setDate(e.target.value)} aria-label={t('Date')} />
           <input className="input input-sm" style={{ flex: 1, minWidth: 140 }} placeholder={t('What did you do? (optional)')} value={note} onChange={(e) => setNote(e.target.value)} aria-label={t('Note')} />
           <button className="btn btn-primary btn-sm" disabled={!time.trim()}>{t('Log time')}</button>
-          {(categories.length > 0 || hasEstimate) && (
+          {(categories.length > 0 || hasEstimate || hasCustomers) && (
             <div className="row-wrap wl-options">
               {categories.some((c) => !c.archived) && (
                 <CategorySelect
@@ -1316,6 +1319,7 @@ function WorkLog({ issue, project }: { issue: IssueDetail; project: Project }) {
               <label className="row small muted" style={{ gap: 4 }}>
                 <input type="checkbox" checked={billable} onChange={(e) => setBillable(e.target.checked)} /> {t('Billable')}
               </label>
+              <CustomerSelect project={project} value={customer} onChange={setCustomer} />
               {hasEstimate && (
                 <>
                   <select className="select input-sm" style={{ width: 'auto' }} value={remaining} onChange={(e) => setRemaining(e.target.value as typeof remaining)} aria-label={t('Remaining estimate')}>
@@ -1337,6 +1341,7 @@ function WorkLog({ issue, project }: { issue: IssueDetail; project: Project }) {
               <tr key={w.id}>
                 <td colSpan={5}>
                   <WorkLogEdit
+                    project={project}
                     entry={w}
                     onDone={(changed) => {
                       setEditing(null)
@@ -1353,6 +1358,7 @@ function WorkLog({ issue, project }: { issue: IssueDetail; project: Project }) {
                 <td className="muted">
                   {w.category && <span className="badge" style={{ marginInlineEnd: 6 }}>{w.category.name}</span>}
                   {w.billable && <span className="badge badge-accent" style={{ marginInlineEnd: 6 }}>{t('billable')}</span>}
+                  {w.customer && <span className="badge" style={{ marginInlineEnd: 6 }}>{w.customer.name}</span>}
                   {w.note}
                 </td>
                 <td style={{ width: 70, whiteSpace: 'nowrap' }}>
@@ -1378,7 +1384,19 @@ function WorkLog({ issue, project }: { issue: IssueDetail; project: Project }) {
   )
 }
 
-function WorkLogEdit({ entry, onDone }: { entry: Worklog; onDone: (changed: boolean) => void }) {
+/** Whose time it is: the project's customer unless another one is picked. */
+function CustomerSelect({ project, value, onChange }: { project: Project; value: string; onChange: (id: string) => void }) {
+  const customers = (useCustomers().data ?? []).filter((c) => !c.archived || c.id === value)
+  if (customers.length === 0) return null
+  return (
+    <select className="select input-sm" style={{ width: 'auto', maxWidth: 220 }} value={value} onChange={(e) => onChange(e.target.value)} aria-label={t('Customer')}>
+      <option value="">{project.customer ? t('For {customer} (the project’s)', { customer: project.customer.name }) : t('No customer (internal)')}</option>
+      {customers.filter((c) => c.id !== project.customer?.id).map((c) => <option key={c.id} value={c.id}>{t('For {customer}', { customer: c.name })}</option>)}
+    </select>
+  )
+}
+
+function WorkLogEdit({ entry, project, onDone }: { entry: Worklog; project: Project; onDone: (changed: boolean) => void }) {
   const toast = useToast()
   const categories = useTimeCategories().data ?? []
   const [time, setTime] = useState(duration(entry.minutes))
@@ -1386,13 +1404,14 @@ function WorkLogEdit({ entry, onDone }: { entry: Worklog; onDone: (changed: bool
   const [note, setNote] = useState(entry.note ?? '')
   const [category, setCategory] = useState(entry.category?.id ?? '')
   const [billable, setBillable] = useState(entry.billable)
+  const [customer, setCustomer] = useState(entry.customer?.id ?? '')
   return (
     <form
       className="row-wrap"
       onSubmit={async (e) => {
         e.preventDefault()
         try {
-          await api.patch(`/worklogs/${entry.id}`, { time, date, note, categoryId: category || null, billable })
+          await api.patch(`/worklogs/${entry.id}`, { time, date, note, categoryId: category || null, billable, customerId: customer || null })
           onDone(true)
         } catch (err) {
           toast((err as Error).message)
@@ -1406,6 +1425,7 @@ function WorkLogEdit({ entry, onDone }: { entry: Worklog; onDone: (changed: bool
       <label className="row small muted" style={{ gap: 4 }}>
         <input type="checkbox" checked={billable} onChange={(e) => setBillable(e.target.checked)} /> {t('Billable')}
       </label>
+      <CustomerSelect project={project} value={customer} onChange={setCustomer} />
       <button className="btn btn-primary btn-sm">{t('Save')}</button>
       <button type="button" className="btn btn-ghost btn-sm" onClick={() => onDone(false)}>{t('Cancel')}</button>
     </form>

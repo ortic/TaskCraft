@@ -14,7 +14,7 @@ use crate::auth::{CurrentUser, User};
 use crate::error::{ApiError, ApiResult};
 use crate::query::priority_name;
 
-const WIDGETS: &[&str] = &["issues", "count", "breakdown", "burndown", "velocity", "flow", "created", "activity", "mywork", "note"];
+const WIDGETS: &[&str] = &["issues", "count", "breakdown", "burndown", "velocity", "flow", "created", "activity", "mywork", "note", "customertime"];
 
 fn clean_widgets(v: &Value) -> ApiResult<Value> {
     let list = v.as_array().ok_or_else(|| ApiError::bad("widgets must be a list"))?;

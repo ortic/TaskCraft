@@ -98,12 +98,13 @@ fn duplicate(e: sqlx::Error) -> ApiError {
 /// `GET /organizations`: the workspace's organizations with their members and open requests counted.
 pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser) -> ApiResult<Json<Value>> {
     staff(&user)?;
-    type R = (Uuid, String, Vec<String>, i32, i64, i64);
+    type R = (Uuid, String, Vec<String>, i32, i64, i64, Option<String>, Option<String>, bool);
     let rows: Vec<R> = sqlx::query_as(
         "SELECT o.id, o.name, o.domains, o.sla_percent,
                 (SELECT count(*) FROM organization_members m WHERE m.organization_id = o.id),
                 (SELECT count(*) FROM issue_requesters r JOIN issues i ON i.id = r.issue_id JOIN statuses s ON s.id = i.status_id
-                  WHERE r.organization_id = o.id AND i.deleted_at IS NULL AND s.category <> 'done')
+                  WHERE r.organization_id = o.id AND i.deleted_at IS NULL AND s.category <> 'done'),
+                o.number, o.contact, o.archived_at IS NOT NULL
            FROM organizations o WHERE o.workspace_id = $1 ORDER BY lower(o.name)",
     )
     .bind(user.workspace_id)
@@ -111,7 +112,10 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser)
     .await?;
     Ok(Json(json!(
         rows.into_iter()
-            .map(|(id, name, domains, sla, members, open)| json!({"id": id, "name": name, "domains": domains, "slaPercent": sla, "memberCount": members, "openRequests": open}))
+            .map(|(id, name, domains, sla, members, open, number, contact, archived)| json!({
+                "id": id, "name": name, "domains": domains, "slaPercent": sla, "memberCount": members, "openRequests": open,
+                "number": number, "contact": contact, "archived": archived,
+            }))
             .collect::<Vec<_>>()
     )))
 }
@@ -125,18 +129,25 @@ pub async fn create(State(state): State<AppState>, CurrentUser(user): CurrentUse
         .filter(|n| !n.is_empty() && n.chars().count() <= 120)
         .ok_or_else(|| ApiError::bad("an organization has a name (up to 120 characters)"))?;
     let id = new_id();
-    sqlx::query("INSERT INTO organizations (id, workspace_id, name, domains, notes, sla_percent) VALUES ($1, $2, $3, $4, $5, $6)")
+    sqlx::query("INSERT INTO organizations (id, workspace_id, name, domains, notes, sla_percent, number, contact) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)")
         .bind(id)
         .bind(user.workspace_id)
         .bind(name)
         .bind(domains(&req["domains"])?)
         .bind(req["notes"].as_str().map(str::trim).filter(|n| !n.is_empty()))
         .bind(percent(&req["slaPercent"])?.unwrap_or(100))
+        .bind(short(&req["number"], 60))
+        .bind(short(&req["contact"], 300))
         .execute(&state.db)
         .await
         .map_err(duplicate)?;
     audit(&state, user.workspace_id, Some(user.id), "organization.created", Some(name.to_string()), json!({})).await;
     Ok((StatusCode::CREATED, Json(json!({"id": id}))))
+}
+
+/// A short optional text of a request.
+fn short(v: &Value, max: usize) -> Option<String> {
+    v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(|s| s.chars().take(max).collect())
 }
 
 async fn org(state: &AppState, user: &User, id: Uuid) -> ApiResult<(String, Vec<String>, Option<String>, i32)> {
@@ -165,8 +176,19 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
     .fetch_all(&state.db)
     .await?;
     let requests = crate::issues::load_many_for(&state, user.id, &ids).await?;
+    let (number, contact, archived): (Option<String>, Option<String>, bool) =
+        sqlx::query_as("SELECT number, contact, archived_at IS NOT NULL FROM organizations WHERE id = $1").bind(id).fetch_one(&state.db).await?;
+    // the projects that belong to it (the ones the caller sees)
+    let visible = crate::access::visible_projects(&state, &user).await?;
+    let projects: Vec<(String, String)> = sqlx::query_as("SELECT key, name FROM projects WHERE customer_id = $1 AND id = ANY($2) ORDER BY key")
+        .bind(id)
+        .bind(&visible)
+        .fetch_all(&state.db)
+        .await?;
     Ok(Json(json!({
         "id": id, "name": name, "domains": domains, "notes": notes, "slaPercent": sla,
+        "number": number, "contact": contact, "archived": archived,
+        "projects": projects.into_iter().map(|(k, n)| json!({"key": k, "name": n})).collect::<Vec<_>>(),
         "members": members.into_iter().map(|(e, n)| json!({"email": e, "name": n})).collect::<Vec<_>>(),
         "requests": requests,
     })))
@@ -197,6 +219,20 @@ pub async fn update(State(state): State<AppState>, CurrentUser(user): CurrentUse
         .execute(&state.db)
         .await
         .map_err(duplicate)?;
+    // the customer's side: number, contact, archived
+    if req.get("number").is_some() {
+        sqlx::query("UPDATE organizations SET number = $2 WHERE id = $1").bind(id).bind(short(&req["number"], 60)).execute(&state.db).await?;
+    }
+    if req.get("contact").is_some() {
+        sqlx::query("UPDATE organizations SET contact = $2 WHERE id = $1").bind(id).bind(short(&req["contact"], 300)).execute(&state.db).await?;
+    }
+    if let Some(a) = req["archived"].as_bool() {
+        sqlx::query("UPDATE organizations SET archived_at = CASE WHEN $2 THEN COALESCE(archived_at, now()) END WHERE id = $1")
+            .bind(id)
+            .bind(a)
+            .execute(&state.db)
+            .await?;
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 

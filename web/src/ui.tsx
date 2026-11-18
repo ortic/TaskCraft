@@ -31,6 +31,20 @@ export function usePeople() {
   return useQuery({ queryKey: ['people'], queryFn: () => api.get<Person[]>('/people'), enabled: !!me.data?.user, staleTime: 120_000 })
 }
 
+/** A customer: an organization time can be booked to. */
+export interface Customer {
+  id: string
+  name: string
+  number?: string | null
+  archived?: boolean
+}
+
+/** The workspace's customers (the organizations list; guests don't see it). */
+export function useCustomers() {
+  const me = useMe()
+  return useQuery({ queryKey: ['organizations'], queryFn: () => api.get<Customer[]>('/organizations'), enabled: !!me.data?.user && me.data.user.role !== 'guest', staleTime: 60_000 })
+}
+
 /** Whether a part of TaskCraft is on in the workspace. */
 export function useFeature(f: Feature): boolean {
   return useMe().data?.workspace?.features?.[f] !== false

@@ -193,6 +193,8 @@ pub async fn me(
             "uploads": settings["uploads"],
             "timer": {"rounding": crate::timers::settings(&settings).0, "reminderHours": crate::timers::settings(&settings).1},
             "timeZone": settings["timeZone"], "dateFormat": settings["dateFormat"],
+            // time: the currency of rates, and the day up to which time is closed (billed)
+            "currency": settings["currency"], "timeClosedUntil": settings["timeClosedUntil"],
             "announcement": crate::features::announcement(&settings),
             "features": crate::features::all(&settings),
             "ai": crate::ai::available(&state, user.workspace_id).await,

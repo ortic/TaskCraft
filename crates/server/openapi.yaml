@@ -6743,6 +6743,12 @@ paths:
                 billable:
                   type: boolean
                   description: 'default: the category''s setting, else false'
+                customerId:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+                  description: book it to another customer than the project's (an organization that isn't archived)
                 draftId:
                   type: string
                   format: uuid
@@ -6827,6 +6833,12 @@ paths:
                   format: uuid
                 billable:
                   type: boolean
+                customerId:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+                  description: 'null: the project''s customer'
       responses:
         '200':
           description: OK
@@ -7219,8 +7231,9 @@ paths:
       summary: Time logged in a period, grouped
       operationId: getTimeReport
       description: Over the issues the caller sees (private ones only for those who see them). Grouped by `group` and, inside,
-        by `then`; or, with `format=csv`, every log as a row (Date, Person, Project, Issue, Title, Category, Billable, Hours,
-        Minutes, Note).
+        by `then`; or, with `format=csv`, every log as a row (Date, Person, Project, Issue, Title, Category, Customer, Customer
+        number, Billable, Hours, Minutes, Note — and Rate, Amount, Currency for workspace admins when rates are set). Time
+        in a closed period (the workspace's `timeClosedUntil`) can be read but only admins change it.
       parameters:
       - name: from
         in: query
@@ -7241,7 +7254,7 @@ paths:
       - name: group
         in: query
         required: false
-        description: person (default), project, issue, category, day, week or month
+        description: person (default), project, issue, category, customer, day, week or month
         schema:
           type: string
       - name: then
@@ -7281,6 +7294,12 @@ paths:
         description: only billable (true) or not billable (false) time
         schema:
           type: boolean
+      - name: customer
+        in: query
+        required: false
+        description: a customer's id (the log's own, else its project's), or none
+        schema:
+          type: string
       - name: format
         in: query
         required: false
@@ -7445,6 +7464,116 @@ paths:
                     format: uuid
               required:
               - ids
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /time-rates:
+    get:
+      tags:
+      - Comments & time
+      summary: Hourly rates, the currency and the closed period (workspace admins)
+      operationId: getTimeRates
+      description: 'A rate is for a customer, a time category, a person, or a combination (none of them: the default); the
+        most specific one that fits a time log counts — a customer before a person before a category.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  currency:
+                    type:
+                    - string
+                    - 'null'
+                  closedUntil:
+                    type:
+                    - string
+                    - 'null'
+                    format: date
+                    description: YYYY-MM-DD
+                  rates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        customer:
+                          anyOf:
+                          - $ref: '#/components/schemas/Named'
+                          - type: 'null'
+                        category:
+                          anyOf:
+                          - $ref: '#/components/schemas/Named'
+                          - type: 'null'
+                        user:
+                          anyOf:
+                          - $ref: '#/components/schemas/Named'
+                          - type: 'null'
+                        rate:
+                          type: number
+                          description: per hour
+                      required:
+                      - id
+                      - rate
+                required:
+                - rates
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    put:
+      tags:
+      - Comments & time
+      summary: Replace the hourly rates (workspace admins)
+      operationId: setTimeRates
+      description: 'Amounts show in the time report and its CSV for workspace admins: billable time at its rate. A rate is
+        for a customer, a time category, a person, or a combination (none of them: the default); the most specific one that
+        fits a time log counts — a customer before a person before a category.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rates:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      customerId:
+                        type:
+                        - string
+                        - 'null'
+                        format: uuid
+                      categoryId:
+                        type:
+                        - string
+                        - 'null'
+                        format: uuid
+                      userId:
+                        type:
+                        - string
+                        - 'null'
+                        format: uuid
+                      rate:
+                        type: number
+                        description: 0 to 100000
+                    required:
+                    - rate
+                  description: up to 500
+              required:
+              - rates
       responses:
         '204':
           description: Done (no content)
@@ -8287,6 +8416,11 @@ paths:
                 slaPercent:
                   type: integer
                   description: 10 to 500, default 100
+                number:
+                  type: string
+                  description: customer number
+                contact:
+                  type: string
               required:
               - name
       responses:
@@ -8362,6 +8496,29 @@ paths:
                           - 'null'
                       required:
                       - email
+                  number:
+                    type:
+                    - string
+                    - 'null'
+                  contact:
+                    type:
+                    - string
+                    - 'null'
+                  archived:
+                    type: boolean
+                  projects:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                        name:
+                          type: string
+                      required:
+                      - key
+                      - name
+                    description: the projects that belong to it
                   requests:
                     type: array
                     items:
@@ -8409,6 +8566,16 @@ paths:
                   - 'null'
                 slaPercent:
                   type: integer
+                number:
+                  type:
+                  - string
+                  - 'null'
+                contact:
+                  type:
+                  - string
+                  - 'null'
+                archived:
+                  type: boolean
       responses:
         '204':
           description: Done (no content)
@@ -12100,6 +12267,18 @@ paths:
                   - 'null'
                   description: 'default time zone (IANA, e.g. Europe/Zurich) for people who haven''t picked one: times on
                     screen, digests at 8:00'
+                currency:
+                  type:
+                  - string
+                  - 'null'
+                  description: 'three letters (CHF, EUR): the currency of hourly rates'
+                timeClosedUntil:
+                  type:
+                  - string
+                  - 'null'
+                  format: date
+                  description: 'close time logs up to this day (a billed period): only workspace admins log, change or delete
+                    time in it'
                 dateFormat:
                   type:
                   - string
@@ -15111,6 +15290,24 @@ components:
           type:
           - string
           - 'null'
+        customer:
+          type:
+          - object
+          - 'null'
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            inherited:
+              type: boolean
+              description: it has it from the project above
+          required:
+          - id
+          - name
+          - inherited
+          description: 'whose project it is: time logged in it is this customer''s'
         openCount:
           type: integer
           description: 'list only: open issues'
@@ -15399,6 +15596,17 @@ components:
               - string
               - 'null'
               description: default time zone (IANA) for people who haven't picked one
+            currency:
+              type:
+              - string
+              - 'null'
+              description: the currency of hourly rates
+            timeClosedUntil:
+              type:
+              - string
+              - 'null'
+              format: date
+              description: 'time logs up to this day are closed (billed): only admins change them'
             dateFormat:
               type:
               - string
@@ -16095,6 +16303,18 @@ components:
           type: integer
         openRequests:
           type: integer
+        number:
+          type:
+          - string
+          - 'null'
+          description: customer number
+        contact:
+          type:
+          - string
+          - 'null'
+        archived:
+          type: boolean
+          description: kept in reports, not offered for new work
       required:
       - id
       - name
@@ -16542,6 +16762,12 @@ components:
           format: uuid
           description: 'make it a subproject of another project the caller sees (not one below it; three levels at most);
             null: top level'
+        customerId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: 'the customer the project belongs to (an organization); null: none, or the one of the project above'
         defaultRole:
           type: string
           enum:
@@ -18099,6 +18325,11 @@ components:
           description: what the time went to (see TimeCategory)
         billable:
           type: boolean
+        customer:
+          anyOf:
+          - $ref: '#/components/schemas/Named'
+          - type: 'null'
+          description: 'another customer than the project''s (null: the project''s)'
       required:
       - id
       - user
@@ -18186,6 +18417,9 @@ components:
           type: integer
         billableMinutes:
           type: integer
+        amount:
+          type: number
+          description: what the billable time is worth by the hourly rates (workspace admins, when rates are set)
         children:
           type: array
           items:
@@ -18222,6 +18456,16 @@ components:
         truncated:
           type: boolean
           description: 'more than 100,000 logs: only those were counted'
+        amount:
+          type:
+          - number
+          - 'null'
+          description: what the billable time is worth (workspace admins, when rates are set)
+        currency:
+          type:
+          - string
+          - 'null'
+          description: the workspace's currency (three letters)
         rows:
           type: array
           items:
@@ -18383,6 +18627,7 @@ components:
           - activity
           - mywork
           - note
+          - customertime
         title:
           type: string
           description: up to 120 characters

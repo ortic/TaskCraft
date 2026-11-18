@@ -127,6 +127,7 @@ pub fn api() -> Router<AppState> {
         .route("/issues/{key}/organization", put(crate::organizations::set_for_issue))
         .route("/portal/colleagues", get(crate::organizations::colleagues))
         .route("/portal/requests/{key}/share", put(crate::organizations::share))
+        .route("/time-rates", get(crate::customers::get_rates).put(crate::customers::put_rates))
         .route("/admin/agents", get(crate::agents::list).post(crate::agents::create))
         .route("/admin/agents/{id}", patch(crate::agents::update).delete(crate::agents::remove))
         .route("/admin/agents/{id}/runs", get(crate::agents::runs))

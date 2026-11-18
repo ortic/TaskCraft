@@ -352,10 +352,10 @@ pub async fn react(State(state): State<AppState>, CurrentUser(user): CurrentUser
 
 pub async fn worklogs(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>) -> ApiResult<Json<Value>> {
     let (id, _, _) = issue_for(&state, &user, &key, Role::Viewer).await?;
-    type Row = (Uuid, Option<Uuid>, Option<String>, i32, NaiveDate, Option<String>, Option<Uuid>, Option<String>, bool);
+    type Row = (Uuid, Option<Uuid>, Option<String>, i32, NaiveDate, Option<String>, Option<Uuid>, Option<String>, bool, Option<Uuid>, Option<String>);
     let rows: Vec<Row> = sqlx::query_as(
-        "SELECT w.id, w.user_id, u.name, w.minutes, w.work_date, w.note, w.category_id, c.name, w.billable
-           FROM worklogs w LEFT JOIN users u ON u.id = w.user_id LEFT JOIN time_categories c ON c.id = w.category_id
+        "SELECT w.id, w.user_id, u.name, w.minutes, w.work_date, w.note, w.category_id, c.name, w.billable, w.customer_id, o.name
+           FROM worklogs w LEFT JOIN users u ON u.id = w.user_id LEFT JOIN time_categories c ON c.id = w.category_id LEFT JOIN organizations o ON o.id = w.customer_id
           WHERE w.issue_id = $1 ORDER BY w.work_date DESC, w.created_at DESC",
     )
     .bind(id)
@@ -363,9 +363,11 @@ pub async fn worklogs(State(state): State<AppState>, CurrentUser(user): CurrentU
     .await?;
     Ok(Json(json!(
         rows.into_iter()
-            .map(|(wid, uid, un, m, d, n, cid, cn, b)| json!({
+            .map(|(wid, uid, un, m, d, n, cid, cn, b, cust, cust_name)| json!({
                 "id": wid, "user": uid.map(|u| json!({"id": u, "name": un})), "minutes": m, "date": d, "note": n,
                 "category": cid.map(|c| json!({"id": c, "name": cn})), "billable": b,
+                // another customer than the project's
+                "customer": cust.map(|c| json!({"id": c, "name": cust_name})),
             }))
             .collect::<Vec<_>>()
     )))
@@ -471,6 +473,10 @@ pub async fn log_work(
     .filter(|m| *m > 0 && *m <= 24 * 60 * 7)
     .ok_or_else(|| ApiError::bad("time spent looks like 1h 30m, 45m or 2d"))?;
     let date = req["date"].as_str().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()).unwrap_or_else(|| chrono::Utc::now().date_naive());
+    // a billed period is closed
+    crate::customers::check_open(&state, &user, date).await?;
+    // another customer than the project's (null: the project's)
+    let customer = crate::customers::customer_of(&state, user.workspace_id, &req["customerId"]).await?;
     let category = super::time::category_of(&state, user.workspace_id, &req["categoryId"]).await?;
     let billable = match &req["billable"] {
         Value::Bool(b) => *b,
@@ -502,7 +508,7 @@ pub async fn log_work(
             sqlx::query("UPDATE issues SET remaining_minutes = $2 WHERE id = $1").bind(id).bind(m).execute(&mut *tx).await?;
         }
     }
-    sqlx::query("INSERT INTO worklogs (id, issue_id, user_id, minutes, work_date, note, category_id, billable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)")
+    sqlx::query("INSERT INTO worklogs (id, issue_id, user_id, minutes, work_date, note, category_id, billable, customer_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)")
         .bind(wid)
         .bind(id)
         .bind(who)
@@ -511,6 +517,7 @@ pub async fn log_work(
         .bind(req["note"].as_str().map(str::trim).filter(|n| !n.is_empty()))
         .bind(category.map(|c| c.0))
         .bind(billable)
+        .bind(customer)
         .execute(&mut *tx)
         .await?;
     issues::record(
@@ -529,12 +536,14 @@ pub async fn log_work(
 }
 
 pub async fn delete_worklog(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(id): Path<Uuid>) -> ApiResult<StatusCode> {
-    let row: Option<(Uuid, Option<Uuid>)> = sqlx::query_as("SELECT issue_id, user_id FROM worklogs WHERE id = $1").bind(id).fetch_optional(&state.db).await?;
-    let (issue, owner) = row.ok_or(ApiError::NotFound("work log"))?;
+    let row: Option<(Uuid, Option<Uuid>, NaiveDate)> =
+        sqlx::query_as("SELECT issue_id, user_id, work_date FROM worklogs WHERE id = $1").bind(id).fetch_optional(&state.db).await?;
+    let (issue, owner, date) = row.ok_or(ApiError::NotFound("work log"))?;
     let (_, project, role) = issue_for(&state, &user, &issue.to_string(), Role::Member).await?;
     if owner != Some(user.id) {
         crate::access::require_action(&state, project, role, "logTimeForOthers").await?;
     }
+    crate::customers::check_open(&state, &user, date).await?;
     sqlx::query("DELETE FROM worklogs WHERE id = $1").bind(id).execute(&state.db).await?;
     refresh_spent(&state, issue).await?;
     events::publish(&state, Event::new(user.workspace_id, "issue").project(project).actor(user.id)).await;

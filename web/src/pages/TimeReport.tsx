@@ -6,7 +6,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Download, Timer } from 'lucide-react'
 import { api, duration, isoDate, qs } from '../api'
-import { Empty, ErrorBox, Loading, useMe, usePeople, useProjects } from '../ui'
+import { Empty, ErrorBox, Loading, useCustomers, useMe, usePeople, useProjects } from '../ui'
 import { useOpenIssue } from '../components/Layout'
 import { useTimeCategories } from '../components/IssueView'
 import './Timesheet.css'
@@ -16,6 +16,8 @@ interface Row {
   label: string
   minutes: number
   billableMinutes: number
+  /** what the billable time is worth (admins, with rates) */
+  amount?: number
   children?: Row[]
 }
 
@@ -28,10 +30,12 @@ interface Report {
   billableMinutes: number
   logCount: number
   truncated: boolean
+  amount?: number | null
+  currency?: string | null
   rows: Row[]
 }
 
-const GROUPS = ['person', 'project', 'issue', 'category', 'day', 'week', 'month'] as const
+const GROUPS = ['person', 'project', 'issue', 'category', 'customer', 'day', 'week', 'month'] as const
 type Group = (typeof GROUPS)[number]
 
 function groupLabel(g: Group): string {
@@ -44,6 +48,8 @@ function groupLabel(g: Group): string {
       return t('Issue')
     case 'category':
       return t('Category')
+    case 'customer':
+      return t('Customer')
     case 'day':
       return t('Day')
     case 'week':
@@ -78,6 +84,7 @@ export default function TimeReport() {
   const people = usePeople().data ?? []
   const projects = useProjects().data ?? []
   const categories = useTimeCategories().data ?? []
+  const customers = useCustomers().data ?? []
   const open = useOpenIssue()
   const [params, setParams] = useSearchParams()
   const get = (k: string, d = '') => params.get(k) ?? d
@@ -107,6 +114,7 @@ export default function TimeReport() {
     user: get('user') || null,
     category: get('category') || null,
     billable: get('billable') || null,
+    customer: get('customer') || null,
   }
   const report = useQuery({
     queryKey: ['time-report', filters],
@@ -115,12 +123,16 @@ export default function TimeReport() {
   })
   const [openRows, setOpenRows] = useState<Record<string, boolean>>({})
   const r = report.data
+  // amounts: for admins, when hourly rates are set
+  const money = r?.amount != null
+  const amount = (n: number) => new Intl.NumberFormat(locale(), r?.currency ? { style: 'currency', currency: r.currency } : { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
   const max = Math.max(1, ...(r?.rows ?? []).map((x) => x.minutes))
   const csv = `/api/time-report${qs({ ...filters, format: 'csv' })}`
   const rangeFmt = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short', year: 'numeric' })
   const label = (g: string, row: Row) => {
     if (g === 'person' && !row.label) return <span className="faint">{t('(someone removed)')}</span>
     if (g === 'category' && !row.label) return <span className="faint">{t('No category')}</span>
+    if (g === 'customer' && !row.label) return <span className="faint">{t('No customer (internal)')}</span>
     if (g === 'issue') {
       const key = row.label.split(' ')[0]
       return (
@@ -210,6 +222,16 @@ export default function TimeReport() {
             </select>
           </label>
         )}
+        {customers.length > 0 && (
+          <label className="field">
+            <span className="field-label">{t('Customer')}</span>
+            <select className="select input-sm" value={get('customer')} onChange={(e) => set({ customer: e.target.value || null })}>
+              <option value="">{t('All customers')}</option>
+              <option value="none">{t('No customer (internal)')}</option>
+              {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+        )}
         <label className="field">
           <span className="field-label">{t('Billable')}</span>
           <select className="select input-sm" value={get('billable')} onChange={(e) => set({ billable: e.target.value || null })}>
@@ -226,6 +248,7 @@ export default function TimeReport() {
           <div className="tr-summary">
             <div><span className="tr-big">{duration(r.totalMinutes)}</span> <span className="faint">{t('logged')}</span></div>
             <div><span className="tr-big">{duration(r.billableMinutes)}</span> <span className="faint">{t('billable')}</span></div>
+            {money && <div><span className="tr-big">{amount(r.amount ?? 0)}</span> <span className="faint">{t('at the hourly rates')}</span></div>}
             <div className="faint small">{rangeFmt.formatRange(new Date(`${r.from}T00:00`), new Date(`${r.to}T00:00`))} · {r.logCount === 1 ? t('1 time log') : t('{n} time logs', { n: r.logCount })}</div>
           </div>
           {r.truncated && <p className="error-text small">{t('Only the first 100,000 time logs are counted: choose a shorter period.')}</p>}
@@ -238,6 +261,7 @@ export default function TimeReport() {
                   <th>{groupLabel(group)}</th>
                   <th className="tr-num">{t('Hours')}</th>
                   <th className="tr-num">{t('Billable')}</th>
+                  {money && <th className="tr-num">{t('Amount')}</th>}
                   <th className="tr-bar-col"><span className="sr-only">{t('Share')}</span></th>
                 </tr>
               </thead>
@@ -260,6 +284,7 @@ export default function TimeReport() {
                         </td>
                         <td className="tr-num"><strong>{duration(row.minutes)}</strong></td>
                         <td className="tr-num faint">{row.billableMinutes ? duration(row.billableMinutes) : '—'}</td>
+                        {money && <td className="tr-num">{row.amount ? amount(row.amount) : '—'}</td>}
                         <td className="tr-bar-col">
                           <div className="progress" title={`${Math.round((row.minutes / Math.max(1, r.totalMinutes)) * 100)}%`}>
                             <span style={{ width: `${(row.minutes / max) * 100}%`, background: 'var(--accent)' }} />
@@ -272,6 +297,7 @@ export default function TimeReport() {
                             <td>{label(r.then ?? '', c)}</td>
                             <td className="tr-num">{duration(c.minutes)}</td>
                             <td className="tr-num faint">{c.billableMinutes ? duration(c.billableMinutes) : '—'}</td>
+                            {money && <td className="tr-num faint">{c.amount ? amount(c.amount) : '—'}</td>}
                             <td className="tr-bar-col" />
                           </tr>
                         ))}

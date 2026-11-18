@@ -86,6 +86,10 @@
 - [x] Extensions: sandboxed scripts as automation actions; installed extensions with declared capabilities (issues, HTTP hosts, state, secrets), custom actions, event handlers, scheduled jobs, routes, logs and a switch; extension API 1 (#10)
 - [x] AI coding agents: agents as accounts of their own, started by assignment or mention; a registered runner with run-scoped credentials (source and model through the server); draft pull requests or answers; live log, cancel, testing mode, runs with token use (#7)
 
+## Next (round 6)
+
+- [x] Customers: projects and time logs belong to customers (one list with requester organizations), the time report per customer, hourly rates with amounts, closed periods, TQL `customer` (#4)
+
 ## Next (round 4): what established trackers have and TaskCraft doesn't
 
 - [x] Workflow rules: per status who may move issues there (everyone, project admins, chosen teams), the fields they need and a comment, with a form asking for what's missing (board, issue, bulk); resolutions per project (Done / Won't do / Duplicate / …) in history, TQL, CSV and both imports

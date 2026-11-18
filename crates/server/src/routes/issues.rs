@@ -596,6 +596,7 @@ pub async fn suggest(
                 "blocked",
                 "link",
                 "organization",
+                "customer",
                 "approval",
                 "approver",
                 "comment",
@@ -615,6 +616,14 @@ pub async fn suggest(
         }
         "category" | "statuscategory" => vec!["todo".into(), "in_progress".into(), "done".into()],
         "approval" => vec!["pending".into(), "approved".into(), "rejected".into()],
+        "customer" => {
+            sqlx::query_scalar(
+                "SELECT name FROM organizations WHERE workspace_id = $1 AND id IN (SELECT customer_id FROM projects) ORDER BY lower(name) LIMIT 200",
+            )
+            .bind(user.workspace_id)
+            .fetch_all(&state.db)
+            .await?
+        }
         "organization" => {
             sqlx::query_scalar("SELECT name FROM organizations WHERE workspace_id = $1 ORDER BY lower(name) LIMIT 200")
                 .bind(user.workspace_id)

@@ -33,6 +33,11 @@ One binary, PostgreSQL, optional S3. Built with the same stack as WikiCraft.
   category, day, week or month (and once more inside), filtered, with a CSV of every log; a
   **timer** per person on an issue (in the top bar on every device; pause, stop and log; the
   workspace rounds it up; stopped timers wait as private drafts; reminders, and a stop at 24 hours)
+- **Customers**: organizations with a customer number and a contact (one list with the service
+  desk's requester organizations); projects and their subprojects belong to a customer, a time
+  log can name another one; the time report by customer (billable vs internal, per month), a
+  dashboard widget, **hourly rates** per customer / person / category with amounts in the report
+  and CSV for admins, **closed periods** for billed time, TQL `customer = "Acme"`
 - **Workflows**: statuses in three categories (to do, in progress, done); free or restricted
   transitions with a transition matrix; **rules per status** — who may move issues there (everyone,
   project admins or chosen teams), the fields an issue needs to get there, a comment asked for —
@@ -93,7 +98,7 @@ files, HTML and plain text (the first 100 000 characters, read in the background
 
 Fields: `project key title text description comment type status category priority assignee
 reporter creator labels sprint version affects component parent/epic points estimate spent created
-updated resolved resolution security due start remaining watcher voter votes blocked link organization approval approver` and custom fields. Operators `= != ~ !~ > >= < <=`,
+updated resolved resolution security due start remaining watcher voter votes blocked link organization customer approval approver` and custom fields. Operators `= != ~ !~ > >= < <=`,
 `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions:
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`,
 `openSprints()`, `futureSprints()`, `closedSprints()`, `releasedVersions()`,

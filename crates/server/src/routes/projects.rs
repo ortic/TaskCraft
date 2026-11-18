@@ -120,6 +120,15 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser)
 /// open sprints, boards and the allowed moves.
 pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>) -> ApiResult<Json<Value>> {
     let (p, role) = by_key(&state, &user, &key, Role::Viewer).await?;
+    // the customer it belongs to: its own, or the one it has from the project above it
+    let customer: Value = sqlx::query_as::<_, (Uuid, String, bool)>(
+        "SELECT o.id, o.name, p.customer_id IS NULL FROM projects p JOIN organizations o ON o.id = tc_project_customer(p.id) WHERE p.id = $1",
+    )
+    .bind(p.id)
+    .fetch_optional(&state.db)
+    .await?
+    .map(|(id, name, inherited)| json!({"id": id, "name": name, "inherited": inherited}))
+    .unwrap_or(Value::Null);
     let statuses: Vec<(Uuid, String, String, Option<String>, f64, Value, Option<Value>)> =
         sqlx::query_as("SELECT id, name, category, color, position, rules, approval FROM statuses WHERE project_id = $1 ORDER BY position")
             .bind(p.id)
@@ -186,6 +195,7 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
         json!({
             "starred": starred,
             "leadName": lead_name,
+            "customer": customer,
             "statuses": statuses.iter().map(|(id, n, c, col, pos, rules, approval)| json!({"id": id, "name": n, "category": c, "color": col, "position": pos, "rules": rules, "approval": approval})).collect::<Vec<_>>(),
             "types": types.iter().map(|(id, n, i, c, l, t, f)| json!({"id": id, "name": n, "icon": i, "color": c, "level": l, "template": t, "fields": f})).collect::<Vec<_>>(),
             "versions": versions.iter().map(|(id, n, d, s, sd, rd, ra)| json!({"id": id, "name": n, "description": d, "status": s, "startDate": sd, "releaseDate": rd, "releasedAt": ra})).collect::<Vec<_>>(),
@@ -537,6 +547,11 @@ pub async fn update(
                     }
                 }
                 sqlx::query("UPDATE projects SET parent_id = $2 WHERE id = $1").bind(p.id).bind(parent).execute(&mut *tx).await?;
+            }
+            "customerId" => {
+                // whose project it is: time logged in it is this customer's unless a log says otherwise
+                let c = crate::customers::customer_of(&state, p.workspace_id, v).await?;
+                sqlx::query("UPDATE projects SET customer_id = $2 WHERE id = $1").bind(p.id).bind(c).execute(&mut *tx).await?;
             }
             "defaultRole" => {
                 let r = v.as_str().and_then(Role::parse).ok_or_else(|| ApiError::bad("defaultRole must be none, viewer, member or admin"))?;

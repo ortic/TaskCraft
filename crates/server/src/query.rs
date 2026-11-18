@@ -747,6 +747,18 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
             qb.push_bind(names);
             qb.push(")))");
         }
+        // not a reserved word: a custom field people called "Customer" keeps its meaning
+        "customer" if !ctx.custom.contains_key("customer") => {
+            // the customer its project belongs to (its own, or the one of the project above), by name or number
+            let neg = only_eq(field, op)?;
+            let names: Vec<String> = texts(field, values)?.into_iter().map(|s| s.to_lowercase()).collect();
+            qb.push(if neg { "NOT " } else { "" });
+            qb.push("EXISTS (SELECT 1 FROM organizations o WHERE o.id = tc_project_customer(i.project_id) AND (lower(o.name) = ANY(");
+            qb.push_bind(names.clone());
+            qb.push(") OR lower(o.number) = ANY(");
+            qb.push_bind(names);
+            qb.push(")))");
+        }
         "organization" => {
             let neg = only_eq(field, op)?;
             let names: Vec<String> = texts(field, values)?.into_iter().map(|s| s.to_lowercase()).collect();
@@ -1150,6 +1162,11 @@ fn empty(qb: &mut Qb, ctx: &Ctx, field: &str, negated: bool) -> ApiResult<()> {
         "approver" | "approvers" => {
             qb.push(if negated { "EXISTS" } else { "NOT EXISTS" });
             qb.push(" (SELECT 1 FROM approvals a JOIN approval_steps st ON st.approval_id = a.id JOIN approval_votes v ON v.step_id = st.id WHERE a.issue_id = i.id AND a.state = 'pending' AND st.state = 'pending' AND v.decision IS NULL)");
+            return Ok(());
+        }
+        "customer" if !ctx.custom.contains_key("customer") => {
+            qb.push(if negated { "" } else { "NOT " });
+            qb.push("(tc_project_customer(i.project_id) IS NOT NULL)");
             return Ok(());
         }
         "organization" => {

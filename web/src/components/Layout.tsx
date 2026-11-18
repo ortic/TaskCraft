@@ -157,7 +157,7 @@ export default function Layout() {
               <NavLink to="/portfolio" className="nav-item"><Briefcase size={16} /> <span className="nav-label">{t('Portfolio')}</span></NavLink>
               {timeTracking && <NavLink to="/timesheet" className="nav-item"><Timer size={16} /> <span className="nav-label">{t('Timesheet')}</span></NavLink>}
               <NavLink to="/people" className="nav-item"><Users size={16} /> <span className="nav-label">{t('People & teams')}</span></NavLink>
-              {portal && user?.role !== 'guest' && <NavLink to="/organizations" className="nav-item"><Building2 size={16} /> <span className="nav-label">{t('Organizations')}</span></NavLink>}
+              {(portal || timeTracking) && user?.role !== 'guest' && <NavLink to="/organizations" className="nav-item"><Building2 size={16} /> <span className="nav-label">{t('Organizations')}</span></NavLink>}
               {isAdmin && <NavLink to="/admin" className="nav-item"><Shield size={16} /> <span className="nav-label">{t('Administration')}</span></NavLink>}
             </>
           )}

@@ -5,7 +5,7 @@ import { useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { LayoutDashboard, Plus, Pencil, Trash, ArrowUp, ArrowDown, Maximize2, Minimize2, Share2, Check, ExternalLink } from 'lucide-react'
-import { api, ago, qs, PRIORITIES, type HistoryEvent, type Issue } from '../api'
+import { api, ago, duration, qs, PRIORITIES, type HistoryEvent, type Issue } from '../api'
 import { Avatar, BotAvatar, Confirm, Empty, ErrorBox, Loading, Modal, useMe, useProject, useProjects, useToast } from '../ui'
 import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
 import { BarList, CATEGORY_COLOR, SERIES } from '../components/charts'
@@ -16,7 +16,7 @@ import { IssueLine } from './Home'
 import { BurndownReport, CreatedReport, FlowReport, VelocityReport } from './Reports'
 import './Reports.css'
 
-type WidgetType = 'issues' | 'count' | 'breakdown' | 'burndown' | 'velocity' | 'flow' | 'created' | 'activity' | 'mywork' | 'note'
+type WidgetType = 'issues' | 'count' | 'breakdown' | 'burndown' | 'velocity' | 'flow' | 'created' | 'activity' | 'mywork' | 'note' | 'customertime'
 
 interface Widget {
   id: string
@@ -47,6 +47,7 @@ const TYPES: { id: WidgetType; label: () => string; hint: () => string }[] = [
   { id: 'created', label: () => t('Created vs resolved'), hint: () => t('New and finished issues per day') },
   { id: 'activity', label: () => t('Activity'), hint: () => t('Recent changes in your projects') },
   { id: 'mywork', label: () => t('My work'), hint: () => t('Issues assigned to whoever looks at the dashboard') },
+  { id: 'customertime', label: () => t('Time per customer'), hint: () => t('Hours logged this month for each customer, billable and not') },
   { id: 'note', label: () => t('Note'), hint: () => t('Text in Markdown: links, goals, reminders') },
 ]
 
@@ -237,6 +238,8 @@ function WidgetBody({ w }: { w: Widget }) {
       return <ActivityWidget project={w.config.project} />
     case 'mywork':
       return <IssuesWidget query="assignee = me() and category != done order by priority desc, due" limit={w.config.limit ?? 10} />
+    case 'customertime':
+      return <CustomerTimeWidget />
     case 'note':
       return <div className="dash-note"><RichView doc={noteDoc(w.config.text ?? '')} label={w.title || t('Note')} /></div>
     default:
@@ -349,6 +352,35 @@ function drill(query: string, by: string, g: Groups['groups'][number]): string {
     : `${by} = ${q(g.label ?? '')}`
   const base = query.replace(/\s+order\s+by\s+.*$/i, '').trim()
   return base ? `(${base}) and ${cond}` : cond
+}
+
+/** Hours logged this month per customer (what the viewer may see), billable next to all. */
+function CustomerTimeWidget() {
+  const q = useQuery({
+    queryKey: ['time-report', 'widget', 'customer'],
+    queryFn: () => api.get<{ totalMinutes: number; rows: { id: string; label: string; minutes: number; billableMinutes: number }[] }>('/time-report?group=customer'),
+  })
+  if (q.isLoading) return <Loading />
+  const rows = q.data?.rows ?? []
+  if (rows.length === 0) return <div className="faint small" style={{ padding: '10px 14px' }}>{t('No time logged this month.')}</div>
+  const max = Math.max(1, ...rows.map((r) => r.minutes))
+  return (
+    <table className="list" style={{ margin: 0 }}>
+      <thead>
+        <tr><th>{t('Customer')}</th><th style={{ textAlign: 'end' }}>{t('Hours')}</th><th style={{ textAlign: 'end' }}>{t('Billable')}</th><th style={{ width: '30%' }}><span className="sr-only">{t('Share')}</span></th></tr>
+      </thead>
+      <tbody>
+        {rows.slice(0, 12).map((r) => (
+          <tr key={r.id || 'none'}>
+            <td>{r.label ? <Link to={`/time-report?group=project&customer=${r.id}`}>{r.label}</Link> : <span className="faint">{t('No customer (internal)')}</span>}</td>
+            <td style={{ textAlign: 'end' }}>{duration(r.minutes)}</td>
+            <td className="faint" style={{ textAlign: 'end' }}>{r.billableMinutes ? duration(r.billableMinutes) : '—'}</td>
+            <td><div className="progress"><span style={{ width: `${(r.minutes / max) * 100}%`, background: 'var(--accent)' }} /></div></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
 }
 
 function ActivityWidget({ project }: { project?: string }) {

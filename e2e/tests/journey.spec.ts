@@ -600,6 +600,46 @@ test('agents: define one, start it on an issue, watch and stop the run', async (
   })
 })
 
+test('customers: a project belongs to one, time is reported and priced per customer', async ({ page }) => {
+  await login(page)
+  // a customer, and the project that belongs to it
+  const acme = await page.evaluate(async () => {
+    const h = { 'content-type': 'application/json', 'x-taskcraft': '1' }
+    const o = await (await fetch('/api/organizations', { method: 'POST', headers: h, body: JSON.stringify({ name: 'Acme Ltd', number: 'C-1001' }) })).json()
+    return o.id as string
+  })
+  await page.goto('/projects/OPS/settings')
+  await page.getByLabel('Customer').selectOption({ label: 'Acme Ltd (C-1001)' })
+  await page.getByRole('button', { name: /^Save/ }).first().click()
+  await expect(page.getByLabel('Customer')).toHaveValue(acme)
+  // log time on one of its issues: the project's customer is the default
+  const key = await page.evaluate(async () => {
+    const r = await fetch('/api/issues', { method: 'POST', headers: { 'content-type': 'application/json', 'x-taskcraft': '1' }, body: JSON.stringify({ projectKey: 'OPS', title: 'Billable work' }) })
+    return (await r.json()).key as string
+  })
+  await page.goto(`/issues/${key}`)
+  await page.getByRole('tab', { name: /Time/ }).click()
+  await expect(page.getByLabel('Customer')).toContainText('For Acme Ltd (the project’s)')
+  await page.getByLabel('Time spent').fill('2h')
+  await page.getByLabel('Billable').check()
+  await page.getByRole('button', { name: 'Log time' }).click()
+  await expect(page.getByText('billable').first()).toBeVisible()
+  // rates and the currency
+  await page.goto('/admin/time')
+  await page.getByLabel('Currency').fill('CHF')
+  await page.getByRole('button', { name: 'Add a rate' }).click()
+  await page.getByLabel('Rate per hour').fill('150')
+  await a11y(page, '.adm-card')
+  await page.getByRole('button', { name: 'Save billing settings' }).click()
+  await expect(page.getByText('Saved')).toBeVisible()
+  // the report by customer, with what the time is worth
+  await page.goto('/time-report?group=customer')
+  const row = page.locator('tr.tr-row', { hasText: 'Acme Ltd' })
+  await expect(row).toContainText('2h')
+  await expect(row).toContainText('300')
+  await a11y(page)
+})
+
 test('private issues with security levels', async ({ page }) => {
   await login(page)
   await page.goto('/projects/WEB/settings/permissions')

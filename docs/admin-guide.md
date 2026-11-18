@@ -114,6 +114,15 @@ default or not; archive the ones you no longer offer), and **timers**: what time
 up to (1 to 30 minutes) and after how many hours people are reminded of a running timer (a timer
 stops by itself after 24 hours; its time waits as a draft).
 
+**Customers and billing**: customers are the *Organizations* (one list with the service desk's
+requester organizations): give one a customer number and a contact, and archive it when the
+work is over — it stays in reports. Set a project's customer in its settings. Under *Billing*
+choose the currency, set **hourly rates** — for a customer, a person, a category or a
+combination; the most specific one counts — and the time report and its CSV show amounts for
+billable time (workspace admins only). When a month is billed, set *Time is closed up to* to its
+last day: from then on only admins add, change or delete time in it. Invoices themselves are
+written elsewhere; the CSV has everything they need.
+
 ## Signing in and security
 
 Sign-in methods are configured on the server: passwords, OpenID Connect, GitHub, LDAP / Active

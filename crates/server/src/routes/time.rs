@@ -155,7 +155,7 @@ pub async fn category_of(state: &AppState, workspace: Uuid, v: &Value) -> ApiRes
 pub struct ReportQuery {
     from: Option<NaiveDate>,
     to: Option<NaiveDate>,
-    /// person | project | issue | category | day | week | month
+    /// person | project | issue | category | customer | day | week | month
     group: Option<String>,
     /// a second grouping inside the first
     then: Option<String>,
@@ -169,11 +169,13 @@ pub struct ReportQuery {
     /// a category's id, or `none`
     category: Option<String>,
     billable: Option<bool>,
+    /// a customer's id, or `none`
+    customer: Option<String>,
     /// `csv`: every log as a row
     format: Option<String>,
 }
 
-const GROUPS: [&str; 7] = ["person", "project", "issue", "category", "day", "week", "month"];
+const GROUPS: [&str; 8] = ["person", "project", "issue", "category", "customer", "day", "week", "month"];
 
 #[derive(sqlx::FromRow)]
 struct Log {
@@ -191,6 +193,10 @@ struct Log {
     billable: bool,
     minutes: i32,
     note: Option<String>,
+    /// the log's own customer, else its project's
+    customer_id: Option<Uuid>,
+    customer_name: Option<String>,
+    customer_number: Option<String>,
 }
 
 /// Where a log falls in a grouping: its id, its label and how groups sort (chronological for
@@ -216,6 +222,14 @@ fn bucket(l: &Log, group: &str) -> (String, String, String) {
                 if name.is_empty() { "\u{10ffff}".into() } else { name.to_lowercase() },
             )
         }
+        "customer" => {
+            let name = l.customer_name.clone().unwrap_or_default();
+            (
+                l.customer_id.map(|c| c.to_string()).unwrap_or_else(|| "none".into()),
+                name.clone(),
+                if name.is_empty() { "\u{10ffff}".into() } else { name.to_lowercase() },
+            )
+        }
         "week" => {
             let monday = l.work_date - chrono::Duration::days(l.work_date.weekday().num_days_from_monday() as i64);
             (monday.to_string(), monday.to_string(), monday.to_string())
@@ -235,17 +249,20 @@ struct Group {
     sort: String,
     minutes: i64,
     billable: i64,
+    /// what the billable time is worth (hundredths), where rates say
+    amount: i64,
     children: HashMap<String, Group>,
 }
 
-fn add(g: &mut Group, l: &Log) {
+fn add(g: &mut Group, l: &Log, amount: i64) {
     g.minutes += l.minutes as i64;
     if l.billable {
         g.billable += l.minutes as i64;
     }
+    g.amount += amount;
 }
 
-fn rows(groups: HashMap<String, Group>, by_time: bool) -> Vec<Value> {
+fn rows(groups: HashMap<String, Group>, by_time: bool, money: bool) -> Vec<Value> {
     let mut list: Vec<Group> = groups.into_values().collect();
     if by_time {
         list.sort_by(|a, b| a.sort.cmp(&b.sort));
@@ -255,8 +272,11 @@ fn rows(groups: HashMap<String, Group>, by_time: bool) -> Vec<Value> {
     list.into_iter()
         .map(|g| {
             let mut v = json!({"id": g.id, "label": g.label, "minutes": g.minutes, "billableMinutes": g.billable});
+            if money {
+                v["amount"] = json!(g.amount as f64 / 100.0);
+            }
             if !g.children.is_empty() {
-                v["children"] = json!(rows(g.children, by_time));
+                v["children"] = json!(rows(g.children, by_time, money));
             }
             v
         })
@@ -292,13 +312,16 @@ pub async fn report(State(state): State<AppState>, CurrentUser(user): CurrentUse
     }
     let sql = format!(
         "SELECT w.work_date, w.user_id, u.name AS user_name, i.project_id, p.key AS project_key, p.name AS project_name, i.id AS issue_id,
-                p.key || '-' || i.number AS issue_key, i.title, w.category_id, c.name AS category_name, w.billable, w.minutes, w.note
+                p.key || '-' || i.number AS issue_key, i.title, w.category_id, c.name AS category_name, w.billable, w.minutes, w.note,
+                o.id AS customer_id, o.name AS customer_name, o.number AS customer_number
            FROM worklogs w JOIN issues i ON i.id = w.issue_id JOIN projects p ON p.id = i.project_id
            LEFT JOIN users u ON u.id = w.user_id LEFT JOIN time_categories c ON c.id = w.category_id
+           LEFT JOIN organizations o ON o.id = COALESCE(w.customer_id, tc_project_customer(p.id))
           WHERE w.work_date BETWEEN $1 AND $2 AND i.project_id = ANY($3) AND i.deleted_at IS NULL AND {}
             AND ($5::uuid IS NULL OR w.user_id = $5)
             AND ($6::text IS NULL OR ($6 = 'none' AND w.category_id IS NULL) OR w.category_id::text = $6)
             AND ($7::boolean IS NULL OR w.billable = $7)
+            AND ($8::text IS NULL OR ($8 = 'none' AND o.id IS NULL) OR o.id::text = $8)
           ORDER BY w.work_date, p.key, i.number, w.created_at LIMIT 100001",
         crate::access::sees_issue("i", "$4")
     );
@@ -310,28 +333,48 @@ pub async fn report(State(state): State<AppState>, CurrentUser(user): CurrentUse
         .bind(q.user)
         .bind(q.category.as_deref().filter(|c| !c.is_empty()))
         .bind(q.billable)
+        .bind(q.customer.as_deref().filter(|c| !c.is_empty()))
         .fetch_all(&state.db)
         .await?;
     let truncated = logs.len() > 100_000;
     logs.truncate(100_000);
+    // amounts: for workspace admins, where there are rates (billable time only)
+    let rates = if user.is_admin() { crate::customers::rates(&state, user.workspace_id).await? } else { vec![] };
+    let money = !rates.is_empty();
+    let rate_of = |l: &Log| if l.billable { crate::customers::rate_for(&rates, l.customer_id, l.category_id, l.user_id) } else { None };
+    let amount_of = |l: &Log| rate_of(l).map(|r| crate::customers::amount(l.minutes as i64, r)).unwrap_or(0);
+    let currency: Option<String> =
+        sqlx::query_scalar("SELECT settings->>'currency' FROM workspaces WHERE id = $1").bind(user.workspace_id).fetch_one(&state.db).await?;
 
     if q.format.as_deref() == Some("csv") {
         let mut w = csv::Writer::from_writer(Vec::new());
-        let _ = w.write_record(["Date", "Person", "Project", "Issue", "Title", "Category", "Billable", "Hours", "Minutes", "Note"]);
+        let mut head = vec!["Date", "Person", "Project", "Issue", "Title", "Category", "Customer", "Customer number", "Billable", "Hours", "Minutes", "Note"];
+        if money {
+            head.extend(["Rate", "Amount", "Currency"]);
+        }
+        let _ = w.write_record(head);
         let safe = |t: &str| if t.starts_with(['=', '+', '-', '@']) { format!("'{t}") } else { t.to_string() };
         for l in &logs {
-            let _ = w.write_record([
+            let mut row = vec![
                 l.work_date.to_string(),
                 l.user_name.clone().unwrap_or_default(),
                 l.project_key.clone(),
                 l.issue_key.clone(),
                 safe(&l.title),
                 l.category_name.clone().unwrap_or_default(),
+                safe(l.customer_name.as_deref().unwrap_or("")),
+                safe(l.customer_number.as_deref().unwrap_or("")),
                 if l.billable { "yes" } else { "no" }.to_string(),
                 format!("{:.2}", l.minutes as f64 / 60.0),
                 l.minutes.to_string(),
                 safe(l.note.as_deref().unwrap_or("")),
-            ]);
+            ];
+            if money {
+                row.push(rate_of(l).map(|r| format!("{:.2}", r as f64 / 100.0)).unwrap_or_default());
+                row.push(format!("{:.2}", amount_of(l) as f64 / 100.0));
+                row.push(currency.clone().unwrap_or_default());
+            }
+            let _ = w.write_record(row);
         }
         let body = w.into_inner().map_err(|e| ApiError::Internal(anyhow::anyhow!("csv: {e}")))?;
         let name = format!("attachment; filename=\"time-{from}-{to}.csv\"");
@@ -339,23 +382,25 @@ pub async fn report(State(state): State<AppState>, CurrentUser(user): CurrentUse
     }
 
     let mut groups: HashMap<String, Group> = HashMap::new();
-    let (mut total, mut billable) = (0i64, 0i64);
+    let (mut total, mut billable, mut worth) = (0i64, 0i64, 0i64);
     for l in &logs {
         total += l.minutes as i64;
         if l.billable {
             billable += l.minutes as i64;
         }
+        let amount = amount_of(l);
+        worth += amount;
         let (id, label, sort) = bucket(l, group);
         let g = groups.entry(id.clone()).or_insert_with(|| Group { id, label, sort, ..Default::default() });
-        add(g, l);
+        add(g, l, amount);
         if let Some(t) = then {
             let (id, label, sort) = bucket(l, t);
             let c = g.children.entry(id.clone()).or_insert_with(|| Group { id, label, sort, ..Default::default() });
-            add(c, l);
+            add(c, l, amount);
         }
     }
     let by_time = |g: &str| matches!(g, "day" | "week" | "month");
-    let mut out = rows(groups, by_time(group));
+    let mut out = rows(groups, by_time(group), money);
     // the inner grouping sorts its own way
     if let Some(t) = then
         && by_time(t) != by_time(group)
@@ -373,6 +418,8 @@ pub async fn report(State(state): State<AppState>, CurrentUser(user): CurrentUse
     Ok(Json(json!({
         "from": from, "to": to, "group": group, "then": then,
         "totalMinutes": total, "billableMinutes": billable, "logCount": logs.len(), "truncated": truncated,
+        // what the billable time is worth, for admins where rates are set
+        "amount": if money { json!(worth as f64 / 100.0) } else { Value::Null }, "currency": currency,
         "rows": out,
     }))
     .into_response())

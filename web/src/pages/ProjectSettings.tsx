@@ -15,7 +15,7 @@ import {
   type BoardData, type BoardConfig, type BoardColumn, type Status, type StatusRules, type WikiPage, type SecurityLevel,
 } from '../api'
 import { requirementLabel, resolutionLabel, resolutionsOf } from '../components/Transition'
-import { Avatar, Choices, Confirm, Empty, ErrorBox, Loading, Lozenge, Modal, PopButton, useFeature, useMe, usePeople, useProject, useProjects, useToast } from '../ui'
+import { Avatar, Choices, Confirm, Empty, ErrorBox, Loading, Lozenge, Modal, PopButton, useCustomers, useFeature, useMe, usePeople, useProject, useProjects, useToast } from '../ui'
 import { PROJECT_COLORS, PROJECT_ICONS, ProjectIcon, TYPE_ICONS, TypeIcon, priorityLabel } from '../icons'
 import { AddPersonButton, OptionChip, PersonPicker } from '../components/fields'
 import { useOpenIssue } from '../components/Layout'
@@ -593,6 +593,7 @@ function DetailsSection() {
       color: project.color ?? PROJECT_COLORS[0],
       leadId: project.leadId,
       parentId: project.parentId ?? null,
+      customerId: project.customer && !project.customer.inherited ? project.customer.id : null,
       defaultRole: project.defaultRole,
       estimation: project.settings.estimation ?? 'points',
       defaultAssignee: (project.settings.defaultAssignee as string | undefined) ?? null,
@@ -610,6 +611,7 @@ function DetailsSection() {
   const dirty = JSON.stringify(f) !== JSON.stringify(base)
   const keyValid = /^[A-Z][A-Z0-9]{1,9}$/.test(f.key)
   const person = (id: string | null): Named | null => (id ? { id, name: people.find((x) => x.id === id)?.name ?? (id === project.leadId ? project.leadName ?? '…' : '…') } : null)
+  const customers = useCustomers().data ?? []
   const wsAdmin = me?.user?.role === 'owner' || me?.user?.role === 'admin'
   const allProjects = useProjects()
 
@@ -623,6 +625,7 @@ function DetailsSection() {
     if (f.color !== base.color) body.color = f.color
     if (f.leadId !== base.leadId) body.leadId = f.leadId
     if (f.parentId !== base.parentId) body.parentId = f.parentId
+    if (f.customerId !== base.customerId) body.customerId = f.customerId
     if (f.defaultRole !== base.defaultRole) body.defaultRole = f.defaultRole
     if (f.estimation !== base.estimation) settings.estimation = f.estimation
     if (f.defaultAssignee !== base.defaultAssignee) settings.defaultAssignee = f.defaultAssignee
@@ -707,6 +710,16 @@ function DetailsSection() {
               <span className="field-hint">{t('New issues are assigned to this person unless someone is picked.')}</span>
             </div>
           </div>
+          {customers.length > 0 && (
+            <div className="field">
+              <label htmlFor="ps-customer">{t('Customer')}</label>
+              <select id="ps-customer" className="select" value={f.customerId ?? ''} aria-describedby="ps-customer-hint" onChange={(e) => set('customerId', e.target.value || null)}>
+                <option value="">{project.customer?.inherited ? t('As the project above: {customer}', { customer: project.customer.name }) : t('None (internal)')}</option>
+                {customers.filter((c) => !c.archived || c.id === f.customerId).map((c) => <option key={c.id} value={c.id}>{c.number ? `${c.name} (${c.number})` : c.name}</option>)}
+              </select>
+              <span className="field-hint" id="ps-customer-hint">{t('Time logged in this project is this customer’s, unless a time log names another one.')}</span>
+            </div>
+          )}
           <div className="field">
             <label htmlFor="ps-parent">{t('Part of')}</label>
             <select id="ps-parent" className="select" value={f.parentId ?? ''} aria-describedby="ps-parent-hint" onChange={(e) => set('parentId', e.target.value || null)}>

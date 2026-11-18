@@ -147,7 +147,14 @@ When the workspace uses time tracking, log time on an issue (*Time* tab) as `1h 
 a note, a category and whether it's billable; the issue shows the time spent against its
 estimate and what remains. The **Timesheet** shows your week (or someone else's, for those who
 may) and lets you log time per day; the **Time report** sums time by person, project, issue,
-category or period and exports it as CSV.
+category, customer or period and exports it as CSV.
+
+**Customers**: a project can belong to a customer (subprojects have it from the project above),
+and time logged there is that customer's. In a project shared by several customers, pick the
+customer on the time log. The time report groups and filters by customer — *Customer* then
+*Month* shows billable and internal time per month — and searches like `customer = "Acme"` find
+a customer's issues. Time in a period that has been billed is closed: you can still read it,
+but only admins change it.
 
 **Timer**: *Start timer* on an issue (under *Time spent*) and the time runs in the top bar — in
 every tab and on every device. Pause and resume it there; *Stop and log…* asks for the details

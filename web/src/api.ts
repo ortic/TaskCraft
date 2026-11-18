@@ -199,6 +199,8 @@ export interface Worklog {
   note: string | null
   category: Named | null
   billable: boolean
+  /** another customer than the project's */
+  customer?: Named | null
 }
 
 export interface IssueLink {
@@ -360,6 +362,8 @@ export interface ProjectSummary {
 }
 
 export interface Project extends ProjectSummary {
+  /** whose project it is (its own customer, or the one of the project above) */
+  customer?: { id: string; name: string; inherited: boolean } | null
   statuses: Status[]
   types: IssueType[]
   versions: Version[]

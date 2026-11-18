@@ -94,6 +94,22 @@ pub fn check(req: &Value, settings: &mut Value) -> ApiResult<()> {
             None => settings["dateFormat"] = Value::Null,
         }
     }
+    if let Some(v) = req.get("currency") {
+        match v.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+            Some(c) if c.len() == 3 && c.chars().all(|x| x.is_ascii_alphabetic()) => settings["currency"] = json!(c.to_ascii_uppercase()),
+            Some(c) => return Err(ApiError::bad(format!("currency is a three-letter code like CHF or EUR, not {c}"))),
+            None => settings["currency"] = Value::Null,
+        }
+    }
+    if let Some(v) = req.get("timeClosedUntil") {
+        match v.as_str().filter(|s| !s.is_empty()) {
+            Some(d) => {
+                chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").map_err(|_| ApiError::bad("timeClosedUntil is a day (YYYY-MM-DD)"))?;
+                settings["timeClosedUntil"] = json!(d);
+            }
+            None => settings["timeClosedUntil"] = Value::Null,
+        }
+    }
     if let Some(v) = req.get("announcement") {
         if v.is_null() || v["text"].as_str().is_some_and(|t| t.trim().is_empty()) {
             settings["announcement"] = Value::Null;

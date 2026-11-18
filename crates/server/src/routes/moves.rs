@@ -350,11 +350,21 @@ pub async fn update_worklog(
     Json(req): Json<Value>,
 ) -> ApiResult<Json<Value>> {
     crate::features::require(&state, user.workspace_id, "timeTracking").await?;
-    let row: Option<(Uuid, Option<Uuid>)> = sqlx::query_as("SELECT issue_id, user_id FROM worklogs WHERE id = $1").bind(id).fetch_optional(&state.db).await?;
-    let (issue, owner) = row.ok_or(ApiError::NotFound("work log"))?;
+    let row: Option<(Uuid, Option<Uuid>, chrono::NaiveDate)> =
+        sqlx::query_as("SELECT issue_id, user_id, work_date FROM worklogs WHERE id = $1").bind(id).fetch_optional(&state.db).await?;
+    let (issue, owner, old_date) = row.ok_or(ApiError::NotFound("work log"))?;
     let (_, project, role) = issue_for(&state, &user, &issue.to_string(), Role::Member).await?;
     if owner != Some(user.id) {
         crate::access::require_action(&state, project, role, "logTimeForOthers").await?;
+    }
+    // a billed period is closed: neither the day it's on nor the day it would move to
+    crate::customers::check_open(&state, &user, old_date).await?;
+    if let Some(d) = req["date"].as_str().and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()) {
+        crate::customers::check_open(&state, &user, d).await?;
+    }
+    if req.get("customerId").is_some() {
+        let c = crate::customers::customer_of(&state, user.workspace_id, &req["customerId"]).await?;
+        sqlx::query("UPDATE worklogs SET customer_id = $2 WHERE id = $1").bind(id).bind(c).execute(&state.db).await?;
     }
     let minutes = match (&req["minutes"], req["time"].as_str()) {
         (Value::Number(n), _) => {

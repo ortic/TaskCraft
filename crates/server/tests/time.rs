@@ -105,7 +105,7 @@ async fn categories_and_the_time_report() {
 
     // CSV: every log
     let csv = mia.get(app.url("/time-report")).query(&[nov[0], nov[1], ("format", "csv")]).send().await.unwrap().text().await.unwrap();
-    assert!(csv.starts_with("Date,Person,Project,Issue,Title,Category,Billable,Hours,Minutes,Note"), "{csv}");
+    assert!(csv.starts_with("Date,Person,Project,Issue,Title,Category,Customer,Customer number,Billable,Hours,Minutes,Note\n"), "{csv}");
     assert_eq!(csv.lines().count(), 5);
 
     // time on a private issue counts only for those who see it
