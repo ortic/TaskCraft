@@ -6,6 +6,13 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 
 ## [Unreleased]
 
+- **SCIM provisioning** (*Administration → Provisioning*): identity providers create, update and
+  deactivate people and keep groups as teams through SCIM 2.0 (`/scim/v2/Users`, `/Groups`) with
+  a bearer token per provider. Existing accounts are taken over by e-mail address; people are
+  never deleted — deactivation ends their sessions and revokes their API tokens at once; groups
+  share their teams with the group sync at sign-in. Every change is in the audit log, and the
+  page shows each token's last request and last error.
+
 - **Workflow approvals** (*Project settings → Workflow → Approval* on a status): issues entering
   the status wait for a decision. Approvers are people, teams, project roles, a person field, the
   assignee, the reporter or the requester (who decides on the portal); steps run one after

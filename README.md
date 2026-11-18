@@ -690,6 +690,15 @@ password-reset links) stop working; the first-run setup still asks for the owner
 signs them in, and afterwards the owner signs in through a provider with the same e-mail address
 (a verified one, or set `trustEmail` for that provider).
 
+**Provisioning (SCIM 2.0)**: sign-in creates accounts when people arrive; SCIM also takes care of
+those who leave. In *Administration → Provisioning* make a token per identity provider and enter
+`https://<your address>/scim/v2` and the token there (Entra ID, Okta, OneLogin, …). The provider
+then creates people (an existing account with the same address is taken over), updates names and
+addresses, and deactivates them — which ends their sessions and revokes their API tokens at once;
+nobody is deleted, so history stays. Groups become teams, the same ones the group sync at sign-in
+manages when the token names its single sign-on provider. Changes are in the audit log; the page
+shows the last request and the last error per token.
+
 ### E-mail
 
 With `TASKCRAFT_SMTP_URL` set, e-mails go through an outbox in Postgres that every replica's worker

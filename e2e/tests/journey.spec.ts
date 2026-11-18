@@ -442,6 +442,32 @@ test('approvals: a status waits for a decision', async ({ page }) => {
   })
 })
 
+test('provisioning: a token for the identity provider', async ({ page, request, baseURL }) => {
+  await login(page)
+  await page.goto('/admin/provisioning')
+  await expect(page.getByLabel('SCIM address (tenant URL) for the identity provider')).toHaveValue(`${baseURL}/scim/v2`)
+  await page.getByRole('button', { name: 'Add a token' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Name').fill('Entra ID')
+  await a11y(page, '[role=dialog]')
+  await dialog.getByRole('button', { name: 'Create token' }).click()
+  const token = await page.getByRole('dialog').getByRole('textbox', { name: 'The token' }).inputValue()
+  expect(token).toMatch(/^tcscim_/)
+  await page.getByRole('dialog').getByRole('button', { name: 'Done' }).click()
+  // the identity provider creates someone; the page shows what the token did
+  const r = await request.post('/scim/v2/Users', {
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/scim+json' },
+    data: { userName: 'paula@example.com', name: { givenName: 'Paula', familyName: 'Provisioned' }, active: true },
+  })
+  expect(r.status()).toBe(201)
+  await page.reload()
+  await expect(page.getByText('Entra ID')).toBeVisible()
+  await expect(page.getByText(/Last request/)).toBeVisible()
+  await a11y(page)
+  await page.goto('/admin/users')
+  await expect(page.locator('.adm-person-name', { hasText: 'Paula Provisioned' })).toBeVisible()
+})
+
 test('private issues with security levels', async ({ page }) => {
   await login(page)
   await page.goto('/projects/WEB/settings/permissions')

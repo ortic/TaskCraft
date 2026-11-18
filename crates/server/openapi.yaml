@@ -11401,6 +11401,125 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /admin/scim:
+    get:
+      tags:
+      - Administration
+      summary: 'SCIM provisioning: the address, the tokens and what they did last'
+      operationId: listScimTokens
+      description: Workspace admins.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  baseUrl:
+                    type: string
+                    format: uri
+                    description: what the identity provider calls (…/scim/v2)
+                  tokens:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ScimToken'
+                  providers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                      required:
+                      - id
+                      - name
+                    description: the single sign-on providers a token can belong to
+                required:
+                - baseUrl
+                - tokens
+                - providers
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Administration
+      summary: Make a provisioning token (workspace admins)
+      operationId: createScimToken
+      description: The token is in the answer this once. At most 20.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: up to 80 characters
+                providerId:
+                  type: string
+                defaultRole:
+                  type: string
+                  enum:
+                  - member
+                  - guest
+                  description: of the people it creates (default member)
+              required:
+              - name
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  token:
+                    type: string
+                    description: starts with tcscim_
+                required:
+                - id
+                - token
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/scim/{id}:
+    delete:
+      tags:
+      - Administration
+      summary: Delete a provisioning token (workspace admins)
+      operationId: deleteScimToken
+      description: The people and teams it provisioned stay.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /admin/audit:
     get:
       tags:
@@ -18693,3 +18812,60 @@ components:
       - finishedAt
       - expiresAt
       description: An upload of another tracker's XML site backup, or a connection to its API, and the import.
+    ScimToken:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        providerId:
+          type:
+          - string
+          - 'null'
+          description: the single sign-on provider whose group sync shares its teams
+        defaultRole:
+          type: string
+          enum:
+          - member
+          - guest
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        requests:
+          type: integer
+        lastError:
+          type:
+          - string
+          - 'null'
+          description: the last request that failed (not found doesn't count)
+        lastErrorAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        users:
+          type: integer
+          description: people it provisions
+        deactivated:
+          type: integer
+          description: of them, deactivated
+        groups:
+          type: integer
+          description: teams it provisions
+      required:
+      - id
+      - name
+      - defaultRole
+      - createdAt
+      - requests
+      - users
+      - groups
+      description: 'A bearer token an identity provider provisions people and teams with (SCIM 2.0 at /scim/v2, outside this
+        API: Users and Groups with filter, PUT, PATCH and DELETE, which deactivates).'

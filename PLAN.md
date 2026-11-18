@@ -80,7 +80,7 @@
 - [x] Absences, public holidays per region, sprint capacity, substitutes, away badges (#14)
 - [x] Requester organizations: domains, members, CSV import, TQL, shorter goals, sharing in the portal (#3)
 - [x] Workflow approvals: steps and quorums, approvers from people / teams / roles / fields / the requester, e-mail links, delegation, reminders and timeouts, TQL, automation triggers, paused service levels (#5)
-- [ ] SCIM provisioning (#11)
+- [x] SCIM provisioning: people created / taken over / deactivated (sessions and tokens end), groups as teams, tokens per identity provider with last sync and errors (#11)
 - [ ] Branches and draft pull requests from an issue (#8)
 - [ ] Command-line client (#9)
 - [ ] Extensions: scripted automation actions (#10)

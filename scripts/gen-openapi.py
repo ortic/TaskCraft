@@ -3399,6 +3399,20 @@ op("delete", "/admin/workspace/logo", "deleteWorkspaceLogo", "Administration", "
    desc="Workspace admins, in the browser.", auth="session", res=NO)
 op("get", "/workspace/logo", "getWorkspaceLogo", "Administration", "The workspace's logo",
    desc="Anyone in the workspace (404 without one).", res=raw("image/png", "the image (or JPEG, GIF, WebP)"))
+schemas["ScimToken"] = obj(
+    {"id": uuid, "name": txt, "providerId": ntxt("the single sign-on provider whose group sync shares its teams"), "defaultRole": enum("member", "guest"), "createdAt": dt,
+     "lastUsedAt": null(dt), "requests": num, "lastError": ntxt("the last request that failed (not found doesn't count)"), "lastErrorAt": null(dt),
+     "users": d(num, "people it provisions"), "deactivated": d(num, "of them, deactivated"), "groups": d(num, "teams it provisions")},
+    ["id", "name", "defaultRole", "createdAt", "requests", "users", "groups"],
+    "A bearer token an identity provider provisions people and teams with (SCIM 2.0 at /scim/v2, outside this API: Users and Groups with filter, PUT, PATCH and DELETE, which deactivates).",
+)
+op("get", "/admin/scim", "listScimTokens", "Administration", "SCIM provisioning: the address, the tokens and what they did last", desc="Workspace admins.",
+   res=ok(obj({"baseUrl": d(uri, "what the identity provider calls (…/scim/v2)"), "tokens": arr(S("ScimToken")), "providers": arr(obj({"id": txt, "name": txt}, ["id", "name"]), "the single sign-on providers a token can belong to")},
+              ["baseUrl", "tokens", "providers"])))
+op("post", "/admin/scim", "createScimToken", "Administration", "Make a provisioning token (workspace admins)", desc="The token is in the answer this once. At most 20.",
+   req=body(obj({"name": d(txt, "up to 80 characters"), "providerId": txt, "defaultRole": enum("member", "guest", desc="of the people it creates (default member)")}, ["name"])),
+   res=created(obj({"id": uuid, "token": d(txt, "starts with tcscim_")}, ["id", "token"])))
+op("delete", "/admin/scim/{id}", "deleteScimToken", "Administration", "Delete a provisioning token (workspace admins)", desc="The people and teams it provisioned stay.", res=NO)
 op("get", "/admin/audit", "getAuditLog", "Administration", "The audit log (latest 300 entries)",
    desc="Workspace admins.", res=ok(arr(S("AuditEntry"))))
 op("get", "/admin/stats", "getWorkspaceStats", "Administration", "Workspace statistics",

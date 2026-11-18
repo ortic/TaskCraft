@@ -64,6 +64,32 @@ personal data.
 levels, restricted comments and assignment. With single sign-on, teams can follow the groups of
 the identity provider.
 
+### Provisioning (SCIM)
+
+Single sign-on creates accounts when people first sign in and updates their teams when they sign
+in again. *Administration → Provisioning* closes the gap: with **SCIM 2.0** the identity provider
+(Microsoft Entra ID, Okta, OneLogin, …) creates accounts ahead of time, keeps names, addresses
+and groups in step, and **deactivates** people who leave — their sessions end and their API
+tokens are revoked at once. Nobody is deleted by provisioning: comments, time logs and history
+stay, and a person the directory re-enables is active again.
+
+1. *Add a token*, name it after the identity provider, and — if that directory also signs people
+   in — pick its single sign-on provider, so that its groups are the same teams the group sync
+   at sign-in manages. Choose whether the people it creates are members or guests.
+2. In the identity provider's provisioning settings enter the **SCIM address** shown on the page
+   (`https://tasks.example.com/scim/v2`) as the tenant URL / base URL, and the token as the secret
+   (bearer) token. The token is shown once; delete it and make a new one if it's lost.
+3. Assign the people and groups to provision. An existing account with the same e-mail address is
+   taken over rather than doubled; a group becomes a team (a team of your own with the same name
+   is never taken over — the directory's gets a suffix).
+
+The page shows per token how many people and teams it provisions, its last request and the last
+error; every change is in the audit log (`scim.…`). The workspace owner can't be deactivated by
+a directory. Supported: `/Users` and `/Groups` with `filter` (`userName`, `externalId`,
+`displayName` … `eq`), paging, `PUT`, `PATCH` (add / replace / remove, with or without paths) and
+`DELETE` (a person is deactivated; a group's team is removed), `/ServiceProviderConfig`,
+`/ResourceTypes`, `/Schemas`. Passwords aren't provisioned.
+
 ## Time off
 
 *Administration → Time off*: **public holidays** — in the workspace's calendar, or in region
