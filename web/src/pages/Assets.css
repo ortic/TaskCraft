@@ -1,0 +1,30 @@
+/* The asset inventory */
+.as-filters { gap: 8px; margin: 12px 0; align-items: center; }
+.as-table td { vertical-align: middle; }
+.as-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; align-items: start; }
+.as-facts { margin: 0; padding: 4px 14px 12px; display: grid; grid-template-columns: 1fr; }
+.as-facts > div { display: grid; grid-template-columns: 150px 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.as-facts > div:last-child { border-bottom: 0; }
+.as-facts dt { color: var(--text-muted); font-size: 13px; }
+.as-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.as-pad { padding: 8px 14px 12px; }
+.as-rels { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; }
+.as-rels li { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 0; border-bottom: 1px solid var(--border); min-width: 0; }
+.as-rels li:last-child { border-bottom: 0; }
+.as-history { list-style: none; margin: 0; padding: 4px 14px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; max-height: 360px; overflow-y: auto; }
+.as-graph { margin: 12px 0 0; overflow-x: auto; }
+.as-graph figcaption { margin-bottom: 6px; }
+.as-edge { stroke: var(--text-faint); stroke-width: 1.4; }
+.as-edge-in { stroke-dasharray: 4 3; }
+.as-node { fill: var(--bg-soft); stroke: var(--border); }
+.as-node.as-root { stroke: var(--accent); stroke-width: 2; }
+.as-node.as-affected { stroke: var(--warning); }
+.as-node-tag { font-size: 10.5px; fill: var(--text-muted); font-family: var(--font-mono, ui-monospace, monospace); }
+.as-node-name { font-size: 12px; fill: var(--text); }
+.as-check { min-height: 30px; margin-top: 22px; gap: 6px; }
+.as-check input, .as-filters input[type=checkbox], .as-field-row input[type=checkbox] { width: 16px; height: 16px; margin: 0; }
+.as-type { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; margin-bottom: 8px; }
+.as-type summary { cursor: pointer; min-height: 26px; }
+.as-type-body { margin-top: 10px; }
+.as-field-row { gap: 8px; align-items: center; margin-bottom: 6px; }
+.as-chip { display: inline-flex; align-items: center; gap: 4px; margin: 0 6px 4px 0; }

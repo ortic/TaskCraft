@@ -30,6 +30,10 @@
  ],
  "tags": [
   {
+   "name": "Assets",
+   "description": "The asset inventory: sets with their own permissions, asset types with fields, categories, assets with owners and relations, the issues about them, CSV import and export, and rules."
+  },
+  {
    "name": "Auth & account",
    "description": "First-run setup, signing in and out with a password, invitation and password-reset links, the signed-in person and their API tokens."
   },
@@ -123,6 +127,2191 @@
   }
  ],
  "paths": {
+  "/asset-sets": {
+   "get": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "The asset sets the caller sees, with their types and categories",
+    "operationId": "listAssetSets",
+    "description": "When the workspace uses the asset inventory (400 otherwise). ",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "canCreate": {
+           "type": "boolean"
+          },
+          "sets": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/AssetSet"
+           }
+          }
+         },
+         "required": [
+          "canCreate",
+          "sets"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Add an asset set (workspace admins)",
+    "operationId": "createAssetSet",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "description": {
+          "type": "string"
+         },
+         "defaultRole": {
+          "type": "string",
+          "enum": [
+           "none",
+           "viewer",
+           "editor"
+          ]
+         }
+        },
+        "required": [
+         "name"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          }
+         },
+         "required": [
+          "id"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   }
+  },
+  "/asset-sets/{id}": {
+   "patch": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Change a set or who has which role in it (the set's admins)",
+    "operationId": "updateAssetSet",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "description": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "defaultRole": {
+          "type": "string",
+          "enum": [
+           "none",
+           "viewer",
+           "editor"
+          ]
+         },
+         "members": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "subjectType": {
+             "type": "string",
+             "enum": [
+              "user",
+              "team"
+             ]
+            },
+            "subjectId": {
+             "type": "string",
+             "format": "uuid"
+            },
+            "role": {
+             "type": "string",
+             "enum": [
+              "viewer",
+              "editor",
+              "admin"
+             ]
+            }
+           },
+           "required": [
+            "subjectType",
+            "subjectId",
+            "role"
+           ]
+          },
+          "description": "replaces the grants"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Delete a set with everything in it (workspace admins)",
+    "operationId": "deleteAssetSet",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/asset-sets/{id}/types": {
+   "post": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Add an asset type (the set's admins)",
+    "operationId": "createAssetType",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "icon": {
+          "type": "string"
+         },
+         "color": {
+          "type": "string"
+         },
+         "tagPrefix": {
+          "type": "string",
+          "description": "1 to 8 letters and digits (default: from the name)"
+         },
+         "fields": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "id": {
+             "type": "string",
+             "format": "uuid",
+             "description": "kept across changes, so values stay with their field"
+            },
+            "name": {
+             "type": "string"
+            },
+            "kind": {
+             "type": "string",
+             "enum": [
+              "text",
+              "number",
+              "date",
+              "select",
+              "checkbox",
+              "url",
+              "user",
+              "asset"
+             ],
+             "description": "asset: a reference to another asset"
+            },
+            "options": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "properties": {
+               "id": {
+                "type": "string"
+               },
+               "label": {
+                "type": "string"
+               }
+              },
+              "required": [
+               "label"
+              ]
+             },
+             "description": "select"
+            },
+            "typeId": {
+             "type": "string",
+             "format": "uuid",
+             "description": "asset: only assets of this type"
+            },
+            "required": {
+             "type": "boolean"
+            }
+           },
+           "required": [
+            "name",
+            "kind"
+           ]
+          }
+         }
+        },
+        "required": [
+         "name"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          }
+         },
+         "required": [
+          "id"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   }
+  },
+  "/asset-types/{id}": {
+   "patch": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Change an asset type (the set's admins)",
+    "operationId": "updateAssetType",
+    "description": "Send every field with its id to keep values; a field left out goes with its values.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "icon": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "color": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "tagPrefix": {
+          "type": "string"
+         },
+         "fields": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "id": {
+             "type": "string",
+             "format": "uuid",
+             "description": "kept across changes, so values stay with their field"
+            },
+            "name": {
+             "type": "string"
+            },
+            "kind": {
+             "type": "string",
+             "enum": [
+              "text",
+              "number",
+              "date",
+              "select",
+              "checkbox",
+              "url",
+              "user",
+              "asset"
+             ],
+             "description": "asset: a reference to another asset"
+            },
+            "options": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "properties": {
+               "id": {
+                "type": "string"
+               },
+               "label": {
+                "type": "string"
+               }
+              },
+              "required": [
+               "label"
+              ]
+             },
+             "description": "select"
+            },
+            "typeId": {
+             "type": "string",
+             "format": "uuid",
+             "description": "asset: only assets of this type"
+            },
+            "required": {
+             "type": "boolean"
+            }
+           },
+           "required": [
+            "name",
+            "kind"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Delete an asset type without assets (the set's admins)",
+    "operationId": "deleteAssetType",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   }
+  },
+  "/asset-sets/{id}/categories": {
+   "post": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Add a category (the set's admins)",
+    "operationId": "createAssetCategory",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "parentId": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "uuid"
+         }
+        },
+        "required": [
+         "name"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          }
+         },
+         "required": [
+          "id"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/asset-categories/{id}": {
+   "delete": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Delete a category with the ones below it (the set's admins)",
+    "operationId": "deleteAssetCategory",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/assets": {
+   "get": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Assets the caller sees",
+    "operationId": "listAssets",
+    "parameters": [
+     {
+      "name": "set",
+      "in": "query",
+      "required": false,
+      "description": "a set",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "type",
+      "in": "query",
+      "required": false,
+      "description": "a type",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "category",
+      "in": "query",
+      "required": false,
+      "description": "a category, with the ones below it",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "description": "in_use, in_stock, maintenance or retired",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "owner",
+      "in": "query",
+      "required": false,
+      "description": "a person's id, or me",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "required": false,
+      "description": "text in the tag, the name or a field",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "default 200, at most 1000",
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "assets": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/AssetSummary"
+           }
+          },
+          "more": {
+           "type": "boolean"
+          }
+         },
+         "required": [
+          "assets",
+          "more"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Add an asset (the set's editors)",
+    "operationId": "createAsset",
+    "description": "The set's rules for new assets run.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "typeId": {
+          "type": "string",
+          "format": "uuid"
+         },
+         "name": {
+          "type": "string"
+         },
+         "tag": {
+          "type": "string",
+          "description": "default: the type's prefix and next number"
+         },
+         "status": {
+          "type": "string",
+          "enum": [
+           "in_use",
+           "in_stock",
+           "maintenance",
+           "retired"
+          ]
+         },
+         "categoryId": {
+          "type": "string",
+          "description": "a category's id or name; null: none"
+         },
+         "ownerId": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "uuid",
+          "description": "a person"
+         },
+         "ownerTeamId": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "uuid",
+          "description": "a team"
+         },
+         "ownerEmail": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "description": "someone without an account (a requester)"
+         },
+         "values": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "field id or name → value; select options by id or label, people by id, name or address, assets by id or tag; null clears"
+         }
+        },
+        "required": [
+         "typeId",
+         "name"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "tag": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "tag"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   }
+  },
+  "/assets/{id}": {
+   "get": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "An asset with its fields, relations, issues and history",
+    "operationId": "getAsset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "the asset's id or its tag",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "allOf": [
+          {
+           "$ref": "#/components/schemas/AssetSummary"
+          },
+          {
+           "type": "object",
+           "properties": {
+            "fields": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "properties": {
+               "id": {
+                "type": "string",
+                "format": "uuid"
+               },
+               "name": {
+                "type": "string"
+               },
+               "kind": {
+                "type": "string"
+               },
+               "value": {
+                "description": "any JSON value"
+               },
+               "label": {
+                "type": [
+                 "string",
+                 "null"
+                ],
+                "description": "what a select option, person or asset is called"
+               }
+              },
+              "required": [
+               "id",
+               "name",
+               "kind"
+              ]
+             }
+            },
+            "role": {
+             "type": "string",
+             "enum": [
+              "viewer",
+              "editor",
+              "admin"
+             ]
+            },
+            "relations": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "properties": {
+               "id": {
+                "type": "string",
+                "format": "uuid"
+               },
+               "kind": {
+                "type": "string",
+                "enum": [
+                 "depends_on",
+                 "installed_in"
+                ]
+               },
+               "outward": {
+                "type": "boolean",
+                "description": "true: this asset depends on / is installed in the other; false: the other way round"
+               },
+               "asset": {
+                "type": "object",
+                "properties": {
+                 "id": {
+                  "type": "string",
+                  "format": "uuid"
+                 },
+                 "tag": {
+                  "type": "string"
+                 },
+                 "name": {
+                  "type": "string"
+                 },
+                 "status": {
+                  "type": "string"
+                 }
+                },
+                "required": [
+                 "id",
+                 "tag",
+                 "name"
+                ]
+               }
+              },
+              "required": [
+               "id",
+               "kind",
+               "outward",
+               "asset"
+              ]
+             }
+            },
+            "issues": {
+             "type": "array",
+             "items": {
+              "$ref": "#/components/schemas/IssueSummary"
+             },
+             "description": "the issues about it that the caller sees"
+            },
+            "history": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "properties": {
+               "at": {
+                "type": "string",
+                "format": "date-time"
+               },
+               "actor": {
+                "type": [
+                 "string",
+                 "null"
+                ]
+               },
+               "kind": {
+                "type": "string",
+                "enum": [
+                 "created",
+                 "changed",
+                 "related",
+                 "unrelated",
+                 "issue"
+                ]
+               },
+               "data": {
+                "description": "any JSON value"
+               }
+              },
+              "required": [
+               "at",
+               "kind"
+              ]
+             }
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Change an asset (the set's editors)",
+    "operationId": "updateAsset",
+    "description": "The set's rules for changed assets run.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "the asset's id or its tag",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "tag": {
+          "type": "string",
+          "description": "default: the type's prefix and next number"
+         },
+         "status": {
+          "type": "string",
+          "enum": [
+           "in_use",
+           "in_stock",
+           "maintenance",
+           "retired"
+          ]
+         },
+         "categoryId": {
+          "type": "string",
+          "description": "a category's id or name; null: none"
+         },
+         "ownerId": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "uuid",
+          "description": "a person"
+         },
+         "ownerTeamId": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "uuid",
+          "description": "a team"
+         },
+         "ownerEmail": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "description": "someone without an account (a requester)"
+         },
+         "values": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "field id or name → value; select options by id or label, people by id, name or address, assets by id or tag; null clears"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Delete an asset (the set's admins)",
+    "operationId": "deleteAsset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "the asset's id or its tag",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/assets/{id}/relations": {
+   "post": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Relate an asset to another (editors of its set)",
+    "operationId": "relateAssets",
+    "description": "This asset depends on, or is installed in, the target.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "the asset's id or its tag",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "type": "string",
+          "enum": [
+           "depends_on",
+           "installed_in"
+          ]
+         },
+         "target": {
+          "type": "string",
+          "description": "id or tag"
+         }
+        },
+        "required": [
+         "kind",
+         "target"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          }
+         },
+         "required": [
+          "id"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   }
+  },
+  "/asset-relations/{id}": {
+   "delete": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Remove a relation (editors of the source's set)",
+    "operationId": "unrelateAssets",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/assets/{id}/graph": {
+   "get": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "What an asset depends on and what depends on it",
+    "operationId": "getAssetGraph",
+    "description": "Three steps out. `affected`: everything that depends on it or is installed in it, directly or through others — what fails with it.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "the asset's id or its tag",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "root": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "nodes": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/AssetSummary"
+           }
+          },
+          "edges": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "source": {
+              "type": "string",
+              "format": "uuid"
+             },
+             "target": {
+              "type": "string",
+              "format": "uuid"
+             },
+             "kind": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "source",
+             "target",
+             "kind"
+            ]
+           }
+          },
+          "affected": {
+           "type": "array",
+           "items": {
+            "type": "string",
+            "format": "uuid"
+           }
+          }
+         },
+         "required": [
+          "root",
+          "nodes",
+          "edges",
+          "affected"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/issues/{key}/assets": {
+   "put": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "The assets an issue is about (project members)",
+    "operationId": "setIssueAssets",
+    "description": "Of the assets the caller sees; TQL finds issues by `asset = \"LT-0042\"` and `asset.type = Laptop`.",
+    "parameters": [
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "issue key (e.g. WEB-12; former keys keep working) or issue id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "assets": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          },
+          "description": "ids or tags, at most 50"
+         }
+        },
+        "required": [
+         "assets"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/AssetSummary"
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/asset-sets/{id}/export.csv": {
+   "get": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "A set's assets as CSV",
+    "operationId": "exportAssets",
+    "description": "Tag, Name, Type, Status, Category, Owner and a column per field.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The file",
+      "content": {
+       "text/csv": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/asset-types/{id}/import": {
+   "post": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Import assets of a type from CSV (the set's editors)",
+    "operationId": "importAssets",
+    "description": "One asset per row; a row whose tag exists updates that asset. `mapping`: column header → name, tag, status, category, owner, a field's name or id, or \"\" to skip; without it columns are matched by their headers. `dryRun` checks without changing anything. At most 5000 rows.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "csv": {
+          "type": "string",
+          "description": "the file's text"
+         },
+         "mapping": {
+          "type": "object",
+          "additionalProperties": true
+         },
+         "dryRun": {
+          "type": "boolean"
+         }
+        },
+        "required": [
+         "csv"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "dryRun": {
+           "type": "boolean"
+          },
+          "created": {
+           "type": "integer"
+          },
+          "updated": {
+           "type": "integer"
+          },
+          "errors": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "row": {
+              "type": "integer"
+             },
+             "message": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "row",
+             "message"
+            ]
+           }
+          },
+          "columns": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "header": {
+              "type": "string"
+             },
+             "target": {
+              "type": [
+               "string",
+               "null"
+              ]
+             }
+            },
+            "required": [
+             "header"
+            ]
+           }
+          }
+         },
+         "required": [
+          "created",
+          "updated",
+          "errors"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "413": {
+      "$ref": "#/components/responses/TooLarge"
+     }
+    }
+   }
+  },
+  "/asset-sets/{id}/rules": {
+   "get": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "A set's rules (its admins)",
+    "operationId": "listAssetRules",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "name": {
+            "type": "string"
+           },
+           "enabled": {
+            "type": "boolean"
+           },
+           "trigger": {
+            "type": "object",
+            "properties": {
+             "event": {
+              "type": "string",
+              "enum": [
+               "created",
+               "changed",
+               "date"
+              ],
+              "description": "date: some days before a date field's day, once per asset and date"
+             },
+             "typeId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "only this type"
+             },
+             "status": {
+              "type": "string",
+              "enum": [
+               "in_use",
+               "in_stock",
+               "maintenance",
+               "retired"
+              ]
+             },
+             "fieldId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "date: the date field"
+             },
+             "days": {
+              "type": "integer",
+              "description": "date: how many days before (0 to 3650)"
+             }
+            },
+            "required": [
+             "event"
+            ]
+           },
+           "actions": {
+            "type": "array",
+            "items": {
+             "type": "object",
+             "properties": {
+              "action": {
+               "type": "string",
+               "enum": [
+                "createIssue",
+                "notifyOwner",
+                "setStatus"
+               ]
+              },
+              "projectKey": {
+               "type": "string"
+              },
+              "title": {
+               "type": "string",
+               "description": "with {tag}, {name}, {type}, {status}, {owner}, {date} and {field:Name}"
+              },
+              "description": {
+               "type": "string",
+               "description": "Markdown, same placeholders"
+              },
+              "assignOwner": {
+               "type": "boolean"
+              },
+              "message": {
+               "type": "string"
+              },
+              "status": {
+               "type": "string",
+               "enum": [
+                "in_use",
+                "in_stock",
+                "maintenance",
+                "retired"
+               ]
+              }
+             },
+             "required": [
+              "action"
+             ]
+            },
+            "description": "1 to 5; a created issue names the asset"
+           },
+           "id": {
+            "type": "string",
+            "format": "uuid"
+           },
+           "runs": {
+            "type": "integer"
+           },
+           "lastRunAt": {
+            "type": [
+             "string",
+             "null"
+            ],
+            "format": "date-time"
+           },
+           "lastError": {
+            "type": [
+             "string",
+             "null"
+            ]
+           }
+          },
+          "required": [
+           "id",
+           "name",
+           "enabled",
+           "trigger",
+           "actions"
+          ]
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Add a rule (the set's admins)",
+    "operationId": "createAssetRule",
+    "description": "E.g. \"30 days before Warranty ends: create an issue for the owner\".",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "enabled": {
+          "type": "boolean"
+         },
+         "trigger": {
+          "type": "object",
+          "properties": {
+           "event": {
+            "type": "string",
+            "enum": [
+             "created",
+             "changed",
+             "date"
+            ],
+            "description": "date: some days before a date field's day, once per asset and date"
+           },
+           "typeId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "only this type"
+           },
+           "status": {
+            "type": "string",
+            "enum": [
+             "in_use",
+             "in_stock",
+             "maintenance",
+             "retired"
+            ]
+           },
+           "fieldId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "date: the date field"
+           },
+           "days": {
+            "type": "integer",
+            "description": "date: how many days before (0 to 3650)"
+           }
+          },
+          "required": [
+           "event"
+          ]
+         },
+         "actions": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "action": {
+             "type": "string",
+             "enum": [
+              "createIssue",
+              "notifyOwner",
+              "setStatus"
+             ]
+            },
+            "projectKey": {
+             "type": "string"
+            },
+            "title": {
+             "type": "string",
+             "description": "with {tag}, {name}, {type}, {status}, {owner}, {date} and {field:Name}"
+            },
+            "description": {
+             "type": "string",
+             "description": "Markdown, same placeholders"
+            },
+            "assignOwner": {
+             "type": "boolean"
+            },
+            "message": {
+             "type": "string"
+            },
+            "status": {
+             "type": "string",
+             "enum": [
+              "in_use",
+              "in_stock",
+              "maintenance",
+              "retired"
+             ]
+            }
+           },
+           "required": [
+            "action"
+           ]
+          },
+          "description": "1 to 5; a created issue names the asset"
+         }
+        },
+        "required": [
+         "name",
+         "trigger",
+         "actions"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          }
+         },
+         "required": [
+          "id"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/asset-rules/{id}": {
+   "patch": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Change a rule (the set's admins)",
+    "operationId": "updateAssetRule",
+    "description": "Trigger and actions together.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "enabled": {
+          "type": "boolean"
+         },
+         "trigger": {
+          "type": "object",
+          "properties": {
+           "event": {
+            "type": "string",
+            "enum": [
+             "created",
+             "changed",
+             "date"
+            ],
+            "description": "date: some days before a date field's day, once per asset and date"
+           },
+           "typeId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "only this type"
+           },
+           "status": {
+            "type": "string",
+            "enum": [
+             "in_use",
+             "in_stock",
+             "maintenance",
+             "retired"
+            ]
+           },
+           "fieldId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "date: the date field"
+           },
+           "days": {
+            "type": "integer",
+            "description": "date: how many days before (0 to 3650)"
+           }
+          },
+          "required": [
+           "event"
+          ]
+         },
+         "actions": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "action": {
+             "type": "string",
+             "enum": [
+              "createIssue",
+              "notifyOwner",
+              "setStatus"
+             ]
+            },
+            "projectKey": {
+             "type": "string"
+            },
+            "title": {
+             "type": "string",
+             "description": "with {tag}, {name}, {type}, {status}, {owner}, {date} and {field:Name}"
+            },
+            "description": {
+             "type": "string",
+             "description": "Markdown, same placeholders"
+            },
+            "assignOwner": {
+             "type": "boolean"
+            },
+            "message": {
+             "type": "string"
+            },
+            "status": {
+             "type": "string",
+             "enum": [
+              "in_use",
+              "in_stock",
+              "maintenance",
+              "retired"
+             ]
+            }
+           },
+           "required": [
+            "action"
+           ]
+          },
+          "description": "1 to 5; a created issue names the asset"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "Assets"
+    ],
+    "summary": "Delete a rule (the set's admins)",
+    "operationId": "deleteAssetRule",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
   "/setup": {
    "get": {
     "tags": [
@@ -18364,6 +20553,9 @@
            },
            "agents": {
             "type": "boolean"
+           },
+           "assets": {
+            "type": "boolean"
            }
           },
           "description": "false turns a part off: it's hidden and the API refuses it (400; the portal answers 404); left out: on"
@@ -21836,6 +24028,13 @@
         ],
         "description": "the approval request it waits on (details: GET /issues/{key}/approvals)"
        },
+       "assets": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/AssetSummary"
+        },
+        "description": "the assets it is about (the ones the caller may see)"
+       },
        "requester": {
         "anyOf": [
          {
@@ -23176,6 +25375,9 @@
           "type": "boolean"
          },
          "agents": {
+          "type": "boolean"
+         },
+         "assets": {
           "type": "boolean"
          }
         },
@@ -29992,6 +32194,330 @@
      "expiresAt"
     ],
     "description": "An upload of another tracker's XML site backup, or a connection to its API, and the import."
+   },
+   "AssetSummary": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "setId": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "tag": {
+      "type": "string",
+      "description": "e.g. LT-0042"
+     },
+     "name": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "in_use",
+       "in_stock",
+       "maintenance",
+       "retired"
+      ]
+     },
+     "type": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string",
+        "format": "uuid"
+       },
+       "name": {
+        "type": "string"
+       },
+       "icon": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "color": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      },
+      "required": [
+       "id",
+       "name"
+      ]
+     },
+     "category": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Named"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "owner": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "kind": {
+        "type": "string",
+        "enum": [
+         "user",
+         "team",
+         "email"
+        ]
+       },
+       "id": {
+        "type": "string",
+        "format": "uuid"
+       },
+       "name": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      },
+      "required": [
+       "kind"
+      ],
+      "description": "a person, a team, or an address without an account"
+     },
+     "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    },
+    "required": [
+     "id",
+     "setId",
+     "tag",
+     "name",
+     "status",
+     "type"
+    ],
+    "description": "An asset: a device, a service, a location — something issues are about."
+   },
+   "AssetSet": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "name": {
+      "type": "string"
+     },
+     "description": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "defaultRole": {
+      "type": "string",
+      "enum": [
+       "none",
+       "viewer",
+       "editor"
+      ],
+      "description": "what everyone in the workspace (but guests) may do"
+     },
+     "assetCount": {
+      "type": "integer"
+     },
+     "role": {
+      "type": "string",
+      "enum": [
+       "viewer",
+       "editor",
+       "admin"
+      ],
+      "description": "the caller's"
+     },
+     "types": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "string",
+         "format": "uuid"
+        },
+        "name": {
+         "type": "string"
+        },
+        "icon": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "color": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "tagPrefix": {
+         "type": "string"
+        },
+        "fields": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "kept across changes, so values stay with their field"
+           },
+           "name": {
+            "type": "string"
+           },
+           "kind": {
+            "type": "string",
+            "enum": [
+             "text",
+             "number",
+             "date",
+             "select",
+             "checkbox",
+             "url",
+             "user",
+             "asset"
+            ],
+            "description": "asset: a reference to another asset"
+           },
+           "options": {
+            "type": "array",
+            "items": {
+             "type": "object",
+             "properties": {
+              "id": {
+               "type": "string"
+              },
+              "label": {
+               "type": "string"
+              }
+             },
+             "required": [
+              "label"
+             ]
+            },
+            "description": "select"
+           },
+           "typeId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "asset: only assets of this type"
+           },
+           "required": {
+            "type": "boolean"
+           }
+          },
+          "required": [
+           "name",
+           "kind"
+          ]
+         }
+        },
+        "assetCount": {
+         "type": "integer"
+        }
+       },
+       "required": [
+        "id",
+        "name",
+        "tagPrefix",
+        "fields"
+       ]
+      }
+     },
+     "categories": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "string",
+         "format": "uuid"
+        },
+        "parentId": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "format": "uuid"
+        },
+        "name": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "id",
+        "name"
+       ]
+      }
+     },
+     "members": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "object",
+       "properties": {
+        "subjectType": {
+         "type": "string",
+         "enum": [
+          "user",
+          "team"
+         ]
+        },
+        "subjectId": {
+         "type": "string",
+         "format": "uuid"
+        },
+        "role": {
+         "type": "string",
+         "enum": [
+          "viewer",
+          "editor",
+          "admin"
+         ]
+        },
+        "name": {
+         "type": [
+          "string",
+          "null"
+         ]
+        }
+       },
+       "required": [
+        "subjectType",
+        "subjectId",
+        "role"
+       ]
+      },
+      "description": "for the set's admins"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "defaultRole",
+     "role",
+     "types",
+     "categories"
+    ]
    },
    "AgentRun": {
     "type": "object",

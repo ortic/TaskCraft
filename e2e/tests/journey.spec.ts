@@ -640,6 +640,60 @@ test('customers: a project belongs to one, time is reported and priced per custo
   await a11y(page)
 })
 
+test('assets: a set with a type, assets, what depends on what, and an issue about one', async ({ page }) => {
+  await login(page)
+  await page.goto('/assets')
+  await page.getByRole('button', { name: 'New set' }).click()
+  await page.getByRole('dialog').getByLabel('Name').fill('Hardware')
+  await page.getByRole('button', { name: 'Create set' }).click()
+  // the set's settings open: a type with a field
+  const setup = page.getByRole('dialog', { name: 'Set up Hardware' })
+  await setup.getByLabel('Name of the new type').fill('Laptop')
+  await setup.getByLabel('Tag prefix').fill('LT')
+  await setup.getByRole('button', { name: 'Add type' }).click()
+  await setup.locator('summary', { hasText: 'Laptop' }).click()
+  await setup.getByRole('button', { name: 'Add a field' }).click()
+  await setup.getByLabel('Field name').fill('Serial')
+  await setup.getByRole('button', { name: 'Save fields' }).click()
+  await expect(page.getByText('Saved')).toBeVisible()
+  await a11y(page, '[role=dialog]')
+  await setup.getByRole('button', { name: 'Done' }).click()
+  // two assets
+  for (const [name, serial] of [['MacBook Pro 14', 'C02XK1'], ['Docking station', 'DS-9']]) {
+    await page.goto('/assets')
+    await page.getByRole('button', { name: 'Add an asset' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Name').fill(name)
+    await dialog.getByLabel('Serial').fill(serial)
+    await dialog.getByRole('button', { name: 'Add asset' }).click()
+    await expect(page.getByRole('heading', { name: new RegExp(name) })).toBeVisible()
+  }
+  // the dock depends on the laptop
+  await page.getByLabel('Tag of the other asset').fill('LT-0001')
+  await page.getByRole('button', { name: 'Relate' }).click()
+  await expect(page.locator('.as-rels')).toContainText('MacBook Pro 14')
+  await page.goto('/assets/LT-0001')
+  await expect(page.locator('.as-rels')).toContainText('is needed by')
+  await expect(page.locator('.as-graph')).toContainText('1 others are affected')
+  await a11y(page)
+  // an issue about the laptop
+  const key = await page.evaluate(async () => {
+    const r = await fetch('/api/issues', { method: 'POST', headers: { 'content-type': 'application/json', 'x-taskcraft': '1' }, body: JSON.stringify({ projectKey: 'OPS', title: 'Screen flickers' }) })
+    return (await r.json()).key as string
+  })
+  await page.goto(`/issues/${key}`)
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  await page.getByLabel('Find an asset').fill('MacBook')
+  await page.getByRole('button', { name: /LT-0001/ }).click()
+  await expect(page.getByRole('link', { name: 'LT-0001' })).toBeVisible()
+  await page.getByRole('link', { name: 'LT-0001' }).click()
+  await expect(page.locator('.panel', { hasText: 'Issues' }).first()).toContainText('Screen flickers')
+  // the list finds it by its serial number
+  await page.goto('/assets?q=c02xk')
+  await expect(page.locator('.as-table tbody tr')).toHaveCount(1)
+  await a11y(page)
+})
+
 test('private issues with security levels', async ({ page }) => {
   await login(page)
   await page.goto('/projects/WEB/settings/permissions')

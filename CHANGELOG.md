@@ -6,6 +6,18 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 
 ## [Unreleased]
 
+- **Asset inventory**: the devices, services and other things issues are about. Assets live in
+  **sets** (Hardware, Services, …) with their own roles — viewer, editor, admin, for people,
+  teams or everyone — and have a **type** with its own fields (text, number, date, choice,
+  checkbox, link, person, or a reference to another asset), a tag such as `LT-0042`, a status, a
+  category and an owner (a person, a team, or a requester's address). Assets **depend on** or are
+  **installed in** others; an asset's page draws what fails with it. Issues name the assets
+  they're about (both pages link to each other; TQL `asset = "LT-0042"`, `asset.type = Laptop`),
+  and signed-in requesters pick from their own assets on a portal form. **CSV import** with
+  column mapping and a check before anything changes (rows with a known tag update), CSV export,
+  and **rules** per set: when an asset is added or changes, or some days before one of its dates
+  ("30 days before the warranty ends"), create an issue, notify the owner or set the status.
+  REST (`/asset-sets`, `/assets`, …), the MCP tool `find_assets`, and a feature switch. (#6)
 - **Customers**: organizations carry a customer number and a contact and can be archived;
   projects (and their subprojects) belong to a customer, and a time log can name another one.
   The time report groups and filters by customer, with billable and internal time per month, and

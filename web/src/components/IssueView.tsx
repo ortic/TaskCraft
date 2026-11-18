@@ -84,6 +84,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
   const [linking, setLinking] = useState(false)
   const [tab, setTab] = useState<'comments' | 'history' | 'work'>('comments')
   const timeTracking = useFeature('timeTracking')
+  const assetsOn = useFeature('assets')
   const votes = useFeature('votes')
   const ai = !!me?.workspace?.ai
   const fileRef = useRef<HTMLInputElement>(null)
@@ -353,6 +354,11 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
           <SideField label={t('Type')}>
             <TypePicker project={project} value={issue.type} disabled={!can} onChange={(id) => set({ typeId: id })} />
           </SideField>
+          {assetsOn && me?.user?.role !== 'guest' && (
+            <SideField label={t('Assets')}>
+              <IssueAssets issue={issue} can={can} />
+            </SideField>
+          )}
           {issue.type.level <= 0 && (
             <SideField label={isSub ? t('Parent') : t('Epic')}>
               <ParentPicker value={issue.parent} disabled={!can} epicsOnly={!isSub} projectKey={issue.projectKey} onChange={(id) => set({ parentId: id })} />
@@ -471,6 +477,50 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
 
 /** The fields the issue's type hides (they show while they have a value). */
 const HiddenFields = createContext<string[]>([])
+
+/** The assets the issue is about: links to them, and a search to add more. */
+function IssueAssets({ issue, can }: { issue: IssueDetail; can: boolean }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const [q, setQ] = useState('')
+  const [adding, setAdding] = useState(false)
+  const found = useQuery({ queryKey: ['assets', { q, pick: true }], queryFn: () => api.get<{ assets: { id: string; tag: string; name: string }[] }>(`/assets?limit=8&q=${encodeURIComponent(q)}`), enabled: adding && q.trim().length > 1 })
+  const assets = issue.assets ?? []
+  const put = async (tags: string[]) => {
+    try {
+      await api.put(`/issues/${issue.key}/assets`, { assets: tags })
+      setQ('')
+      setAdding(false)
+    } catch (e) {
+      toast((e as Error).message)
+    }
+    qc.invalidateQueries({ queryKey: ['issue', issue.key] })
+    qc.invalidateQueries({ queryKey: ['history', issue.key] })
+  }
+  return (
+    <div>
+      {assets.map((a) => (
+        <span key={a.id} className="badge as-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, margin: '0 6px 4px 0' }}>
+          <Link to={`/assets/${a.tag}`} title={`${a.name} · ${a.type.name}`}>{a.tag}</Link>
+          {can && <button className="ap-chip-x" aria-label={t('Remove {name}', { name: a.tag })} onClick={() => put(assets.filter((x) => x.id !== a.id).map((x) => x.tag))}>×</button>}
+        </span>
+      ))}
+      {assets.length === 0 && !adding && <span className="faint">{t('None')}</span>}
+      {can && !adding && <button className="btn btn-ghost btn-sm" onClick={() => setAdding(true)}>{t('Add [[asset]]')}</button>}
+      {adding && (
+        <div>
+          <input className="input input-sm" autoFocus placeholder={t('Tag or name…')} aria-label={t('Find an asset')} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setAdding(false)} />
+          {(found.data?.assets ?? []).filter((a) => !assets.some((x) => x.id === a.id)).map((a) => (
+            <button key={a.id} className="menu-item" style={{ width: '100%', textAlign: 'start' }} onClick={() => put([...assets.map((x) => x.tag), a.tag])}>
+              <span className="issue-key">{a.tag}</span> {a.name}
+            </button>
+          ))}
+          {found.data && found.data.assets.length === 0 && <div className="faint small">{t('No assets match')}</div>}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function SideField({ label, children, field, filled }: { label: string; children: React.ReactNode; field?: string; filled?: boolean }) {
   const hidden = useContext(HiddenFields)
@@ -1190,6 +1240,11 @@ export function describeEvent(e: HistoryEvent): React.ReactNode {
       return e.new ? t('attached {name}', { name: e.new.name }) : t('removed the attachment {name}', { name: e.old?.name })
     case 'approval':
       return describeApprovalEvent(e)
+    case 'assets': {
+      const added = (e.new as string[] | null) ?? []
+      const removed = (e.old as string[] | null) ?? []
+      return [added.length ? t('linked the assets {tags}', { tags: added.join(', ') }) : '', removed.length ? t('removed the assets {tags}', { tags: removed.join(', ') }) : ''].filter(Boolean).join(' · ')
+    }
     case 'dev':
       return describeDevEvent(e)
     case 'link':

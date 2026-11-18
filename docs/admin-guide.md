@@ -123,6 +123,30 @@ billable time (workspace admins only). When a month is billed, set *Time is clos
 last day: from then on only admins add, change or delete time in it. Invoices themselves are
 written elsewhere; the CSV has everything they need.
 
+## Asset inventory
+
+Under **Assets**, workspace admins create **sets** — Hardware, Services, Locations — and each
+set has its own access: everyone in the workspace sees it, changes it, or sees nothing, and
+people and teams get a role (viewer, editor, admin). Guests see only sets they have a role in. A
+set's admins *set it up*:
+
+- **Types** (Laptop, Server, Room) with a tag prefix (`LT` numbers assets `LT-0001`, …) and
+  fields: text, number, date, choice, checkbox, web link, person, or another asset — a laptop's
+  *Location* can be an asset of the type Room. Removing a field removes its values.
+- **Categories**, a tree to sort assets by site or department.
+- **Rules**: when an asset is added, when it changes (optionally into a status), or some days
+  before one of its dates — *30 days before "Warranty ends"* — create an issue in a project
+  (about that asset, optionally assigned to its owner), notify the owner, or set the status.
+  Texts take `{tag}`, `{name}`, `{type}`, `{status}`, `{owner}`, `{date}` and `{field:Name}`. A
+  date rule runs once per asset and date; what goes wrong shows on the rule.
+- **Import**: a CSV file with one asset per row for one type. Map the columns (matching headers
+  are mapped for you), check — nothing changes yet — then import. A row with an existing tag
+  updates that asset; owners are people, teams or e-mail addresses.
+
+An owner can be someone without an account: give the requester's e-mail address and they can
+pick the asset on a portal form. The inventory is a feature switch (*Workspace → Features*), has
+a REST API (`/api/asset-sets`, `/api/assets`) and the MCP tool `find_assets`.
+
 ## Signing in and security
 
 Sign-in methods are configured on the server: passwords, OpenID Connect, GitHub, LDAP / Active

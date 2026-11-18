@@ -174,6 +174,7 @@ def page(default, maximum=None, offset=True):
 # ---- tags (in the order the reference shows them) ------------------------------------------
 
 TAGS = [
+    ("Assets", "The asset inventory: sets with their own permissions, asset types with fields, categories, assets with owners and relations, the issues about them, CSV import and export, and rules."),
     ("Auth & account", "First-run setup, signing in and out with a password, invitation and password-reset links, the signed-in person and their API tokens."),
     ("Security", "Two-factor authentication (authenticator app and recovery codes), passkeys, the second step of a sign-in, sessions and the workspace's two-factor policy. Changes to sign-in methods are refused for API tokens."),
     ("Sign-in", "Single sign-on providers (OpenID Connect, GitHub, LDAP, SAML): the provider list, the redirect flows and how the signed-in person signs in."),
@@ -360,6 +361,7 @@ schemas = {
                     "children": arr(S("IssueSummary"), "sub-tasks / issues of the epic, by rank"),
                     "sla": arr(S("SlaGoal")),
                     "approval": null(obj({"id": uuid, "statusName": txt}, ["id", "statusName"]), "the approval request it waits on (details: GET /issues/{key}/approvals)"),
+                    "assets": arr(S("AssetSummary"), "the assets it is about (the ones the caller may see)"),
                     "requester": null(S("IssueRequester")),
                     "permissions": obj({"edit": boolean, "comment": boolean, "admin": boolean}, desc="what the caller may do"),
                 },
@@ -646,7 +648,7 @@ schemas["Me"] = obj(
                     "dateFormat": null(enum("dmy", "mdy", "ymd"), "how dates are written (null: as the language writes them)"),
                     "announcement": null(obj({"id": uuid, "text": txt, "tone": enum("info", "warning"), "until": null(dt, "shown until"), "at": dt}, ["id", "text", "tone"]),
                                          "the announcement for everyone while it's current"),
-                    "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean, "calendarFeeds": boolean, "agents": boolean}), "parts of TaskCraft that are on"),
+                    "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean, "calendarFeeds": boolean, "agents": boolean, "assets": boolean}), "parts of TaskCraft that are on"),
                     "ai": d(boolean, "AI assistance can be used (the server has a model and the workspace hasn't turned it off)"),
                     "aiSetup": null(obj({"provider": enum("anthropic", "openai-compatible"), "model": txt, "local": d(boolean, "the model runs in the server's own network")}), "the AI setup (admins only)"),
                     "logo": null(txt, "the logo's address (/api/workspace/logo?v=…); null: TaskCraft's mark"),
@@ -3422,7 +3424,7 @@ op("put", "/admin/workspace", "updateWorkspace", "Administration", "Rename the w
        "dateFormat": null(enum("auto", "dmy", "mdy", "ymd"), "how dates are written (auto or null: as the language writes them)"),
        "announcement": null(obj({"text": d(txt, "up to 500 characters (empty: taken down)"), "tone": enum("info", "warning"), "until": null(dt, "shown until (null: until taken down)")}, ["text"]),
                             "a message at the top of every page (null: taken down)"),
-       "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean, "calendarFeeds": boolean, "agents": boolean}),
+       "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean, "calendarFeeds": boolean, "agents": boolean, "assets": boolean}),
                      "false turns a part off: it's hidden and the API refuses it (400; the portal answers 404); left out: on"),
        "uploads": obj(
            {
@@ -3442,6 +3444,90 @@ op("delete", "/admin/workspace/logo", "deleteWorkspaceLogo", "Administration", "
    desc="Workspace admins, in the browser.", auth="session", res=NO)
 op("get", "/workspace/logo", "getWorkspaceLogo", "Administration", "The workspace's logo",
    desc="Anyone in the workspace (404 without one).", res=raw("image/png", "the image (or JPEG, GIF, WebP)"))
+# ---- asset inventory ----
+A_STATUS = enum("in_use", "in_stock", "maintenance", "retired")
+A_FIELD = obj({"id": d(uuid, "kept across changes, so values stay with their field"), "name": txt,
+               "kind": enum("text", "number", "date", "select", "checkbox", "url", "user", "asset", desc="asset: a reference to another asset"),
+               "options": arr(obj({"id": txt, "label": txt}, ["label"]), "select"), "typeId": d(uuid, "asset: only assets of this type"), "required": boolean}, ["name", "kind"])
+schemas["AssetSummary"] = obj(
+    {"id": uuid, "setId": uuid, "tag": d(txt, "e.g. LT-0042"), "name": txt, "status": A_STATUS,
+     "type": obj({"id": uuid, "name": txt, "icon": ntxt(), "color": ntxt()}, ["id", "name"]), "category": null(S("Named")),
+     "owner": null(obj({"kind": enum("user", "team", "email"), "id": uuid, "name": ntxt()}, ["kind"]), "a person, a team, or an address without an account"), "updatedAt": dt},
+    ["id", "setId", "tag", "name", "status", "type"],
+    "An asset: a device, a service, a location — something issues are about.",
+)
+schemas["AssetSet"] = obj(
+    {"id": uuid, "name": txt, "description": ntxt(), "defaultRole": enum("none", "viewer", "editor", desc="what everyone in the workspace (but guests) may do"),
+     "assetCount": num, "role": enum("viewer", "editor", "admin", desc="the caller's"),
+     "types": arr(obj({"id": uuid, "name": txt, "icon": ntxt(), "color": ntxt(), "tagPrefix": txt, "fields": arr(A_FIELD), "assetCount": num}, ["id", "name", "tagPrefix", "fields"])),
+     "categories": arr(obj({"id": uuid, "parentId": nuuid(), "name": txt}, ["id", "name"])),
+     "members": null(arr(obj({"subjectType": enum("user", "team"), "subjectId": uuid, "role": enum("viewer", "editor", "admin"), "name": ntxt()}, ["subjectType", "subjectId", "role"])), "for the set's admins")},
+    ["id", "name", "defaultRole", "role", "types", "categories"],
+)
+A_ASSET_IN = {"name": txt, "tag": d(txt, "default: the type's prefix and next number"), "status": A_STATUS, "categoryId": d(txt, "a category's id or name; null: none"),
+              "ownerId": nuuid("a person"), "ownerTeamId": nuuid("a team"), "ownerEmail": ntxt("someone without an account (a requester)"),
+              "values": d(anyobj, "field id or name → value; select options by id or label, people by id, name or address, assets by id or tag; null clears")}
+D_ASSETS = "When the workspace uses the asset inventory (400 otherwise). "
+op("get", "/asset-sets", "listAssetSets", "Assets", "The asset sets the caller sees, with their types and categories", desc=D_ASSETS,
+   res=ok(obj({"canCreate": boolean, "sets": arr(S("AssetSet"))}, ["canCreate", "sets"])))
+op("post", "/asset-sets", "createAssetSet", "Assets", "Add an asset set (workspace admins)",
+   req=body(obj({"name": txt, "description": txt, "defaultRole": enum("none", "viewer", "editor")}, ["name"])), res=created(B_ID), err="409")
+op("patch", "/asset-sets/{id}", "updateAssetSet", "Assets", "Change a set or who has which role in it (the set's admins)",
+   req=body(obj({"name": txt, "description": ntxt(), "defaultRole": enum("none", "viewer", "editor"),
+                 "members": arr(obj({"subjectType": enum("user", "team"), "subjectId": uuid, "role": enum("viewer", "editor", "admin")}, ["subjectType", "subjectId", "role"]), "replaces the grants")})), res=NO, err="409")
+op("delete", "/asset-sets/{id}", "deleteAssetSet", "Assets", "Delete a set with everything in it (workspace admins)", res=NO)
+op("post", "/asset-sets/{id}/types", "createAssetType", "Assets", "Add an asset type (the set's admins)",
+   req=body(obj({"name": txt, "icon": txt, "color": txt, "tagPrefix": d(txt, "1 to 8 letters and digits (default: from the name)"), "fields": arr(A_FIELD)}, ["name"])), res=created(B_ID), err="409")
+op("patch", "/asset-types/{id}", "updateAssetType", "Assets", "Change an asset type (the set's admins)", desc="Send every field with its id to keep values; a field left out goes with its values.",
+   req=body(obj({"name": txt, "icon": ntxt(), "color": ntxt(), "tagPrefix": txt, "fields": arr(A_FIELD)})), res=NO, err="409")
+op("delete", "/asset-types/{id}", "deleteAssetType", "Assets", "Delete an asset type without assets (the set's admins)", res=NO, err="409")
+op("post", "/asset-sets/{id}/categories", "createAssetCategory", "Assets", "Add a category (the set's admins)", req=body(obj({"name": txt, "parentId": nuuid()}, ["name"])), res=created(B_ID))
+op("delete", "/asset-categories/{id}", "deleteAssetCategory", "Assets", "Delete a category with the ones below it (the set's admins)", res=NO)
+op("get", "/assets", "listAssets", "Assets", "Assets the caller sees",
+   query=[q("set", "a set", uuid), q("type", "a type", uuid), q("category", "a category, with the ones below it", uuid), q("status", "in_use, in_stock, maintenance or retired"),
+          q("owner", "a person's id, or me"), q("q", "text in the tag, the name or a field"), q("limit", "default 200, at most 1000", num)],
+   res=ok(obj({"assets": arr(S("AssetSummary")), "more": boolean}, ["assets", "more"])))
+op("post", "/assets", "createAsset", "Assets", "Add an asset (the set's editors)", desc="The set's rules for new assets run.",
+   req=body(obj({"typeId": uuid, **A_ASSET_IN}, ["typeId", "name"])), res=created(obj({"id": uuid, "tag": txt}, ["id", "tag"])), err="409")
+PP_ASSET = {"id": (txt, "the asset's id or its tag")}
+op("get", "/assets/{id}", "getAsset", "Assets", "An asset with its fields, relations, issues and history", pp=PP_ASSET,
+   res=ok({"allOf": [S("AssetSummary"), obj({
+       "fields": arr(obj({"id": uuid, "name": txt, "kind": txt, "value": anyval, "label": ntxt("what a select option, person or asset is called")}, ["id", "name", "kind"])),
+       "role": enum("viewer", "editor", "admin"),
+       "relations": arr(obj({"id": uuid, "kind": enum("depends_on", "installed_in"), "outward": d(boolean, "true: this asset depends on / is installed in the other; false: the other way round"),
+                             "asset": obj({"id": uuid, "tag": txt, "name": txt, "status": txt}, ["id", "tag", "name"])}, ["id", "kind", "outward", "asset"])),
+       "issues": arr(S("IssueSummary"), "the issues about it that the caller sees"),
+       "history": arr(obj({"at": dt, "actor": ntxt(), "kind": enum("created", "changed", "related", "unrelated", "issue"), "data": anyval}, ["at", "kind"]))})]}))
+op("patch", "/assets/{id}", "updateAsset", "Assets", "Change an asset (the set's editors)", desc="The set's rules for changed assets run.", pp=PP_ASSET, req=body(obj(A_ASSET_IN)), res=NO)
+op("delete", "/assets/{id}", "deleteAsset", "Assets", "Delete an asset (the set's admins)", pp=PP_ASSET, res=NO)
+op("post", "/assets/{id}/relations", "relateAssets", "Assets", "Relate an asset to another (editors of its set)", pp=PP_ASSET,
+   desc="This asset depends on, or is installed in, the target.", req=body(obj({"kind": enum("depends_on", "installed_in"), "target": d(txt, "id or tag")}, ["kind", "target"])), res=created(B_ID), err="409")
+op("delete", "/asset-relations/{id}", "unrelateAssets", "Assets", "Remove a relation (editors of the source's set)", res=NO)
+op("get", "/assets/{id}/graph", "getAssetGraph", "Assets", "What an asset depends on and what depends on it", pp=PP_ASSET,
+   desc="Three steps out. `affected`: everything that depends on it or is installed in it, directly or through others — what fails with it.",
+   res=ok(obj({"root": uuid, "nodes": arr(S("AssetSummary")), "edges": arr(obj({"source": uuid, "target": uuid, "kind": txt}, ["source", "target", "kind"])), "affected": arr(uuid)}, ["root", "nodes", "edges", "affected"])))
+op("put", "/issues/{key}/assets", "setIssueAssets", "Assets", "The assets an issue is about (project members)",
+   desc="Of the assets the caller sees; TQL finds issues by `asset = \"LT-0042\"` and `asset.type = Laptop`.", req=body(obj({"assets": arr(txt, "ids or tags, at most 50")}, ["assets"])), res=ok(arr(S("AssetSummary"))))
+op("get", "/asset-sets/{id}/export.csv", "exportAssets", "Assets", "A set's assets as CSV", desc="Tag, Name, Type, Status, Category, Owner and a column per field.", res=raw("text/csv", "The file"))
+op("post", "/asset-types/{id}/import", "importAssets", "Assets", "Import assets of a type from CSV (the set's editors)",
+   desc="One asset per row; a row whose tag exists updates that asset. `mapping`: column header → name, tag, status, category, owner, a field's name or id, or \"\" to skip; "
+        "without it columns are matched by their headers. `dryRun` checks without changing anything. At most 5000 rows.",
+   req=body(obj({"csv": d(txt, "the file's text"), "mapping": anyobj, "dryRun": boolean}, ["csv"])),
+   res=ok(obj({"dryRun": boolean, "created": num, "updated": num, "errors": arr(obj({"row": num, "message": txt}, ["row", "message"])),
+               "columns": arr(obj({"header": txt, "target": ntxt()}, ["header"]))}, ["created", "updated", "errors"])), err="413")
+A_ASSET_RULE = {"name": txt, "enabled": boolean,
+                "trigger": obj({"event": enum("created", "changed", "date", desc="date: some days before a date field's day, once per asset and date"), "typeId": d(uuid, "only this type"), "status": A_STATUS,
+                                "fieldId": d(uuid, "date: the date field"), "days": d(num, "date: how many days before (0 to 3650)")}, ["event"]),
+                "actions": arr(obj({"action": enum("createIssue", "notifyOwner", "setStatus"), "projectKey": txt,
+                                    "title": d(txt, "with {tag}, {name}, {type}, {status}, {owner}, {date} and {field:Name}"), "description": d(txt, "Markdown, same placeholders"),
+                                    "assignOwner": boolean, "message": txt, "status": A_STATUS}, ["action"]), "1 to 5; a created issue names the asset")}
+op("get", "/asset-sets/{id}/rules", "listAssetRules", "Assets", "A set's rules (its admins)",
+   res=ok(arr(obj({**A_ASSET_RULE, "id": uuid, "runs": num, "lastRunAt": null(dt), "lastError": ntxt()}, ["id", "name", "enabled", "trigger", "actions"]))))
+op("post", "/asset-sets/{id}/rules", "createAssetRule", "Assets", "Add a rule (the set's admins)", desc="E.g. \"30 days before Warranty ends: create an issue for the owner\".",
+   req=body(obj(A_ASSET_RULE, ["name", "trigger", "actions"])), res=created(B_ID))
+op("patch", "/asset-rules/{id}", "updateAssetRule", "Assets", "Change a rule (the set's admins)", desc="Trigger and actions together.", req=body(obj(A_ASSET_RULE)), res=NO)
+op("delete", "/asset-rules/{id}", "deleteAssetRule", "Assets", "Delete a rule (the set's admins)", res=NO)
+
 # ---- customers: hourly rates ----
 A_RATE_SCOPE = "a rate is for a customer, a time category, a person, or a combination (none of them: the default); the most specific one that fits a time log counts — a customer before a person before a category"
 op("get", "/time-rates", "getTimeRates", "Comments & time", "Hourly rates, the currency and the closed period (workspace admins)", desc=A_RATE_SCOPE[0].upper() + A_RATE_SCOPE[1:] + ".",

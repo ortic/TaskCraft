@@ -89,6 +89,7 @@
 ## Next (round 6)
 
 - [x] Customers: projects and time logs belong to customers (one list with requester organizations), the time report per customer, hourly rates with amounts, closed periods, TQL `customer` (#4)
+- [x] Asset inventory: sets with their own roles, types with fields (also references to other assets), categories, tags, owners, relations with a graph of what's affected, issues about assets (TQL `asset`, `asset.type`), CSV import/export, rules on changes and before dates, requesters pick their own assets (#6)
 
 ## Next (round 4): what established trackers have and TaskCraft doesn't
 

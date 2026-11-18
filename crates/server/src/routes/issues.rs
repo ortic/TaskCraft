@@ -152,6 +152,8 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
     v["sla"] = json!(crate::sla::for_issues(&state, &[id]).await?.remove(&id).unwrap_or_default());
     // the request it waits on, if any (GET /issues/{key}/approvals has the details)
     v["approval"] = crate::approvals::pending_of(&state, id).await?;
+    // the assets it is about (the ones the caller may see)
+    v["assets"] = json!(crate::assets::of_issue(&state, &user, id).await?);
     // who it was opened for (no account): by e-mail, on the request form or in the portal;
     // `mail`: comments for them are e-mailed and they can sign in to the portal
     v["requester"] = crate::mail_in::requester(&state, id)
@@ -597,6 +599,8 @@ pub async fn suggest(
                 "link",
                 "organization",
                 "customer",
+                "asset",
+                "asset.type",
                 "approval",
                 "approver",
                 "comment",

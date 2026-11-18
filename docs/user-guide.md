@@ -183,6 +183,21 @@ with `organization = "Acme"`. An organization's service-level goals can be a sha
 project's (50% = twice as fast). In the portal, a requester shares a request with their whole
 organization or with chosen colleagues, who then follow and answer it (resolving stays theirs).
 
+## Assets
+
+When the workspace keeps an inventory, **Assets** in the sidebar lists the devices, services and
+other things you may see — by set (Hardware, Services, …), type, status, owner or text, which
+also finds a serial number. An asset has a tag such as `LT-0042`, a status (in use, in stock, in
+maintenance, retired), an owner and the fields of its type. Its page shows what it **depends on**
+and where it's **installed**, a small graph of what is affected when it fails, the issues about
+it and its history.
+
+On an issue, *Assets* in the side panel says which assets it is about; the asset's page lists
+those issues. Search with `asset = "LT-0042"` (a tag or a name), `asset.type = Laptop` or
+`asset is empty`. If you edit a set you add assets one by one (*Add an asset*) or many from a
+CSV file (the set's *Set up* → *Import*), and export a set as CSV. On the service desk portal,
+signed-in requesters tick which of their own devices a request is about.
+
 ## Approvals
 
 Some statuses wait for a decision (a project admin sets this up under *Project settings →

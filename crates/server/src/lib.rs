@@ -6,6 +6,7 @@ pub mod agents;
 pub mod ai;
 pub mod app;
 pub mod approvals;
+pub mod assets;
 pub mod auth;
 pub mod automation;
 pub mod backup;

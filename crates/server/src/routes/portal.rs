@@ -44,10 +44,22 @@ pub async fn info(State(state): State<AppState>, MaybeRequester(email): MaybeReq
         Some(e) => crate::organizations::of_requester(&state, e).await?.map(|o| o.1),
         None => None,
     };
+    let assets = match &email {
+        Some(e) => {
+            let workspace: Option<Uuid> = sqlx::query_scalar("SELECT id FROM workspaces ORDER BY created_at LIMIT 1").fetch_optional(&state.db).await?;
+            match workspace {
+                Some(w) => crate::assets::of_requester(&state, w, e).await?,
+                None => vec![],
+            }
+        }
+        None => vec![],
+    };
     Ok(Json(json!({
         "workspace": {"name": name, "accentColor": settings.get("accentColor")},
         "email": email,
         "organization": organization,
+        // the assets the visitor owns: a request form lets them say which one it's about
+        "assets": assets,
         "signIn": state.mailer.enabled(),
         "forms": forms,
     })))
@@ -564,6 +576,9 @@ pub struct Submission {
     type_id: Option<String>,
     priority: Option<String>,
     custom: Map<String, Value>,
+    /// assets of the requester's the request is about (signed-in requesters)
+    #[serde(default)]
+    assets: Vec<String>,
     /// the hidden field: people leave it empty
     website: String,
 }
@@ -682,6 +697,9 @@ pub async fn submit(
     let actor = Actor { user: None, workspace: p.workspace_id, depth: 0 };
     let description = if description.is_empty() { crate::doc::empty() } else { text_to_doc(&description) };
     let s = issues::create(&state, &actor, NewIssue { project: p.id, title: summary, description: Some(description), fields }).await?;
+    if signed_in.is_some() && !req.assets.is_empty() {
+        crate::assets::link_request(&state, p.workspace_id, s.id, &email, &req.assets).await?;
+    }
     portal::note(&state, "form-ip", &ip).await?;
     portal::note(&state, "form-email", &email).await?;
     // the issue exists: from here on, trouble is logged rather than reported (sending the form

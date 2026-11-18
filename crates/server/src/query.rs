@@ -165,6 +165,9 @@ const BUILTIN: &[&str] = &[
     "link",
     "links",
     "organization",
+    "asset",
+    "assets",
+    "asset.type",
     "approval",
     "approver",
     "approvers",
@@ -747,6 +750,24 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
             qb.push_bind(names);
             qb.push(")))");
         }
+        "asset" | "assets" | "asset.type" => {
+            // an asset it is about, by tag or name; or one of a type
+            let neg = only_eq(field, op)?;
+            let names: Vec<String> = texts(field, values)?.into_iter().map(|s| s.to_lowercase()).collect();
+            qb.push(if neg { "NOT " } else { "" });
+            qb.push("EXISTS (SELECT 1 FROM issue_assets ia JOIN assets a ON a.id = ia.asset_id JOIN asset_types aty ON aty.id = a.type_id WHERE ia.issue_id = i.id AND ");
+            if field == "asset.type" {
+                qb.push("lower(aty.name) = ANY(");
+                qb.push_bind(names);
+                qb.push("))");
+            } else {
+                qb.push("(lower(a.tag) = ANY(");
+                qb.push_bind(names.clone());
+                qb.push(") OR lower(a.name) = ANY(");
+                qb.push_bind(names);
+                qb.push(")))");
+            }
+        }
         // not a reserved word: a custom field people called "Customer" keeps its meaning
         "customer" if !ctx.custom.contains_key("customer") => {
             // the customer its project belongs to (its own, or the one of the project above), by name or number
@@ -1162,6 +1183,11 @@ fn empty(qb: &mut Qb, ctx: &Ctx, field: &str, negated: bool) -> ApiResult<()> {
         "approver" | "approvers" => {
             qb.push(if negated { "EXISTS" } else { "NOT EXISTS" });
             qb.push(" (SELECT 1 FROM approvals a JOIN approval_steps st ON st.approval_id = a.id JOIN approval_votes v ON v.step_id = st.id WHERE a.issue_id = i.id AND a.state = 'pending' AND st.state = 'pending' AND v.decision IS NULL)");
+            return Ok(());
+        }
+        "asset" | "assets" | "asset.type" => {
+            qb.push(if negated { "EXISTS" } else { "NOT EXISTS" });
+            qb.push(" (SELECT 1 FROM issue_assets ia WHERE ia.issue_id = i.id)");
             return Ok(());
         }
         "customer" if !ctx.custom.contains_key("customer") => {

@@ -122,7 +122,7 @@ fn strip(v: &mut Value) {
 pub(crate) const TQL_HELP: &str = "Search issues with TQL, TaskCraft's query language. Returns the total and the matching issues (key, title, type, status, category, priority, assignee, sprint, points, labels, due date, URL).
 
 TQL: clauses `field operator value` joined with `and`, `or`, `not` and parentheses, optionally followed by `order by field [asc|desc], …`. Bare words search titles and descriptions (`login timeout`).
-Fields: project, key, title, text (title, description, the names of files and the text inside them; words also match by their stem), description, comment, type, status, category (todo | in_progress | done), priority (none < low < medium < high < urgent), assignee, reporter, creator, watcher, voter, votes (a number), labels, sprint, version (released in), affects (found in), component, parent / epic (an issue key), points, estimate, remaining and spent (hours), created, updated, resolved, due, start, blocked (true | false), link (a link type, e.g. link = \"is blocked by\"; a type's key matches both ways), organization (the requester's organization), customer (whose project it is, by name or number; a custom field called Customer takes its place), approval (pending | approved | rejected), approver (who is asked to approve right now), and custom fields by name (quote names with spaces: \"Customer tier\" = Gold).
+Fields: project, key, title, text (title, description, the names of files and the text inside them; words also match by their stem), description, comment, type, status, category (todo | in_progress | done), priority (none < low < medium < high < urgent), assignee, reporter, creator, watcher, voter, votes (a number), labels, sprint, version (released in), affects (found in), component, parent / epic (an issue key), points, estimate, remaining and spent (hours), created, updated, resolved, due, start, blocked (true | false), link (a link type, e.g. link = \"is blocked by\"; a type's key matches both ways), organization (the requester's organization), customer (whose project it is, by name or number; a custom field called Customer takes its place), asset (an asset the issue is about, by tag or name) and asset.type, approval (pending | approved | rejected), approver (who is asked to approve right now), and custom fields by name (quote names with spaces: \"Customer tier\" = Gold).
 Operators: = != ~ (contains) !~ > >= < <=, in (a, b), not in (a, b), is empty, is not empty.
 Values: quote values with spaces (status = \"In progress\"); people by name, e-mail or me(); dates as 2026-11-12, relative (-7d, +2w, -1m) or now(), today(), startOfWeek(), endOfWeek(), startOfMonth(), endOfMonth(); sprints by name or openSprints() (the running ones), futureSprints(), closedSprints(); versions by name or releasedVersions(), unreleasedVersions(); key in linkedIssues(WEB-12) for the issues linked to WEB-12 (linkedIssues(WEB-12, blocks) for one link type, read from WEB-12).
 Examples:
@@ -236,6 +236,16 @@ pub struct BranchArgs {
     pub repository: Option<String>,
     /// Also open a draft pull / merge request
     pub pull_request: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct AssetsArgs {
+    /// Text in the asset's tag, name or fields (e.g. a serial number); or an exact tag like LT-0042 to read one asset in full
+    pub query: Option<String>,
+    /// in_use, in_stock, maintenance or retired
+    pub status: Option<String>,
+    /// Only the caller's own assets
+    pub mine: Option<bool>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -782,6 +792,32 @@ impl TaskMcp {
         Ok(compact(&json!({"issue": key, "branch": v["branch"], "pullRequest": v["pullRequest"], "warning": v["warning"]})))
     }
 
+    async fn assets(&self, user: User, a: AssetsArgs) -> ApiResult<String> {
+        // an exact tag: the asset with its fields, relations and issues
+        if let Some(tag) = a.query.as_deref().map(str::trim).filter(|q| !q.is_empty() && !q.contains(' '))
+            && let Ok(AxJson(v)) = crate::assets::get(State(self.state.clone()), CurrentUser(user.clone()), Path(tag.to_string())).await
+        {
+            return Ok(compact(&json!({
+                "tag": v["tag"], "name": v["name"], "type": v["type"]["name"], "status": v["status"], "owner": v["owner"]["name"], "category": v["category"]["name"],
+                "fields": v["fields"].as_array().into_iter().flatten().filter(|f| !f["value"].is_null()).map(|f| json!({"name": f["name"], "value": if f["label"].is_null() { f["value"].clone() } else { f["label"].clone() }})).collect::<Vec<_>>(),
+                "relations": v["relations"].as_array().into_iter().flatten().map(|r| json!({"kind": r["kind"], "outward": r["outward"], "tag": r["asset"]["tag"], "name": r["asset"]["name"]})).collect::<Vec<_>>(),
+                "issues": v["issues"].as_array().into_iter().flatten().take(30).map(|i| json!({"key": i["key"], "title": i["title"], "status": i["status"]["name"]})).collect::<Vec<_>>(),
+            })));
+        }
+        let q = crate::assets::ListQuery {
+            q: a.query,
+            status: a.status,
+            owner: a.mine.unwrap_or(false).then(|| "me".to_string()),
+            limit: Some(50),
+            ..Default::default()
+        };
+        let AxJson(v) = crate::assets::list(State(self.state.clone()), CurrentUser(user), axum::extract::Query(q)).await?;
+        Ok(compact(&json!({
+            "assets": v["assets"].as_array().into_iter().flatten().map(|x| json!({"tag": x["tag"], "name": x["name"], "type": x["type"]["name"], "status": x["status"], "owner": x["owner"]["name"]})).collect::<Vec<_>>(),
+            "more": v["more"],
+        })))
+    }
+
     async fn timer_action(&self, user: User, a: TimerArgs) -> ApiResult<String> {
         let st = State(self.state.clone());
         match a.action.trim().to_lowercase().as_str() {
@@ -1151,6 +1187,16 @@ impl TaskMcp {
     async fn add_comment(&self, Extension(parts): Extension<Parts>, Parameters(a): Parameters<CommentArgs>) -> ToolResult {
         match self.writer(&parts).await {
             Ok(u) => done(self.comment(u, a).await),
+            Err(e) => done(Err(e)),
+        }
+    }
+
+    #[tool(
+        description = "The asset inventory: find assets (laptops, servers, services, …) by text, status or owner — or give an exact tag like LT-0042 to read one asset with its fields, what it depends on and the issues about it. Issues name their assets: search them with TQL `asset = \"LT-0042\"`."
+    )]
+    async fn find_assets(&self, Extension(parts): Extension<Parts>, Parameters(a): Parameters<AssetsArgs>) -> ToolResult {
+        match self.reader(&parts).await {
+            Ok(u) => done(self.assets(u, a).await),
             Err(e) => done(Err(e)),
         }
     }

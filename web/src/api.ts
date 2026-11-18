@@ -245,6 +245,8 @@ export interface IssueDetail extends Issue {
   permissions: { edit: boolean; comment: boolean; admin: boolean }
   /** service-level goals (projects with service levels) */
   sla: import('./components/SlaBadges').SlaGoal[]
+  /** the assets it is about (the ones the viewer may see) */
+  assets?: { id: string; tag: string; name: string; status: string; type: { name: string } }[]
   /** the approval request it waits on, if any */
   approval?: { id: string; statusName: string } | null
   /** who it was opened for (no account): by e-mail, on the request form or in the portal;
@@ -510,7 +512,7 @@ export function userColor(seed: string): string {
 }
 
 /** Parts of TaskCraft a workspace can turn off. */
-export type Feature = 'timeTracking' | 'votes' | 'portal' | 'automation' | 'sharing' | 'ai' | 'calendarFeeds' | 'agents'
+export type Feature = 'timeTracking' | 'votes' | 'portal' | 'automation' | 'sharing' | 'ai' | 'calendarFeeds' | 'agents' | 'assets'
 export type DateFormat = 'dmy' | 'mdy' | 'ymd'
 export interface Announcement {
   id: string

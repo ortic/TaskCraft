@@ -108,3 +108,5 @@
 .portal-approve label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 .portal-approve-buttons { display: flex; gap: 8px; margin-top: 10px; }
 .portal-approve-buttons .btn { height: 38px; }
+.portal-assets { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px 10px; margin: 0 0 14px; }
+.portal-assets legend { font-size: 13px; font-weight: 600; padding: 0 4px; }

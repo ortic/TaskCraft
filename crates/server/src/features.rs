@@ -18,7 +18,7 @@ use crate::auth::{CurrentUser, SessionUser, require_admin};
 use crate::error::{ApiError, ApiResult};
 
 /// What can be turned off, and what it's called in messages.
-pub const FEATURES: [(&str, &str); 8] = [
+pub const FEATURES: [(&str, &str); 9] = [
     ("timeTracking", "Time tracking"),
     ("votes", "Voting"),
     ("portal", "The service desk portal"),
@@ -27,6 +27,7 @@ pub const FEATURES: [(&str, &str); 8] = [
     ("ai", "AI assistance"),
     ("calendarFeeds", "Calendar feeds"),
     ("agents", "AI coding agents"),
+    ("assets", "The asset inventory"),
 ];
 
 /// Whether a part of TaskCraft is on in a workspace (everything is, unless turned off).
@@ -229,7 +230,7 @@ mod tests {
         assert_eq!(s["features"], json!({"votes": false}));
         assert_eq!(
             all(&s),
-            json!({"timeTracking": true, "votes": false, "portal": true, "automation": true, "sharing": true, "ai": true, "calendarFeeds": true, "agents": true})
+            json!({"timeTracking": true, "votes": false, "portal": true, "automation": true, "sharing": true, "ai": true, "calendarFeeds": true, "agents": true, "assets": true})
         );
         assert_eq!(s["timeZone"], "Europe/Zurich");
         assert!(check(&json!({"features": {"teleport": false}}), &mut s).is_err());

@@ -24,6 +24,8 @@ interface Info {
   forms: { path: string; title: string; project: string }[]
   /** the requester's organization */
   organization?: string | null
+  /** the assets the requester owns */
+  assets?: { id: string; tag: string; name: string; type: string }[]
 }
 interface Listed {
   key: string
@@ -803,6 +805,7 @@ function RequestForm({ f, info, openedAt, onSent }: { f: FormDef; info: Info; op
   const [priority, setPriority] = useState('medium')
   const [custom, setCustom] = useState<Record<string, unknown>>({})
   const [website, setWebsite] = useState('')
+  const [assets, setAssets] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const errRef = useRef<HTMLParagraphElement>(null)
@@ -827,6 +830,7 @@ function RequestForm({ f, info, openedAt, onSent }: { f: FormDef; info: Info; op
         priority: f.priority ? priority : undefined,
         custom,
         website,
+        assets,
       })
       onSent(r)
     } catch (e) {
@@ -891,6 +895,17 @@ function RequestForm({ f, info, openedAt, onSent }: { f: FormDef; info: Info; op
           />
           <span className="field-hint" id="rf-description-hint">{t('What happened, and what did you expect? The more we know, the sooner we can help.')}</span>
         </div>
+      )}
+      {(info.assets?.length ?? 0) > 0 && (
+        <fieldset className="portal-assets">
+          <legend>{t('Which of your devices is it about? (optional)')}</legend>
+          {info.assets!.map((a) => (
+            <label key={a.id} className="portal-check">
+              <input type="checkbox" checked={assets.includes(a.id)} onChange={(e) => setAssets((all) => (e.target.checked ? [...all, a.id] : all.filter((x) => x !== a.id)))} />
+              <span>{a.name} <span className="portal-faint">({a.type} · {a.tag})</span></span>
+            </label>
+          ))}
+        </fieldset>
       )}
       {f.fields.map((field) => (
         <CustomInput key={field.id} field={field} value={custom[field.id]} onChange={(v) => setCustom((c) => ({ ...c, [field.id]: v }))} />

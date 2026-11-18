@@ -33,6 +33,12 @@ One binary, PostgreSQL, optional S3. Built with the same stack as WikiCraft.
   category, day, week or month (and once more inside), filtered, with a CSV of every log; a
   **timer** per person on an issue (in the top bar on every device; pause, stop and log; the
   workspace rounds it up; stopped timers wait as private drafts; reminders, and a stop at 24 hours)
+- **Asset inventory**: laptops, servers, services, rooms — in sets with their own roles; asset
+  types with custom fields (also references to other assets), tags like `LT-0042`, owners,
+  categories; *depends on* / *installed in* relations with a graph of what's affected; issues
+  name their assets (TQL `asset = "LT-0042"`, `asset.type = Laptop`) and requesters pick their
+  own on the portal; CSV import with mapping and a dry run, CSV export; rules such as "30 days
+  before the warranty ends, create an issue for the owner"
 - **Customers**: organizations with a customer number and a contact (one list with the service
   desk's requester organizations); projects and their subprojects belong to a customer, a time
   log can name another one; the time report by customer (billable vs internal, per month), a
@@ -98,7 +104,7 @@ files, HTML and plain text (the first 100 000 characters, read in the background
 
 Fields: `project key title text description comment type status category priority assignee
 reporter creator labels sprint version affects component parent/epic points estimate spent created
-updated resolved resolution security due start remaining watcher voter votes blocked link organization customer approval approver` and custom fields. Operators `= != ~ !~ > >= < <=`,
+updated resolved resolution security due start remaining watcher voter votes blocked link organization customer approval approver asset asset.type` and custom fields. Operators `= != ~ !~ > >= < <=`,
 `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions:
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`,
 `openSprints()`, `futureSprints()`, `closedSprints()`, `releasedVersions()`,
