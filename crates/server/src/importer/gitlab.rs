@@ -518,7 +518,15 @@ async fn read_issue(
                         _ => ("relates", gid.clone(), other),
                     };
                     let type_name = l["link_type"].as_str().unwrap_or("relates_to").to_string();
-                    m.links.push(model::Link { kind: kind.into(), known: true, type_name, source, target, created: time(&l["link_created_at"]) });
+                    m.links.push(model::Link {
+                        kind: kind.into(),
+                        known: true,
+                        type_name,
+                        source,
+                        target,
+                        created: time(&l["link_created_at"]),
+                        ..Default::default()
+                    });
                 }
             }
             Err(e) if matches!(status_of(&e), Some(401 | 403 | 404)) => {}

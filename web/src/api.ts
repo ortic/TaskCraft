@@ -71,7 +71,7 @@ export interface Me {
   user: User | null
   profile?: { title: string | null; locale: string | null; timezone: string | null }
   preferences?: Record<string, any>
-  workspace: { id: string; name: string; accentColor?: string | null; defaultLanguage?: string | null; weekStart?: string | null; retention?: Record<string, number> | null; uploads?: { blockedTypes?: string[]; maxMb?: number | null } | null; virusScanning?: boolean; maxUploadMb?: number; timeZone?: string | null; dateFormat?: DateFormat | null; announcement?: Announcement | null; features?: Partial<Record<Feature, boolean>>; logo?: string | null; ai?: boolean; aiSetup?: { provider: 'anthropic' | 'openai-compatible'; model: string; local: boolean } | null } | null
+  workspace: { id: string; name: string; accentColor?: string | null; defaultLanguage?: string | null; weekStart?: string | null; retention?: Record<string, number> | null; uploads?: { blockedTypes?: string[]; maxMb?: number | null } | null; virusScanning?: boolean; maxUploadMb?: number; timer?: { rounding: number; reminderHours: number }; timeZone?: string | null; dateFormat?: DateFormat | null; announcement?: Announcement | null; features?: Partial<Record<Feature, boolean>>; logo?: string | null; ai?: boolean; aiSetup?: { provider: 'anthropic' | 'openai-compatible'; model: string; local: boolean } | null } | null
   wikicraft?: { url: string | null; connected: boolean; personal: boolean }
   baseUrl?: string
   /** the workspace requires two-factor authentication and this person hasn't set it up */
@@ -181,10 +181,31 @@ export interface Worklog {
 
 export interface IssueLink {
   id: string
+  /** the link type's key */
   kind: string
+  /** how the link reads from this issue */
   label: string
   outward: boolean
+  /** the other issue is blocked while the source is open (blocks, and types marked so) */
+  dependency?: boolean
+  /** a built-in type with its own name (its label is translated) */
+  builtin?: boolean
   issue: Issue
+}
+
+/** A type of link between issues: the built-in ones and the workspace's own. */
+export interface LinkType {
+  key: string
+  /** as read from the link's source ("causes") */
+  outward: string
+  /** as read from its target ("is caused by") */
+  inward: string
+  dependency: boolean
+  builtin: boolean
+  /** a built-in type the workspace renamed */
+  renamed: boolean
+  symmetric: boolean
+  linkCount: number
 }
 
 export interface IssueDetail extends Issue {
@@ -384,7 +405,7 @@ export interface Notification {
   id: string
   actor: Named | null
   kind: 'assigned' | 'mentioned' | 'commented' | 'status' | string
-  data: { key: string; title: string; from?: string; to?: string; excerpt?: string; commentId?: string; message?: string; goal?: string; by?: string }
+  data: { key: string; title: string; from?: string; to?: string; excerpt?: string; commentId?: string; message?: string; goal?: string; by?: string; hours?: number; stopped?: boolean }
   createdAt: string
   read: boolean
 }

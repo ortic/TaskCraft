@@ -64,6 +64,23 @@ personal data.
 levels, restricted comments and assignment. With single sign-on, teams can follow the groups of
 the identity provider.
 
+## Link types
+
+*Administration → Link types*: besides *blocks*, *relates to*, *duplicates* and *clones*, add the
+workspace's own — each with a name as read from the first issue (*causes*, *implements*) and one
+from the second (*is caused by*, *is implemented by*; leave it empty when it reads the same both
+ways). A type marked as a **dependency** works like *blocks*: the second issue counts as blocked
+while the first is open, and the timeline draws the arrow. Built-in types can be renamed (and set
+back); a type of your own that's in use can only be deleted by choosing the type its links get
+instead. Imports bring the source's link types along under their names.
+
+## Time tracking
+
+*Administration → Time tracking*: **time categories** (Development, Meetings, … — billable by
+default or not; archive the ones you no longer offer), and **timers**: what timed time is rounded
+up to (1 to 30 minutes) and after how many hours people are reminded of a running timer (a timer
+stops by itself after 24 hours; its time waits as a draft).
+
 ## Signing in and security
 
 Sign-in methods are configured on the server: passwords, OpenID Connect, GitHub, LDAP / Active

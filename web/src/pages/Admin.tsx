@@ -4,10 +4,11 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { BackupImportTab } from './BackupImport'
 import {
-  Archive, ArchiveRestore, Check, ChevronDown, CircleDot, Clock, Download, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, Mail, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, ShieldOff, Trash,
+  Archive, ArchiveRestore, Check, Link2, RotateCcw, ChevronDown, CircleDot, Clock, Download, Ellipsis, FolderKanban, HardDrive, LayoutDashboard, Link, Mail, MessageSquare, Paperclip, Pencil, Plus, ScrollText, Search, Send, Shield, ShieldOff, Trash,
   UserCheck, UserPlus, UserX, Users, Webhook, Upload, ImageOff,
 } from 'lucide-react'
-import { api, ago, dateTime, shortDate, type Feature, type Me, type TimeCategory } from '../api'
+import { api, ago, dateTime, shortDate, type Feature, type LinkType, type Me, type TimeCategory } from '../api'
+import { linkTypeLabel, useLinkTypes } from '../components/IssueView'
 import { Avatar, Confirm, Empty, ErrorBox, Loading, Logo, Modal, PopButton, Tabs, useMe, usePeople, useProjects, useSetup, useToast } from '../ui'
 import { PROJECT_COLORS } from '../icons'
 import { CopyField, Switch, nowIn, timeZones } from './Settings'
@@ -16,8 +17,8 @@ import { SignInBadges, useSignInOptions, type SignInMethods } from '../component
 import { ResetTwoFactor, TwoFactorPolicy, canResetTwoFactor, useTwoFactorPolicy } from '../components/Security'
 import './Admin.css'
 
-type Tab = 'overview' | 'users' | 'teams' | 'time' | 'webhooks' | 'import' | 'audit'
-const TABS: Tab[] = ['overview', 'users', 'teams', 'time', 'webhooks', 'import', 'audit']
+type Tab = 'overview' | 'users' | 'teams' | 'links' | 'time' | 'webhooks' | 'import' | 'audit'
+const TABS: Tab[] = ['overview', 'users', 'teams', 'links', 'time', 'webhooks', 'import', 'audit']
 
 export default function Admin() {
   const me = useMe().data
@@ -50,6 +51,7 @@ export default function Admin() {
           { id: 'overview', label: <><LayoutDashboard size={14} /> {t('Overview')}</> },
           { id: 'users', label: <><Users size={14} /> {t('Users')}</> },
           { id: 'teams', label: <><CircleDot size={14} /> {t('Teams')}</> },
+          { id: 'links', label: <><Link2 size={14} /> {t('Link types')}</> },
           ...(timeTracking ? [{ id: 'time' as const, label: <><Clock size={14} /> {t('Time tracking')}</> }] : []),
           { id: 'webhooks', label: <><Webhook size={14} /> {t('Webhooks')}</> },
           { id: 'import', label: <><ArchiveRestore size={14} /> {t('Import')}</> },
@@ -59,6 +61,7 @@ export default function Admin() {
       {tab === 'overview' && <Overview me={me} />}
       {tab === 'users' && <UsersTab me={me} />}
       {tab === 'teams' && <TeamsTab />}
+      {tab === 'links' && <LinkTypesTab />}
       {tab === 'time' && <TimeTab />}
       {tab === 'webhooks' && <WebhooksTab />}
       {tab === 'import' && <BackupImportTab />}
@@ -1094,6 +1097,189 @@ function TeamsTab() {
   )
 }
 
+// ---- timers ----
+
+function TimerSettings() {
+  const me = useMe()
+  const qc = useQueryClient()
+  const toast = useToast()
+  const cur = me.data?.workspace?.timer ?? { rounding: 1, reminderHours: 8 }
+  const save = async (patch: Partial<typeof cur>) => {
+    try {
+      await api.put('/admin/workspace', { timer: { ...cur, ...patch } })
+    } catch (e) {
+      toast((e as Error).message)
+    } finally {
+      qc.invalidateQueries({ queryKey: ['me'] })
+    }
+  }
+  return (
+    <div className="row-wrap adm-timer" style={{ gap: 16, margin: '4px 0 14px' }}>
+      <label className="row small" style={{ gap: 6 }}>
+        {t('Timers round up to')}
+        <select className="select input-sm" style={{ width: 'auto' }} value={cur.rounding} onChange={(e) => save({ rounding: Number(e.target.value) })}>
+          {[1, 5, 6, 10, 15, 30].map((m) => <option key={m} value={m}>{t('{n} min', { n: m })}</option>)}
+        </select>
+      </label>
+      <label className="row small" style={{ gap: 6 }}>
+        {t('Remind people of a timer after')}
+        <select className="select input-sm" style={{ width: 'auto' }} value={cur.reminderHours} onChange={(e) => save({ reminderHours: Number(e.target.value) })}>
+          <option value={0}>{t('never')}</option>
+          {[2, 4, 6, 8, 10, 12].map((h) => <option key={h} value={h}>{t('{n} hours', { n: h })}</option>)}
+        </select>
+      </label>
+      <span className="faint small">{t('A timer stops by itself after 24 hours; its time waits as a draft.')}</span>
+    </div>
+  )
+}
+
+// ---- link types ----
+
+function LinkTypesTab() {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const list = useLinkTypes()
+  const [outward, setOutward] = useState('')
+  const [inward, setInward] = useState('')
+  const [dependency, setDependency] = useState(false)
+  const [deleting, setDeleting] = useState<LinkType | null>(null)
+  const run = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn()
+    } catch (e) {
+      toast((e as Error).message)
+    } finally {
+      qc.invalidateQueries({ queryKey: ['link-types'] })
+    }
+  }
+  const add = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!outward.trim()) return
+    await run(() => api.post('/link-types', { outward: outward.trim(), inward: inward.trim() || undefined, dependency }))
+    setOutward('')
+    setInward('')
+    setDependency(false)
+  }
+  const rename = (lt: LinkType, field: 'outward' | 'inward', value: string) => {
+    const v = value.trim()
+    if (!v || v === linkTypeLabel(lt, field === 'outward')) return
+    run(() => api.patch(`/link-types/${encodeURIComponent(lt.key)}`, { [field]: v }))
+  }
+  return (
+    <>
+      <div className="adm-toolbar">
+        <p className="small muted adm-intro">
+          {t('Link types say how two issues belong together. Each reads one way from the first issue and the other way from the second one — “causes” and “is caused by”. Types marked as a dependency work like “blocks”: the second issue counts as blocked while the first one is open, and the timeline draws an arrow.')}
+        </p>
+      </div>
+      {list.isLoading && <Loading />}
+      {list.error && <ErrorBox error={list.error} />}
+      {list.data && (
+        <div className="adm-table-wrap">
+          <table className="list adm-table">
+            <thead>
+              <tr>
+                <th>{t('From the first issue')}</th>
+                <th>{t('From the second issue')}</th>
+                <th>{t('Dependency')}</th>
+                <th>{t('Links')}</th>
+                <th><span className="sr-only">{t('Actions')}</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.data.map((lt) => (
+                <tr key={`${lt.key}:${lt.outward}:${lt.inward}`}>
+                  <td>
+                    <input
+                      className="input input-sm adm-cat-name"
+                      defaultValue={linkTypeLabel(lt, true)}
+                      aria-label={t('Name of {name}', { name: linkTypeLabel(lt, true) })}
+                      onBlur={(e) => rename(lt, 'outward', e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                    />
+                    {lt.builtin && <span className="badge" style={{ marginInlineStart: 8 }}>{t('Built in')}</span>}
+                  </td>
+                  <td>
+                    <input
+                      className="input input-sm adm-cat-name"
+                      defaultValue={linkTypeLabel(lt, false)}
+                      aria-label={t('Reverse name of {name}', { name: linkTypeLabel(lt, true) })}
+                      onBlur={(e) => rename(lt, 'inward', e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                    />
+                  </td>
+                  <td>
+                    <Switch
+                      checked={lt.dependency}
+                      disabled={lt.builtin}
+                      label={lt.builtin ? t('Built-in types stay as they are') : t('{name} is a dependency', { name: lt.outward })}
+                      onChange={(on) => run(() => api.patch(`/link-types/${encodeURIComponent(lt.key)}`, { dependency: on }))}
+                    />
+                  </td>
+                  <td className="faint small">{lt.linkCount}</td>
+                  <td className="adm-actions">
+                    {lt.builtin && lt.renamed && (
+                      <button className="icon-btn" title={t('Use the original names again')} aria-label={t('Reset the names of {name}', { name: lt.outward })} onClick={() => run(() => api.del(`/link-types/${encodeURIComponent(lt.key)}`))}>
+                        <RotateCcw size={15} />
+                      </button>
+                    )}
+                    {!lt.builtin && (
+                      <button className="icon-btn" title={t('Delete')} aria-label={t('Delete {name}', { name: lt.outward })} onClick={() => setDeleting(lt)}><Trash size={15} /></button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <form className="row-wrap adm-cat-add" onSubmit={add}>
+        <input className="input input-sm" placeholder={t('Name, like causes')} aria-label={t('How the new type reads from the first issue')} value={outward} onChange={(e) => setOutward(e.target.value)} />
+        <input className="input input-sm" placeholder={t('Reverse, like is caused by')} aria-label={t('How it reads from the second issue (empty: the same)')} value={inward} onChange={(e) => setInward(e.target.value)} />
+        <label className="row small" style={{ gap: 6 }}>
+          <input type="checkbox" checked={dependency} onChange={(e) => setDependency(e.target.checked)} /> {t('Dependency')}
+        </label>
+        <button className="btn btn-sm btn-primary" type="submit" disabled={!outward.trim()}><Plus size={14} /> {t('Add link type')}</button>
+      </form>
+      {deleting && <DeleteLinkType type={deleting} types={list.data ?? []} onDone={() => qc.invalidateQueries({ queryKey: ['link-types'] })} onClose={() => setDeleting(null)} />}
+    </>
+  )
+}
+
+function DeleteLinkType({ type, types, onDone, onClose }: { type: LinkType; types: LinkType[]; onDone: () => void; onClose: () => void }) {
+  const toast = useToast()
+  const others = types.filter((x) => x.key !== type.key)
+  const [to, setTo] = useState('relates')
+  return (
+    <Confirm
+      title={t('Delete link type {name}?', { name: type.outward })}
+      body={
+        type.linkCount ? (
+          <>
+            <p>{t('{count} links have this type. They get another one:', { count: type.linkCount })}</p>
+            <select className="select" value={to} onChange={(e) => setTo(e.target.value)} aria-label={t('Type the links get')}>
+              {others.map((x) => <option key={x.key} value={x.key}>{linkTypeLabel(x, true)}</option>)}
+            </select>
+          </>
+        ) : (
+          <p>{t('No issues are linked with it.')}</p>
+        )
+      }
+      confirmLabel={t('Delete link type')}
+      danger
+      onConfirm={async () => {
+        try {
+          await api.del(`/link-types/${encodeURIComponent(type.key)}${type.linkCount ? `?replaceWith=${encodeURIComponent(to)}` : ''}`)
+          onDone()
+        } catch (e) {
+          toast((e as Error).message)
+        }
+      }}
+      onClose={onClose}
+    />
+  )
+}
+
 // ---- time tracking ----
 
 function TimeTab() {
@@ -1124,6 +1310,7 @@ function TimeTab() {
       <div className="adm-toolbar">
         <p className="small muted adm-intro">{t('Time categories say what time is spent on — like Development, Meetings or Support — and whether such time is billable unless the person logging it says otherwise. They show up when logging time and in the time report.')}</p>
       </div>
+      <TimerSettings />
       {list.isLoading && <Loading />}
       {list.error && <ErrorBox error={list.error} />}
       {list.data && list.data.length === 0 && <Empty icon={<Clock size={32} />} title={t('No time categories yet')} />}

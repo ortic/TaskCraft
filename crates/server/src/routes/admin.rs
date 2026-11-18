@@ -22,6 +22,9 @@ pub async fn put_workspace(State(state): State<AppState>, CurrentUser(user): Cur
     if let Some(r) = req.get("retention") {
         settings["retention"] = crate::privacy::check_retention(r)?;
     }
+    if let Some(t) = req.get("timer") {
+        settings["timer"] = crate::timers::check_settings(t)?;
+    }
     crate::features::check(&req, &mut settings)?;
     for k in ["accentColor", "defaultLanguage", "weekStart"] {
         if let Some(v) = req.get(k) {

@@ -600,3 +600,19 @@ body.print-view .issue-side { border: 0; background: none; padding: 0 28px; }
 .ci-similar li { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13.5px; }
 .ci-similar a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .ci-similar-key { font-family: var(--mono); font-size: 12px; color: var(--text-soft); }
+
+/* ---- timer ---- */
+.timer-chip { gap: 6px; font-variant-numeric: tabular-nums; }
+.timer-chip.is-running { border-color: var(--success); color: var(--success); }
+.timer-chip.is-paused { border-style: dashed; }
+.timer-chip .issue-key { color: inherit; }
+.timer-pop { padding: 10px; border-bottom: 1px solid var(--border); }
+.timer-pop:last-child { border-bottom: 0; }
+.timer-issue { display: block; text-align: start; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; border: 0; padding: 0; color: var(--text); cursor: pointer; }
+.timer-issue:hover { text-decoration: underline; }
+.timer-big { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 4px; }
+.timer-drafts { padding: 6px 0; }
+.timer-draft { gap: 6px; padding: 4px 10px; }
+.timer-draft-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timer-start.is-running { border-color: var(--success); color: var(--success); }
+@media (max-width: 720px) { .timer-chip .issue-key { display: none; } }

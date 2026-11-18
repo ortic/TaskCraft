@@ -48,8 +48,9 @@ start and due dates, and the project's custom fields.
 - **Who can read a comment**: everyone who sees the issue by default; *members*, *project admins*
   or a team when you choose so under the comment box.
 - **Sub-tasks and epics**: *Add issue* creates a child; epics show their issues with a progress
-  bar. *Link issue* relates issues (blocks, relates to, duplicates, clones); a blocked issue shows
-  it on its cards.
+  bar. *Link issue* relates issues (blocks, relates to, duplicates, and the workspace's own link
+  types like *causes / is caused by*); each issue reads the link its way. A blocked issue — by
+  *blocks* or a type the workspace marked as a dependency — shows it on its cards.
 - **Attachments**: drop files onto the issue or use *Attach*. The workspace may refuse some file
   types or sizes, and files may be checked for viruses before they're stored.
 - **Watch** an issue to be notified of its changes (you watch what you create, are assigned or
@@ -94,11 +95,15 @@ due < endOfWeek() and category != done
 labels is empty or assignee is empty
 "Customer tier" = Gold
 withSubprojects(WEB) and updated > -7d
+link = "is caused by" and category != done
+key in linkedIssues(WEB-12)
 ```
 
 Fields include `project key title text description comment type status category priority
 assignee reporter creator labels sprint version affects component parent points estimate spent
-created updated resolved due start watcher votes blocked` and custom fields by name; operators
+created updated resolved due start watcher votes blocked link` and custom fields by name
+(`link = causes` finds links of that type either way, `link = "is caused by"` one way;
+`linkedIssues(WEB-12, blocks)` the issues WEB-12 blocks); operators
 `= != ~ !~ > >= < <= in, not in, is empty`; dates like `2026-11-01`, `-7d`, `+2w`, `today()`,
 `startOfWeek()`, `endOfMonth()`. The **?** next to the field shows more examples.
 
@@ -138,6 +143,13 @@ a note, a category and whether it's billable; the issue shows the time spent aga
 estimate and what remains. The **Timesheet** shows your week (or someone else's, for those who
 may) and lets you log time per day; the **Time report** sums time by person, project, issue,
 category or period and exports it as CSV.
+
+**Timer**: *Start timer* on an issue (under *Time spent*) and the time runs in the top bar — in
+every tab and on every device. Pause and resume it there; *Stop and log…* asks for the details
+and logs it (the time is rounded up as the workspace says; you can change it). One timer runs at a
+time: starting another one stops the first. A stopped timer you don't log right away waits as a
+**time draft** in the top bar — only you see drafts, and reports don't count them until they're
+logged. A timer that runs on and on reminds you after some hours and stops by itself after 24.
 
 ## Notifications and e-mail
 

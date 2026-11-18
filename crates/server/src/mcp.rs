@@ -122,9 +122,9 @@ fn strip(v: &mut Value) {
 pub(crate) const TQL_HELP: &str = "Search issues with TQL, TaskCraft's query language. Returns the total and the matching issues (key, title, type, status, category, priority, assignee, sprint, points, labels, due date, URL).
 
 TQL: clauses `field operator value` joined with `and`, `or`, `not` and parentheses, optionally followed by `order by field [asc|desc], …`. Bare words search titles and descriptions (`login timeout`).
-Fields: project, key, title, text (title, description, the names of files and the text inside them; words also match by their stem), description, comment, type, status, category (todo | in_progress | done), priority (none < low < medium < high < urgent), assignee, reporter, creator, watcher, voter, votes (a number), labels, sprint, version (released in), affects (found in), component, parent / epic (an issue key), points, estimate, remaining and spent (hours), created, updated, resolved, due, start, blocked (true | false), and custom fields by name (quote names with spaces: \"Customer tier\" = Gold).
+Fields: project, key, title, text (title, description, the names of files and the text inside them; words also match by their stem), description, comment, type, status, category (todo | in_progress | done), priority (none < low < medium < high < urgent), assignee, reporter, creator, watcher, voter, votes (a number), labels, sprint, version (released in), affects (found in), component, parent / epic (an issue key), points, estimate, remaining and spent (hours), created, updated, resolved, due, start, blocked (true | false), link (a link type, e.g. link = \"is blocked by\"; a type's key matches both ways), and custom fields by name (quote names with spaces: \"Customer tier\" = Gold).
 Operators: = != ~ (contains) !~ > >= < <=, in (a, b), not in (a, b), is empty, is not empty.
-Values: quote values with spaces (status = \"In progress\"); people by name, e-mail or me(); dates as 2026-11-12, relative (-7d, +2w, -1m) or now(), today(), startOfWeek(), endOfWeek(), startOfMonth(), endOfMonth(); sprints by name or openSprints() (the running ones), futureSprints(), closedSprints(); versions by name or releasedVersions(), unreleasedVersions().
+Values: quote values with spaces (status = \"In progress\"); people by name, e-mail or me(); dates as 2026-11-12, relative (-7d, +2w, -1m) or now(), today(), startOfWeek(), endOfWeek(), startOfMonth(), endOfMonth(); sprints by name or openSprints() (the running ones), futureSprints(), closedSprints(); versions by name or releasedVersions(), unreleasedVersions(); key in linkedIssues(WEB-12) for the issues linked to WEB-12 (linkedIssues(WEB-12, blocks) for one link type, read from WEB-12).
 Examples:
   project = WEB and sprint in openSprints() and assignee = me() order by rank
   type = Bug and priority >= high and created > -14d
@@ -222,6 +222,26 @@ pub struct CommentArgs {
     pub key: String,
     /// The comment in Markdown
     pub text: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct TimerArgs {
+    /// status, start, pause, resume or stop (stop logs the timed time on the issue)
+    pub action: String,
+    /// Issue key to start the timer on, e.g. WEB-12
+    pub key: Option<String>,
+    /// What you're working on (start), or the time log's note (stop)
+    pub note: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct LinkArgs {
+    /// Issue key, e.g. WEB-12
+    pub key: String,
+    /// How the link reads from this issue: blocks, is blocked by, relates to, duplicates, is duplicated by, or one of the workspace's own link types (an unknown name answers with the list)
+    pub link: String,
+    /// The other issue's key, e.g. WEB-15
+    pub other: String,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -722,6 +742,36 @@ impl TaskMcp {
         Ok(compact(&json!({"commented": key, "commentId": v["id"], "url": self.state.config.issue_url(&key)})))
     }
 
+    async fn timer_action(&self, user: User, a: TimerArgs) -> ApiResult<String> {
+        let st = State(self.state.clone());
+        match a.action.trim().to_lowercase().as_str() {
+            "status" => {
+                let AxJson(v) = crate::timers::get(st, CurrentUser(user)).await?;
+                Ok(compact(&v))
+            }
+            "start" => {
+                let key = clean_key(a.key.as_deref().ok_or_else(|| ApiError::bad("start needs the issue key"))?);
+                let (_, AxJson(v)) = crate::timers::start(st, CurrentUser(user), Path(key), AxJson(json!({"note": a.note}))).await?;
+                Ok(compact(&v))
+            }
+            "pause" => crate::timers::pause(st, CurrentUser(user)).await.map(|_| "paused".into()),
+            "resume" => crate::timers::resume(st, CurrentUser(user)).await.map(|_| "running again".into()),
+            "stop" => {
+                let AxJson(v) = crate::timers::stop(st, CurrentUser(user), AxJson(json!({"book": true, "note": a.note}))).await?;
+                Ok(compact(&v))
+            }
+            other => bad(format!("action {other:?}: use status, start, pause, resume or stop")),
+        }
+    }
+
+    async fn link(&self, user: User, a: LinkArgs) -> ApiResult<String> {
+        let key = clean_key(&a.key);
+        let other = clean_key(&a.other);
+        let req = serde_json::from_value(json!({"kind": a.link, "target": other})).map_err(ApiError::from)?;
+        let (_, AxJson(v)) = routes::issues::add_link(State(self.state.clone()), CurrentUser(user), Path(key.clone()), AxJson(req)).await?;
+        Ok(compact(&json!({"linked": key, "link": a.link, "other": other, "linkId": v["id"]})))
+    }
+
     async fn work(&self, user: User, a: WorkArgs) -> ApiResult<String> {
         let key = clean_key(&a.key);
         let category: Option<Uuid> = match a.category.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
@@ -1061,6 +1111,27 @@ impl TaskMcp {
     async fn add_comment(&self, Extension(parts): Extension<Parts>, Parameters(a): Parameters<CommentArgs>) -> ToolResult {
         match self.writer(&parts).await {
             Ok(u) => done(self.comment(u, a).await),
+            Err(e) => done(Err(e)),
+        }
+    }
+
+    #[tool(
+        description = "The caller's timer: status, start (on an issue), pause, resume, or stop (logs the timed time on the issue, rounded as the workspace says)."
+    )]
+    async fn timer(&self, Extension(parts): Extension<Parts>, Parameters(a): Parameters<TimerArgs>) -> ToolResult {
+        let user = if a.action.trim().eq_ignore_ascii_case("status") { self.reader(&parts).await } else { self.writer(&parts).await };
+        match user {
+            Ok(u) => done(self.timer_action(u, a).await),
+            Err(e) => done(Err(e)),
+        }
+    }
+
+    #[tool(
+        description = "Link two issues: \"WEB-12 blocks WEB-15\", \"is duplicated by\", \"relates to\", or one of the workspace's own link types. Both issues' history records it."
+    )]
+    async fn link_issues(&self, Extension(parts): Extension<Parts>, Parameters(a): Parameters<LinkArgs>) -> ToolResult {
+        match self.writer(&parts).await {
+            Ok(u) => done(self.link(u, a).await),
             Err(e) => done(Err(e)),
         }
     }

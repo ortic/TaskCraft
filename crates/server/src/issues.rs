@@ -40,7 +40,8 @@ pub const SELECT: &str = "SELECT i.id, i.number, i.project_id, p.key AS project_
        (SELECT count(*) FROM issue_votes vt WHERE vt.issue_id = i.id) AS votes,
        (SELECT d.state FROM dev_links d WHERE d.issue_id = i.id AND d.kind = 'pull_request' ORDER BY d.state = 'open' DESC, d.at DESC LIMIT 1) AS pull_request,
        EXISTS (SELECT 1 FROM issue_links bl JOIN issues bi ON bi.id = bl.source_id JOIN statuses bs ON bs.id = bi.status_id
-                WHERE bl.target_id = i.id AND bl.kind = 'blocks' AND bs.category <> 'done' AND bi.deleted_at IS NULL) AS blocked
+                WHERE bl.target_id = i.id AND bs.category <> 'done' AND bi.deleted_at IS NULL
+                  AND (bl.kind = 'blocks' OR bl.kind IN (SELECT lt.key FROM link_types lt WHERE lt.workspace_id = bi.workspace_id AND lt.dependency))) AS blocked
   FROM issues i
   JOIN projects p ON p.id = i.project_id
   JOIN statuses s ON s.id = i.status_id

@@ -13,6 +13,7 @@ import { ProjectIcon } from '../icons'
 import CreateIssue, { type CreateDefaults } from './CreateIssue'
 import CommandPalette from './CommandPalette'
 import IssueView from './IssueView'
+import { TimerChip } from './Timer'
 
 const CreateCtx = createContext<(d?: CreateDefaults) => void>(() => {})
 /** Opens the "create issue" dialog with defaults (project, status, sprint, …). */
@@ -116,6 +117,7 @@ export default function Layout() {
           <button className="btn btn-primary" onClick={() => startCreate()} title={t('Create issue (C)')}>
             <Plus size={15} /> <span className="create-label">{t('Create')}</span>
           </button>
+          <TimerChip />
           <Notifications />
           <button className="icon-btn theme-btn" onClick={toggleTheme} title={t('Toggle dark mode')} aria-label={t('Toggle dark mode')}>
             <Moon size={16} />
@@ -282,6 +284,8 @@ function Notifications() {
         return x.data.message || t('A rule needs your attention')
       case 'sla':
         return x.data.goal === 'response' ? t('First-response goal missed') : t('Resolution goal missed')
+      case 'timer':
+        return x.data.stopped ? t('Your timer stopped after 24 hours: the time waits as a draft') : t('Your timer has been running for {hours} hours', { hours: x.data.hours ?? '' })
       default:
         return who
     }

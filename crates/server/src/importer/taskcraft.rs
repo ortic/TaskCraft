@@ -367,7 +367,9 @@ pub async fn model(state: &AppState, project: Uuid) -> anyhow::Result<(Model, Ve
             m.parents.push((r.id.to_string(), parent.to_string()));
         }
     }
-    // links between the project's own issues
+    // links between the project's own issues; the workspace's own link types come along by name
+    let ws: Uuid = sqlx::query_scalar("SELECT workspace_id FROM projects WHERE id = $1").bind(project).fetch_one(db).await?;
+    let link_types = crate::links::types(db, ws).await?;
     type L = (String, Uuid, Uuid, DateTime<Utc>);
     for (kind, source, target, created) in sqlx::query_as::<_, L>(
         "SELECT kind, source_id, target_id, created_at FROM issue_links WHERE source_id = ANY($1) AND target_id = ANY($1) ORDER BY created_at",
@@ -376,10 +378,14 @@ pub async fn model(state: &AppState, project: Uuid) -> anyhow::Result<(Model, Ve
     .fetch_all(db)
     .await?
     {
+        let own = crate::links::find(&link_types, &kind).filter(|t| !t.builtin);
         m.links.push(model::Link {
             type_name: kind.clone(),
+            known: own.is_none(),
+            outward: own.map(|t| t.outward.clone()).unwrap_or_default(),
+            inward: own.map(|t| t.inward.clone()).unwrap_or_default(),
+            dependency: own.is_some_and(|t| t.dependency),
             kind,
-            known: true,
             source: source.to_string(),
             target: target.to_string(),
             created: Some(created),

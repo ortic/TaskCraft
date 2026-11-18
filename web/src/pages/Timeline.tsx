@@ -21,7 +21,7 @@ type Zoom = 'day' | 'week' | 'month'
 type DragMode = 'move' | 'start' | 'end'
 type Span = [number | null, number | null]
 
-/** A "blocks" link: `from` blocks `to`. `snap` keeps both issues as the link payload had them (for issues not on the timeline). */
+/** A dependency link (blocks, or a type marked as a dependency): `from` blocks `to`. `snap` keeps both issues as the link payload had them (for issues not on the timeline). */
 interface Dep {
   from: string
   to: string
@@ -393,7 +393,7 @@ function TimelineView({ project, result }: { project: Project; result: SearchRes
         try {
           const d = await api.get<IssueDetail>(`/issues/${encodeURIComponent(k)}`)
           const deps: Dep[] = d.links
-            .filter((l) => l.kind === 'blocks')
+            .filter((l) => l.dependency ?? l.kind === 'blocks')
             .map((l) => ({ from: l.outward ? d.key : l.issue.key, to: l.outward ? l.issue.key : d.key, snap: { [d.key]: d, [l.issue.key]: l.issue } }))
           linkCache.current.set(stamp, deps)
           return deps

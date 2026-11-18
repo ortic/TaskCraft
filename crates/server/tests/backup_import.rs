@@ -334,7 +334,9 @@ async fn backup_import_brings_everything_over() {
     let mut links: Vec<String> =
         wip["links"].as_array().unwrap().iter().map(|l| format!("{} {}", l["label"].as_str().unwrap(), l["issue"]["key"].as_str().unwrap())).collect();
     links.sort();
-    assert_eq!(links, vec!["is blocked by INFRA-1", "relates to WEB-6"]);
+    assert_eq!(links, vec!["causes WEB-6", "is blocked by INFRA-1"], "the source's own link types come along");
+    let causes = get(&c, app.url("/link-types")).await.as_array().unwrap().iter().find(|t| t["outward"] == "causes").cloned().unwrap();
+    assert_eq!((causes["key"].as_str(), causes["inward"].as_str(), causes["dependency"].as_bool()), (Some("causes"), Some("is caused by"), Some(false)));
     assert_eq!(search(&c, &app, "project = WEB and blocked = true").await["total"], 1);
     assert_eq!(get(&c, app.url("/issues/WEB-5")).await["type"]["name"], "Sub-task");
     let better = get(&c, app.url("/issues/OPS-7")).await;

@@ -6,6 +6,19 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 
 ## [Unreleased]
 
+- **Timer**: start one on an issue and it runs in the top bar on every device; pause, resume,
+  stop and log (rounded up as the workspace says — *Administration → Time tracking*). Stopped
+  timers not logged yet wait as **time drafts** only their owner sees (reports leave them out);
+  reminders for timers that run long, and a stop after 24 hours. A stop or a booking sent twice is
+  logged once. REST API and an MCP tool.
+
+- **Link types** of the workspace's own (*Administration → Link types*): *causes / is caused by*,
+  *implements*, … — each read its way from both issues, optionally a dependency (blocks like
+  *blocks* does, arrows on the timeline); built-in types can be renamed; deleting one in use moves
+  its links to another type. TQL `link = "is caused by"` and `key in linkedIssues(WEB-12, blocks)`;
+  an MCP tool to link issues; imports and project exports keep the source's link types instead of
+  turning them into "relates to".
+
 - **AI assistance** (optional): summaries of long issue threads from what the reader may see, and
   searching in plain words (a question becomes a TQL query), with Claude through the Anthropic API
   or any model behind an OpenAI-compatible API — also one running in your own network; similar

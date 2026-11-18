@@ -90,8 +90,20 @@ async fn tools_work_with_the_callers_permissions() {
     let (_, tools) = rpc(&c, &url, &tok, json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})).await;
     let tools = tools.unwrap();
     let names: Vec<&str> = tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    for n in ["search_issues", "get_issue", "create_issue", "update_issue", "add_comment", "log_work", "list_projects", "get_sprint", "get_board", "run_report"]
-    {
+    for n in [
+        "search_issues",
+        "get_issue",
+        "create_issue",
+        "update_issue",
+        "add_comment",
+        "log_work",
+        "list_projects",
+        "get_sprint",
+        "get_board",
+        "run_report",
+        "link_issues",
+        "timer",
+    ] {
         assert!(names.contains(&n), "missing tool {n}: {names:?}");
     }
     let search = tools["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "search_issues").unwrap();

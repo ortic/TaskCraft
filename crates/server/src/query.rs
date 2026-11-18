@@ -33,6 +33,8 @@ pub struct Ctx {
     pub custom: HashMap<String, FieldDef>,
     /// The text search configuration of the workspace's language (`english`, `german`, …).
     pub lang: String,
+    /// The workspace's link types, when the query names links (`link`, `linkedIssues()`).
+    pub links: Vec<crate::links::LinkType>,
 }
 
 pub const PRIORITIES: [&str; 5] = ["none", "low", "medium", "high", "urgent"];
@@ -102,7 +104,12 @@ pub async fn context_with(state: &AppState, workspace: Uuid, user: Uuid, visible
         }
     }
     let lang: String = sqlx::query_scalar("SELECT tc_search_lang($1)::text").bind(workspace).fetch_one(&state.db).await?;
-    Ok(Ctx { user, workspace, visible, now: Utc::now(), custom, lang })
+    let links = if taskcraft_tql::fields(q).iter().any(|f| matches!(f.as_str(), "link" | "links" | "key" | "issue")) {
+        crate::links::types(&state.db, workspace).await?
+    } else {
+        Vec::new()
+    };
+    Ok(Ctx { user, workspace, visible, now: Utc::now(), custom, lang, links })
 }
 
 const BUILTIN: &[&str] = &[
@@ -155,6 +162,8 @@ const BUILTIN: &[&str] = &[
     "voter",
     "votes",
     "blocked",
+    "link",
+    "links",
     "rank",
 ];
 
@@ -379,20 +388,66 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
         }
         "key" | "issue" => {
             let neg = only_eq(field, op)?;
-            let keys = texts(field, values)?;
+            // keys, and linkedIssues(KEY[, link type]): the issues linked to KEY
             let mut parts: Vec<(String, i32)> = Vec::new();
-            for k in &keys {
-                parts.push(split_key(k).ok_or_else(|| ApiError::bad(format!("{k} isn't an issue key (like WEB-12)")))?);
+            let mut linked: Vec<((String, i32), Option<(Vec<String>, Vec<String>)>)> = Vec::new();
+            for v in values {
+                match v {
+                    Value::Function { name, args } if name.eq_ignore_ascii_case("linkedissues") => {
+                        let args = texts(field, args)?;
+                        let Some(k) = args.first() else {
+                            return bad("linkedIssues() takes an issue key, like linkedIssues(WEB-12) or linkedIssues(WEB-12, blocks)");
+                        };
+                        let key = split_key(k).ok_or_else(|| ApiError::bad(format!("{k} isn't an issue key (like WEB-12)")))?;
+                        let kinds = match args.get(1) {
+                            Some(t) => Some(link_kinds(ctx, t)?),
+                            None => None,
+                        };
+                        linked.push((key, kinds));
+                    }
+                    Value::Function { name, .. } => return bad(format!("{field} doesn't know {name}(): use linkedIssues(KEY)")),
+                    other => {
+                        let k = other.as_text().unwrap_or_default();
+                        parts.push(split_key(&k).ok_or_else(|| ApiError::bad(format!("{k} isn't an issue key (like WEB-12)")))?);
+                    }
+                }
             }
             qb.push(if neg { "NOT (" } else { "(" });
-            for (i, (k, n)) in parts.into_iter().enumerate() {
-                if i > 0 {
+            let mut first = true;
+            for (k, n) in parts {
+                if !first {
                     qb.push(" OR ");
                 }
+                first = false;
                 qb.push("(i.project_id = ANY(ARRAY(SELECT id FROM projects WHERE upper(key) = ");
                 qb.push_bind(k);
                 qb.push(")) AND i.number = ");
                 qb.push_bind(n);
+                qb.push(")");
+            }
+            for ((k, n), kinds) in linked {
+                if !first {
+                    qb.push(" OR ");
+                }
+                first = false;
+                // read from the other issue: its outward links lead to their targets, its inward ones to their sources
+                let (out, inw) = match kinds {
+                    Some((o, n)) => (Some(o), Some(n)),
+                    None => (None, None),
+                };
+                for (i, (col, other, kinds)) in [("l.source_id", "l.target_id", out), ("l.target_id", "l.source_id", inw)].into_iter().enumerate() {
+                    qb.push(if i == 0 { "i.id IN (" } else { " UNION " });
+                    qb.push(format!("SELECT {other} FROM issue_links l WHERE {col} = (SELECT x.id FROM issues x JOIN projects xp ON xp.id = x.project_id WHERE upper(xp.key) = "));
+                    qb.push_bind(k.clone());
+                    qb.push(" AND x.number = ");
+                    qb.push_bind(n);
+                    qb.push(")");
+                    if let Some(kinds) = kinds {
+                        qb.push(" AND l.kind = ANY(");
+                        qb.push_bind(kinds);
+                        qb.push(")");
+                    }
+                }
                 qb.push(")");
             }
             qb.push(")");
@@ -660,6 +715,23 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
             let col = if field.starts_with("due") { "i.due_date" } else { "i.start_date" };
             time_compare(qb, ctx, field, col, op, values, true)?;
         }
+        "link" | "links" => {
+            // a link of one of these types, in the direction a name has (keys: either way)
+            let neg = only_eq(field, op)?;
+            let mut out: Vec<String> = Vec::new();
+            let mut inw: Vec<String> = Vec::new();
+            for t in texts(field, values)? {
+                let (o, n) = link_kinds(ctx, &t)?;
+                out.extend(o);
+                inw.extend(n);
+            }
+            qb.push(if neg { "NOT " } else { "" });
+            qb.push("EXISTS (SELECT 1 FROM issue_links l WHERE (l.source_id = i.id AND l.kind = ANY(");
+            qb.push_bind(out);
+            qb.push(")) OR (l.target_id = i.id AND l.kind = ANY(");
+            qb.push_bind(inw);
+            qb.push(")))");
+        }
         "blocked" => {
             let neg = only_eq(field, op)?;
             let want = texts(field, values)?.first().map(|s| matches!(s.to_lowercase().as_str(), "true" | "yes" | "1")).unwrap_or(true);
@@ -672,9 +744,16 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
     Ok(())
 }
 
-/// Whether an open issue blocks `i`.
-pub const BLOCKED_SQL: &str = "EXISTS (SELECT 1 FROM issue_links bl JOIN issues bi ON bi.id = bl.source_id JOIN statuses bs ON bs.id = bi.status_id \
-                               WHERE bl.target_id = i.id AND bl.kind = 'blocks' AND bs.category <> 'done' AND bi.deleted_at IS NULL)";
+/// The stored link kinds a type name stands for: (read outward from the issue, read inward).
+fn link_kinds(ctx: &Ctx, name: &str) -> ApiResult<(Vec<String>, Vec<String>)> {
+    crate::links::kinds_for(&ctx.links, name).ok_or_else(|| {
+        let known: Vec<&str> = ctx.links.iter().map(|t| t.key.as_str()).collect();
+        ApiError::bad(format!("there's no link type {name} (link types: {})", known.join(", ")))
+    })
+}
+
+/// Whether an open issue blocks `i` (through a link of a dependency type).
+pub use crate::links::BLOCKED_SQL;
 
 pub fn normalize_label(s: &str) -> String {
     s.trim().to_lowercase().split_whitespace().collect::<Vec<_>>().join("-").chars().take(60).collect()
@@ -1016,6 +1095,11 @@ fn empty(qb: &mut Qb, ctx: &Ctx, field: &str, negated: bool) -> ApiResult<()> {
             qb.push(" (SELECT 1 FROM issue_watchers w WHERE w.issue_id = i.id)");
             return Ok(());
         }
+        "link" | "links" => {
+            qb.push(if negated { "EXISTS" } else { "NOT EXISTS" });
+            qb.push(" (SELECT 1 FROM issue_links l WHERE l.source_id = i.id OR l.target_id = i.id)");
+            return Ok(());
+        }
         other if !is_builtin(other) => {
             let def = custom_def(ctx, other)?.clone();
             qb.push("(NULLIF(NULLIF(");
@@ -1101,6 +1185,17 @@ mod tests {
             now: Utc.with_ymd_and_hms(2026, 11, 12, 10, 30, 0).unwrap(),
             custom: HashMap::new(),
             lang: "english".into(),
+            links: crate::links::BUILTIN
+                .iter()
+                .map(|(k, o, i, d)| crate::links::LinkType {
+                    key: k.to_string(),
+                    outward: o.to_string(),
+                    inward: i.to_string(),
+                    dependency: *d,
+                    builtin: true,
+                    renamed: false,
+                })
+                .collect(),
         }
     }
 
@@ -1110,6 +1205,24 @@ mod tests {
         push_where(&mut qb, &ctx(), &q).unwrap();
         push_order(&mut qb, &ctx(), &q.order, "i.rank").unwrap();
         qb.sql().as_str().to_string()
+    }
+
+    #[test]
+    fn compiles_links() {
+        let s = sql("link = \"is blocked by\" and key in linkedIssues(WEB-12, duplicates)");
+        assert!(
+            s.contains("EXISTS (SELECT 1 FROM issue_links l WHERE (l.source_id = i.id AND l.kind = ANY($2)) OR (l.target_id = i.id AND l.kind = ANY($3)))"),
+            "{s}"
+        );
+        assert!(s.contains("i.id IN (SELECT l.target_id FROM issue_links l WHERE l.source_id = (SELECT x.id"), "{s}");
+        assert!(s.contains(" UNION SELECT l.source_id FROM issue_links l WHERE l.target_id = "), "{s}");
+        let s = sql("link is empty or key in (WEB-1, linkedIssues(WEB-2))");
+        assert!(s.contains("NOT EXISTS (SELECT 1 FROM issue_links l WHERE l.source_id = i.id OR l.target_id = i.id)"), "{s}");
+        assert!(!s.contains("l.kind = ANY"), "no type: every link {s}");
+        let q = parse("link = nonsense").unwrap();
+        let mut qb: Qb = QueryBuilder::new("SELECT 1 FROM issues i WHERE");
+        let e = push_where(&mut qb, &ctx(), &q).unwrap_err().to_string();
+        assert!(e.contains("there's no link type nonsense") && e.contains("blocks, relates"), "{e}");
     }
 
     #[test]

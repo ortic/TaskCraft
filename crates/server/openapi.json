@@ -6815,18 +6815,11 @@
         "properties": {
          "kind": {
           "type": "string",
-          "enum": [
-           "blocks",
-           "is blocked by",
-           "blockedBy",
-           "relates",
-           "relates to",
-           "duplicates",
-           "is duplicated by",
-           "duplicatedBy",
-           "clones"
-          ],
-          "description": "the link as read from this issue"
+          "description": "a link type's key (read from this issue: this issue → target), or how the link reads from this issue: blocks, is blocked by, relates to, duplicates, is duplicated by, clones, or the workspace's own names (is caused by); also blockedBy, duplicatedBy. 400 lists the types for an unknown one"
+         },
+         "inward": {
+          "type": "boolean",
+          "description": "with a key: the other direction (target → this issue)"
          },
          "target": {
           "type": "string",
@@ -7425,6 +7418,252 @@
     }
    }
   },
+  "/link-types": {
+   "get": {
+    "tags": [
+     "Issues"
+    ],
+    "summary": "The workspace's link types",
+    "operationId": "listLinkTypes",
+    "description": "The built-in ones (blocks, relates, duplicates, clones) first, then the workspace's own in their order, each with the number of links it has.",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/LinkType"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "Issues"
+    ],
+    "summary": "Add a link type (workspace admins)",
+    "operationId": "createLinkType",
+    "description": "The key is made from the name. No name may read like another type's (400).",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "outward": {
+          "type": "string",
+          "description": "how it reads from the first issue, at most 60 characters"
+         },
+         "inward": {
+          "type": "string",
+          "description": "how it reads from the second one (default: the same)"
+         },
+         "dependency": {
+          "type": "boolean",
+          "description": "the second issue counts as blocked while the first is open (default false)"
+         }
+        },
+        "required": [
+         "outward"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "key": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "key"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/link-types/{key}": {
+   "patch": {
+    "tags": [
+     "Issues"
+    ],
+    "summary": "Rename a link type, or say whether it's a dependency (workspace admins)",
+    "operationId": "updateLinkType",
+    "description": "Built-in types can be renamed (their old names keep working when linking); whether they're a dependency stays.",
+    "parameters": [
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "project key (former keys keep working) or project id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "outward": {
+          "type": "string"
+         },
+         "inward": {
+          "type": "string"
+         },
+         "dependency": {
+          "type": "boolean"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "Issues"
+    ],
+    "summary": "Delete a link type (workspace admins)",
+    "operationId": "deleteLinkType",
+    "description": "A type of the workspace's own: its links get the type `replaceWith` (409 when it has links and none is given). A built-in type: its own names again.",
+    "parameters": [
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "project key (former keys keep working) or project id",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "replaceWith",
+      "in": "query",
+      "required": false,
+      "description": "the link type its links get",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   }
+  },
+  "/link-types/order": {
+   "put": {
+    "tags": [
+     "Issues"
+    ],
+    "summary": "Put the workspace's own link types in order (workspace admins)",
+    "operationId": "orderLinkTypes",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "keys": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         }
+        },
+        "required": [
+         "keys"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
   "/issues/{key}/comments": {
    "get": {
     "tags": [
@@ -7786,6 +8025,11 @@
           "type": "boolean",
           "description": "default: the category's setting, else false"
          },
+         "draftId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "a time draft of the caller's on this issue, which this log replaces (409 when it was booked already)"
+         },
          "remaining": {
           "oneOf": [
            {
@@ -7980,6 +8224,421 @@
     "summary": "Delete a time log",
     "operationId": "deleteWorklog",
     "description": "The person who logged it or a project admin.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/me/timer": {
+   "get": {
+    "tags": [
+     "Comments & time"
+    ],
+    "summary": "The caller's running timer",
+    "operationId": "getTimer",
+    "description": "`timer` is null when none runs; `drafts`: how many stopped timers wait to be logged.",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "timer": {
+           "type": [
+            "object",
+            "null"
+           ],
+           "properties": {
+            "issue": {
+             "$ref": "#/components/schemas/IssueSummary"
+            },
+            "startedAt": {
+             "type": "string",
+             "format": "date-time"
+            },
+            "pausedAt": {
+             "type": [
+              "string",
+              "null"
+             ],
+             "format": "date-time",
+             "description": "while paused"
+            },
+            "elapsedSeconds": {
+             "type": "integer",
+             "description": "time run so far, pauses left out"
+            },
+            "note": {
+             "type": [
+              "string",
+              "null"
+             ]
+            }
+           },
+           "required": [
+            "issue",
+            "startedAt",
+            "pausedAt",
+            "elapsedSeconds",
+            "note"
+           ]
+          },
+          "drafts": {
+           "type": "integer"
+          }
+         },
+         "required": [
+          "timer",
+          "drafts"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "Comments & time"
+    ],
+    "summary": "Stop the caller's timer without keeping the time",
+    "operationId": "discardTimer",
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/issues/{key}/timer": {
+   "post": {
+    "tags": [
+     "Comments & time"
+    ],
+    "summary": "Start a timer on an issue",
+    "operationId": "startTimer",
+    "description": "Project members, when the workspace tracks time. One timer per person: one running on another issue answers 409, unless `replace` — then it stops into a draft (returned).",
+    "parameters": [
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "issue key (e.g. WEB-12; former keys keep working) or issue id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "note": {
+          "type": "string",
+          "description": "what you're working on"
+         },
+         "replace": {
+          "type": "boolean",
+          "description": "stop a timer on another issue into a draft"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "started": {
+           "type": "string"
+          },
+          "draft": {
+           "anyOf": [
+            {
+             "$ref": "#/components/schemas/TimeDraft"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          }
+         },
+         "required": [
+          "started",
+          "draft"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   }
+  },
+  "/me/timer/pause": {
+   "post": {
+    "tags": [
+     "Comments & time"
+    ],
+    "summary": "Pause the caller's timer",
+    "operationId": "pauseTimer",
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/me/timer/resume": {
+   "post": {
+    "tags": [
+     "Comments & time"
+    ],
+    "summary": "Resume the caller's timer",
+    "operationId": "resumeTimer",
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/me/timer/stop": {
+   "post": {
+    "tags": [
+     "Comments & time"
+    ],
+    "summary": "Stop the caller's timer",
+    "operationId": "stopTimer",
+    "description": "The time becomes a draft (rounded up as the workspace says, at most 24 hours); with `book` it is logged right away — `time`, `note`, `categoryId`, `billable` and `remaining` as when logging time. A booking that fails leaves the draft. 409 when no timer runs (a repeated stop changes nothing).",
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "book": {
+          "type": "boolean"
+         },
+         "time": {
+          "type": "string"
+         },
+         "note": {
+          "type": "string"
+         },
+         "categoryId": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "uuid"
+         },
+         "billable": {
+          "type": "boolean"
+         },
+         "remaining": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "draft": {
+           "anyOf": [
+            {
+             "$ref": "#/components/schemas/TimeDraft"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          },
+          "worklog": {
+           "type": [
+            "object",
+            "null"
+           ],
+           "properties": {
+            "id": {
+             "type": "string",
+             "format": "uuid"
+            },
+            "minutes": {
+             "type": "integer"
+            }
+           },
+           "required": [
+            "id",
+            "minutes"
+           ]
+          },
+          "issue": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "draft",
+          "worklog"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   }
+  },
+  "/me/time-drafts": {
+   "get": {
+    "tags": [
+     "Comments & time"
+    ],
+    "summary": "The caller's time drafts",
+    "operationId": "listTimeDrafts",
+    "description": "Newest first; log one with `draftId` on POST /issues/{key}/worklogs.",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/TimeDraft"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/me/time-drafts/{id}": {
+   "delete": {
+    "tags": [
+     "Comments & time"
+    ],
+    "summary": "Let a time draft go",
+    "operationId": "deleteTimeDraft",
     "parameters": [
      {
       "name": "id",
@@ -13983,6 +14642,20 @@
            }
           },
           "description": "what may be uploaded to issues from the app, the portal and e-mail"
+         },
+         "timer": {
+          "type": "object",
+          "properties": {
+           "rounding": {
+            "type": "integer",
+            "description": "timed time is rounded up to 1, 5, 6, 10, 15 or 30 minutes (default 1)"
+           },
+           "reminderHours": {
+            "type": "integer",
+            "description": "people are reminded of a timer running this long, 1 to 23 hours; 0: never (default 8)"
+           }
+          },
+          "description": "timers"
          }
         }
        }
@@ -15983,30 +16656,23 @@
      },
      "kind": {
       "type": "string",
-      "enum": [
-       "blocks",
-       "relates",
-       "duplicates",
-       "clones"
-      ],
-      "description": "stored direction-free kind"
+      "description": "the link type's key: blocks, relates, duplicates, clones or one of the workspace's own (GET /link-types)"
      },
      "label": {
       "type": "string",
-      "enum": [
-       "blocks",
-       "is blocked by",
-       "duplicates",
-       "is duplicated by",
-       "clones",
-       "is cloned by",
-       "relates to"
-      ],
-      "description": "the link as read from this issue"
+      "description": "the link as read from this issue (blocks, is blocked by, relates to, …, or the workspace's names)"
      },
      "outward": {
       "type": "boolean",
       "description": "this issue is the link's source"
+     },
+     "dependency": {
+      "type": "boolean",
+      "description": "the link's target is blocked while its source is open"
+     },
+     "builtin": {
+      "type": "boolean",
+      "description": "a built-in type under its own name (label is the English name)"
      },
      "issue": {
       "$ref": "#/components/schemas/IssueSummary"
@@ -16017,8 +16683,58 @@
      "kind",
      "label",
      "outward",
+     "dependency",
+     "builtin",
      "issue"
     ]
+   },
+   "LinkType": {
+    "type": "object",
+    "properties": {
+     "key": {
+      "type": "string",
+      "description": "what links store and TQL takes (link = causes)"
+     },
+     "outward": {
+      "type": "string",
+      "description": "how it reads from the link's source, e.g. causes"
+     },
+     "inward": {
+      "type": "string",
+      "description": "how it reads from its target, e.g. is caused by (the same for types without a direction)"
+     },
+     "dependency": {
+      "type": "boolean",
+      "description": "the target is blocked while the source is open (blocks, and types marked so)"
+     },
+     "builtin": {
+      "type": "boolean",
+      "description": "blocks, relates, duplicates, clones"
+     },
+     "renamed": {
+      "type": "boolean",
+      "description": "a built-in type with names of the workspace's own"
+     },
+     "symmetric": {
+      "type": "boolean",
+      "description": "reads the same both ways"
+     },
+     "linkCount": {
+      "type": "integer",
+      "description": "links of this type in the workspace"
+     }
+    },
+    "required": [
+     "key",
+     "outward",
+     "inward",
+     "dependency",
+     "builtin",
+     "renamed",
+     "symmetric",
+     "linkCount"
+    ],
+    "description": "A type of link between issues."
    },
    "WebLink": {
     "type": "object",
@@ -17431,6 +18147,9 @@
        },
        "uploads": {
         "description": "upload rules: {blockedTypes: [file endings], maxMb} (null: none)"
+       },
+       "timer": {
+        "description": "timers: {rounding (minutes), reminderHours}"
        },
        "virusScanning": {
         "type": "boolean",
@@ -20651,6 +21370,60 @@
      "billable"
     ],
     "description": "A time log."
+   },
+   "TimeDraft": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "key": {
+      "type": "string",
+      "description": "the issue"
+     },
+     "title": {
+      "type": "string",
+      "description": "the issue's title"
+     },
+     "minutes": {
+      "type": "integer",
+      "description": "as timed, rounded up as the workspace says (at most 24 hours)"
+     },
+     "date": {
+      "type": "string",
+      "format": "date",
+      "description": "the day the timer started, in the person's time zone"
+     },
+     "startedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "note": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    },
+    "required": [
+     "id",
+     "key",
+     "title",
+     "minutes",
+     "date",
+     "startedAt",
+     "note",
+     "createdAt"
+    ],
+    "description": "A stopped timer's time, waiting to be logged (only its owner sees it; reports leave it out)."
    },
    "TimeCategory": {
     "type": "object",

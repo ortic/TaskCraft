@@ -291,12 +291,28 @@ schemas = {
     "IssueLink": obj(
         {
             "id": uuid,
-            "kind": enum("blocks", "relates", "duplicates", "clones", desc="stored direction-free kind"),
-            "label": enum("blocks", "is blocked by", "duplicates", "is duplicated by", "clones", "is cloned by", "relates to", desc="the link as read from this issue"),
+            "kind": d(txt, "the link type's key: blocks, relates, duplicates, clones or one of the workspace's own (GET /link-types)"),
+            "label": d(txt, "the link as read from this issue (blocks, is blocked by, relates to, …, or the workspace's names)"),
             "outward": d(boolean, "this issue is the link's source"),
+            "dependency": d(boolean, "the link's target is blocked while its source is open"),
+            "builtin": d(boolean, "a built-in type under its own name (label is the English name)"),
             "issue": S("IssueSummary"),
         },
-        ["id", "kind", "label", "outward", "issue"],
+        ["id", "kind", "label", "outward", "dependency", "builtin", "issue"],
+    ),
+    "LinkType": obj(
+        {
+            "key": d(txt, "what links store and TQL takes (link = causes)"),
+            "outward": d(txt, "how it reads from the link's source, e.g. causes"),
+            "inward": d(txt, "how it reads from its target, e.g. is caused by (the same for types without a direction)"),
+            "dependency": d(boolean, "the target is blocked while the source is open (blocks, and types marked so)"),
+            "builtin": d(boolean, "blocks, relates, duplicates, clones"),
+            "renamed": d(boolean, "a built-in type with names of the workspace's own"),
+            "symmetric": d(boolean, "reads the same both ways"),
+            "linkCount": d(num, "links of this type in the workspace"),
+        },
+        ["key", "outward", "inward", "dependency", "builtin", "renamed", "symmetric", "linkCount"],
+        "A type of link between issues.",
     ),
     "WebLink": obj({"id": uuid, "url": uri, "title": txt, "kind": enum("web", "wiki", desc="wiki: a WikiCraft page"), "createdAt": dt}, ["id", "url", "title", "kind"]),
     "IssueAttachment": obj(
@@ -617,6 +633,7 @@ schemas["Me"] = obj(
                     "weekStart": d(anyval, "first day of the week as an administrator set it (null: by language)"),
                     "retention": d(anyval, "retention rules (admins only; null for others)"),
                     "uploads": d(anyval, "upload rules: {blockedTypes: [file endings], maxMb} (null: none)"),
+                    "timer": d(anyval, "timers: {rounding (minutes), reminderHours}"),
                     "virusScanning": d(boolean, "uploads are scanned for viruses (shown to admins; false for others)"),
                     "maxUploadMb": d(num, "the server's largest upload (TASKCRAFT_MAX_UPLOAD_MB)"),
                     "timeZone": null(txt, "default time zone (IANA) for people who haven't picked one"),
@@ -1462,7 +1479,9 @@ op("put", "/issues/{key}/watch", "watchIssue", "Issues", "Watch or stop watching
 op("post", "/issues/{key}/links", "addIssueLink", "Issues", "Link an issue to another one",
    desc="Project members. Recorded in both issues' history; linking an issue to itself is refused.",
    req=body(obj({
-       "kind": enum("blocks", "is blocked by", "blockedBy", "relates", "relates to", "duplicates", "is duplicated by", "duplicatedBy", "clones", desc="the link as read from this issue"),
+       "kind": d(txt, "a link type's key (read from this issue: this issue → target), or how the link reads from this issue: blocks, is blocked by, relates to, duplicates, "
+                 "is duplicated by, clones, or the workspace's own names (is caused by); also blockedBy, duplicatedBy. 400 lists the types for an unknown one"),
+       "inward": d(boolean, "with a key: the other direction (target → this issue)"),
        "target": d(txt, "the other issue: key or id"),
    }, ["kind", "target"])),
    res=created(obj({"id": uuid}, ["id"])))
@@ -1780,6 +1799,20 @@ schemas["Worklog"] = obj(
     },
     ["id", "user", "minutes", "date", "note", "category", "billable"],
     "A time log.",
+)
+schemas["TimeDraft"] = obj(
+    {
+        "id": uuid,
+        "key": d(txt, "the issue"),
+        "title": d(txt, "the issue's title"),
+        "minutes": d(num, "as timed, rounded up as the workspace says (at most 24 hours)"),
+        "date": d(date, "the day the timer started, in the person's time zone"),
+        "startedAt": ndt(),
+        "note": ntxt(),
+        "createdAt": dt,
+    },
+    ["id", "key", "title", "minutes", "date", "startedAt", "note", "createdAt"],
+    "A stopped timer's time, waiting to be logged (only its owner sees it; reports leave it out).",
 )
 schemas["TimeCategory"] = obj(
     {
@@ -2179,6 +2212,7 @@ op(
                 "note": txt,
                 "categoryId": nuuid("a time category (not an archived one)"),
                 "billable": d(boolean, "default: the category's setting, else false"),
+                "draftId": d(uuid, "a time draft of the caller's on this issue, which this log replaces (409 when it was booked already)"),
                 "remaining": one(
                     enum("auto", "keep"),
                     d(txt, "a new remaining estimate such as 3h"),
@@ -2200,6 +2234,24 @@ op(
     req=body(obj({"minutes": number, "time": d(txt, "duration such as 1h 30m (instead of minutes)"), "date": date, "note": ntxt(), "categoryId": nuuid(), "billable": boolean})),
     res=ok(obj({"id": uuid, "minutes": num, "date": date, "note": ntxt(), "categoryId": nuuid(), "billable": boolean}, ["id", "minutes", "date", "note", "categoryId", "billable"])),
 )
+op("get", "/me/timer", "getTimer", "Comments & time", "The caller's running timer",
+   desc="`timer` is null when none runs; `drafts`: how many stopped timers wait to be logged.",
+   res=ok(obj({"timer": null(obj({"issue": S("IssueSummary"), "startedAt": dt, "pausedAt": ndt("while paused"), "elapsedSeconds": d(num, "time run so far, pauses left out"),
+                                  "note": ntxt()}, ["issue", "startedAt", "pausedAt", "elapsedSeconds", "note"])), "drafts": num}, ["timer", "drafts"])))
+op("post", "/issues/{key}/timer", "startTimer", "Comments & time", "Start a timer on an issue",
+   desc="Project members, when the workspace tracks time. One timer per person: one running on another issue answers 409, unless `replace` — then it stops into a draft (returned).",
+   req=body(obj({"note": d(txt, "what you're working on"), "replace": d(boolean, "stop a timer on another issue into a draft")}), required=False),
+   res=created(obj({"started": txt, "draft": null(S("TimeDraft"))}, ["started", "draft"])), err="409")
+op("post", "/me/timer/pause", "pauseTimer", "Comments & time", "Pause the caller's timer", res=NO, err="404")
+op("post", "/me/timer/resume", "resumeTimer", "Comments & time", "Resume the caller's timer", res=NO, err="404")
+op("post", "/me/timer/stop", "stopTimer", "Comments & time", "Stop the caller's timer",
+   desc="The time becomes a draft (rounded up as the workspace says, at most 24 hours); with `book` it is logged right away — `time`, `note`, `categoryId`, `billable` and `remaining` as when logging time. "
+        "A booking that fails leaves the draft. 409 when no timer runs (a repeated stop changes nothing).",
+   req=body(obj({"book": boolean, "time": txt, "note": txt, "categoryId": nuuid(), "billable": boolean, "remaining": txt}), required=False),
+   res=ok(obj({"draft": null(S("TimeDraft")), "worklog": null(obj({"id": uuid, "minutes": num}, ["id", "minutes"])), "issue": txt}, ["draft", "worklog"])), err="409")
+op("delete", "/me/timer", "discardTimer", "Comments & time", "Stop the caller's timer without keeping the time", res=NO, err="404")
+op("get", "/me/time-drafts", "listTimeDrafts", "Comments & time", "The caller's time drafts", desc="Newest first; log one with `draftId` on POST /issues/{key}/worklogs.", res=ok(arr(S("TimeDraft"))))
+op("delete", "/me/time-drafts/{id}", "deleteTimeDraft", "Comments & time", "Let a time draft go", res=NO, err="404")
 op("delete", "/worklogs/{id}", "deleteWorklog", "Comments & time", "Delete a time log", desc="The person who logged it or a project admin.", res=NO)
 op(
     "get",
@@ -2238,6 +2290,21 @@ op(
     res={"200": {"description": "The report (CSV with format=csv)", "content": {"application/json": {"schema": S("TimeReport")}, "text/csv": {"schema": {"type": "string"}}}}},
     err="400",
 )
+op("get", "/link-types", "listLinkTypes", "Issues", "The workspace's link types",
+   desc="The built-in ones (blocks, relates, duplicates, clones) first, then the workspace's own in their order, each with the number of links it has.", res=ok(arr(S("LinkType"))))
+op("post", "/link-types", "createLinkType", "Issues", "Add a link type (workspace admins)",
+   desc="The key is made from the name. No name may read like another type's (400).",
+   req=body(obj({"outward": d(txt, "how it reads from the first issue, at most 60 characters"), "inward": d(txt, "how it reads from the second one (default: the same)"),
+                 "dependency": d(boolean, "the second issue counts as blocked while the first is open (default false)")}, ["outward"])),
+   res=created(obj({"key": txt}, ["key"])), err="400")
+op("patch", "/link-types/{key}", "updateLinkType", "Issues", "Rename a link type, or say whether it's a dependency (workspace admins)",
+   desc="Built-in types can be renamed (their old names keep working when linking); whether they're a dependency stays.",
+   req=body(obj({"outward": txt, "inward": txt, "dependency": boolean})), res=NO, err="400 404")
+op("delete", "/link-types/{key}", "deleteLinkType", "Issues", "Delete a link type (workspace admins)",
+   desc="A type of the workspace's own: its links get the type `replaceWith` (409 when it has links and none is given). A built-in type: its own names again.",
+   query=[q("replaceWith", "the link type its links get")], res=NO, err="404 409")
+op("put", "/link-types/order", "orderLinkTypes", "Issues", "Put the workspace's own link types in order (workspace admins)",
+   req=body(obj({"keys": arr(txt)}, ["keys"])), res=NO)
 op("get", "/time-categories", "listTimeCategories", "Comments & time", "The workspace's time categories", desc="Archived ones too (marked).", res=ok(arr(S("TimeCategory"))))
 op("post", "/time-categories", "createTimeCategory", "Comments & time", "Add a time category (workspace admins)",
    req=body(obj({"name": d(txt, "unique, at most 60 characters"), "billable": d(boolean, "default false")}, ["name"])), res=created(B_ID))
@@ -3153,6 +3220,8 @@ op("put", "/admin/workspace", "updateWorkspace", "Administration", "Rename the w
            [],
            "what may be uploaded to issues from the app, the portal and e-mail",
        ),
+       "timer": obj({"rounding": d(num, "timed time is rounded up to 1, 5, 6, 10, 15 or 30 minutes (default 1)"),
+                     "reminderHours": d(num, "people are reminded of a timer running this long, 1 to 23 hours; 0: never (default 8)")}, [], "timers"),
    })), res=NO)
 op("put", "/admin/workspace/logo", "putWorkspaceLogo", "Administration", "Set the workspace's logo",
    desc="Workspace admins, in the browser. The image itself is the body: PNG, JPEG, GIF or WebP up to 512 KB (not SVG).", auth="session",

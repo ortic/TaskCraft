@@ -616,6 +616,7 @@ fn read_issue(
             source,
             target,
             created: None,
+            ..Default::default()
         });
     }
     if let Some(parent) = id(&it["parent"]["id"]) {

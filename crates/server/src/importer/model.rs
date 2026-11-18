@@ -209,10 +209,19 @@ pub struct Attachment {
 pub struct Link {
     /// blocks (source blocks target) | relates | duplicates | clones
     pub kind: String,
-    /// the source's link type was understood (else it's imported as relates, with a warning)
+    /// one of TaskCraft's built-in link types (else the source's type comes over as a link type
+    /// of its own: `type_name`, read as `outward` / `inward`)
     pub known: bool,
     /// the source's name of the link type
     pub type_name: String,
+    /// how the source's type reads from the link's source and from its target ("causes", "is caused by")
+    #[serde(default)]
+    pub outward: String,
+    #[serde(default)]
+    pub inward: String,
+    /// a type of its own that makes the target blocked while the source is open
+    #[serde(default)]
+    pub dependency: bool,
     pub source: String,
     pub target: String,
     pub created: Option<DateTime<Utc>>,

@@ -1561,12 +1561,42 @@ impl<'a> Run<'a> {
     /// Parents (sub-tasks, epics) and links, once every issue exists.
     async fn connect(&mut self, tx: &mut Tx, reports: &mut [ProjectReport], project_of: &HashMap<Uuid, usize>) -> anyhow::Result<()> {
         let m = self.m;
-        let mut links: Vec<&model::Link> = Vec::new();
-        for l in &m.links {
-            if !l.known {
-                self.w.add("link-type", "links of the type “{name}” are imported as “relates to”", &[("name", l.type_name.clone())]);
+        let links: Vec<&model::Link> = m.links.iter().collect();
+        // the source's own link types: matched by their names, else added to the workspace
+        let ws = self.user.workspace_id;
+        let mut types = crate::links::types(&mut **tx, ws).await?;
+        let mut own: HashMap<(String, String, String), String> = HashMap::new();
+        for l in links.iter().filter(|l| !l.known) {
+            let name = if l.type_name.trim().is_empty() { l.kind.trim() } else { l.type_name.trim() };
+            let outward = if l.outward.trim().is_empty() { name } else { l.outward.trim() };
+            let inward = if l.inward.trim().is_empty() { outward } else { l.inward.trim() };
+            let id = (name.to_string(), outward.to_string(), inward.to_string());
+            if own.contains_key(&id) {
+                continue;
             }
-            links.push(l);
+            let same = types.iter().find(|t| t.outward.eq_ignore_ascii_case(outward) && t.inward.eq_ignore_ascii_case(inward));
+            let key = match same {
+                Some(t) => t.key.clone(),
+                None => {
+                    let key = crate::links::free_key(&types, name);
+                    sqlx::query(
+                        "INSERT INTO link_types (id, workspace_id, key, outward, inward, dependency, position)
+                         VALUES ($1, $2, $3, $4, $5, $6, (SELECT COALESCE(max(position), 0) + 1 FROM link_types WHERE workspace_id = $2))",
+                    )
+                    .bind(new_id())
+                    .bind(ws)
+                    .bind(&key)
+                    .bind(outward)
+                    .bind(inward)
+                    .bind(l.dependency)
+                    .execute(&mut **tx)
+                    .await?;
+                    self.w.add("link-type", "links of the type “{name}” come with a link type of their own", &[("name", name.to_string())]);
+                    types = crate::links::types(&mut **tx, ws).await?;
+                    key
+                }
+            };
+            own.insert(id, key);
         }
         set_progress(&self.progress, "links", None, 0, (m.parents.len() + links.len()) as u64);
         let mut done: HashSet<&str> = HashSet::new();
@@ -1607,11 +1637,16 @@ impl<'a> Run<'a> {
             if (!s.new && !t.new) || s.id == t.id {
                 continue;
             }
-            let kind: &'static str = match l.kind.as_str() {
-                "blocks" => "blocks",
-                "duplicates" => "duplicates",
-                "clones" => "clones",
-                _ => "relates",
+            let kind: String = if l.known {
+                match l.kind.as_str() {
+                    "blocks" | "duplicates" | "clones" => l.kind.clone(),
+                    _ => "relates".into(),
+                }
+            } else {
+                let name = if l.type_name.trim().is_empty() { l.kind.trim() } else { l.type_name.trim() };
+                let outward = if l.outward.trim().is_empty() { name } else { l.outward.trim() };
+                let inward = if l.inward.trim().is_empty() { outward } else { l.inward.trim() };
+                own.get(&(name.to_string(), outward.to_string(), inward.to_string())).cloned().unwrap_or_else(|| "relates".into())
             };
             let at = l.created.unwrap_or_else(Utc::now);
             let inserted = sqlx::query(
@@ -1620,7 +1655,7 @@ impl<'a> Run<'a> {
             .bind(new_id())
             .bind(s.id)
             .bind(t.id)
-            .bind(kind)
+            .bind(&kind)
             .bind(at)
             .execute(&mut **tx)
             .await?
@@ -1635,7 +1670,7 @@ impl<'a> Run<'a> {
                     kind: "link",
                     field: Some("link"),
                     old: Value::Null,
-                    new: json!({"kind": crate::routes::issues::link_label(kind, outward), "key": other.key}),
+                    new: json!({"kind": crate::links::label(&types, &kind, outward), "key": other.key}),
                     actor: None,
                     at,
                 };

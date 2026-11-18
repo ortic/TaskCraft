@@ -39,6 +39,10 @@
     "one": "{count} issue imported.",
     "other": "{count} issues imported."
   },
+  "{count} links have this type. They get another one:": {
+    "one": "{count} link has this type. It gets another one:",
+    "other": "{count} links have this type. They get another one:"
+  },
   "{count} members": {
     "one": "{count} member",
     "other": "{count} members"
@@ -119,9 +123,17 @@
     "one": "{n} day left",
     "other": "{n} days left"
   },
+  "{n} hours": {
+    "one": "{n} hour",
+    "other": "{n} hours"
+  },
   "{n} issues changed": {
     "one": "{n} issue changed",
     "other": "{n} issues changed"
+  },
+  "{n} time drafts": {
+    "one": "{n} time draft",
+    "other": "{n} time drafts"
   },
   "{n} weeks": {
     "one": "{n} week",
@@ -218,5 +230,9 @@
   "Velocity of the last {count} sprints: {average} completed on average.": {
     "one": "Velocity of the last sprint: {average} completed.",
     "other": "Velocity of the last {count} sprints: {average} completed on average."
+  },
+  "Your timer has been running for {hours} hours": {
+    "one": "Your timer has been running for {hours} hour",
+    "other": "Your timer has been running for {hours} hours"
   }
 }

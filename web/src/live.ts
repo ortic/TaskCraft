@@ -55,6 +55,9 @@ export function useLiveUpdates(enabled: boolean) {
           case 'notification':
             invalidate(['notifications'])
             break
+          case 'timer':
+            invalidate(['timer', 'time-drafts', 'worklogs', 'timesheet'])
+            break
         }
       })
       es.addEventListener('resync', () => qc.invalidateQueries())

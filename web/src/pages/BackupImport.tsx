@@ -202,7 +202,7 @@ function warningText(w: Warning): string {
     case 'restricted-comments': return t('Comments only a group or role could see are for the project’s members here (not viewers or guests)')
     case 'time-category': return t('The activity “{name}” becomes a time category (not billable until an admin says so)', { name: p.name })
     case 'security-level': return t('Private issues in {project} get the security level “{level}”: the project’s members see them (not viewers or guests); who exactly can be changed in the project’s settings', { project: p.project, level: p.level })
-    case 'link-type': return t('Links of the type “{name}” are imported as “relates to”', { name: p.name })
+    case 'link-type': return t('Links of the type “{name}” come with a link type of their own (Administration → Link types)', { name: p.name })
     case 'subtask-parent': return t('Sub-tasks can’t have children here: such parent links are left out')
     case 'parent-cycle': return t('Parent links that would go round in a circle are left out')
     case 'links-outside': return t('Links to issues of projects that aren’t imported are left out')

@@ -48,6 +48,8 @@
   "You get an e-mail for each TaskCraft notification you haven't seen in the app.": "Ricevi un’e-mail per ogni notifica TaskCraft che non hai visto nell’app.",
   "You subscribed to this filter in TaskCraft. Change or stop it on the filter's page.": "Ti sei iscritto a questo filtro in TaskCraft. Modifica o interrompi l’iscrizione dalla pagina del filtro.",
   "Your sign-in link": "Il tuo link di accesso",
+  "Your timer has been running for {hours} hours": "Il tuo timer è in funzione da {hours} ore",
+  "Your timer ran for 24 hours and stopped: the time waits as a draft": "Il tuo timer è andato per 24 ore e si è fermato: il tempo aspetta come bozza",
   "and {n} more": "e altri {n}",
   "thanks for your message. It's filed as {key}, and we'll get back to you.": "grazie per il tuo messaggio. È registrato come {key} e ti risponderemo.",
   "unassigned": "non assegnato",

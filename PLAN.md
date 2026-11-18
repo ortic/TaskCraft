@@ -72,6 +72,20 @@
 - [x] AI (optional, with your own model): similar issues and duplicates while typing, summaries of long threads, semantic search
 - [x] Guides in `docs/`: user guide, admin guide, migrating from another tracker, translating
 
+## Next (round 5)
+
+- [x] Link types of the workspace's own (outward / inward names, dependency), TQL `link` and `linkedIssues()`, imports keep them (#12)
+- [x] Timer on issues: one per person, pause, stop into a draft or a time log, rounding, reminders, 24-hour stop (#2)
+- [ ] Calendar feeds (#13)
+- [ ] Absences (#14)
+- [ ] Requester organizations on the service desk (#3)
+- [ ] Workflow approvals (#5)
+- [ ] SCIM provisioning (#11)
+- [ ] Branches and draft pull requests from an issue (#8)
+- [ ] Command-line client (#9)
+- [ ] Extensions: scripted automation actions (#10)
+- [ ] AI coding agents (#7)
+
 ## Next (round 4): what established trackers have and TaskCraft doesn't
 
 - [x] Workflow rules: per status who may move issues there (everyone, project admins, chosen teams), the fields they need and a comment, with a form asking for what's missing (board, issue, bulk); resolutions per project (Done / Won't do / Duplicate / …) in history, TQL, CSV and both imports

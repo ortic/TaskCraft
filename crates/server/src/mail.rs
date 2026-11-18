@@ -717,6 +717,8 @@ pub fn describe(l: &str, kind: &str, data: &Value, who: &str) -> String {
             (None, Some(to)) => tr(l, "{who} changed the status to {to}", &[("who", who), ("to", to)]),
             _ => tr(l, "{who} changed the status", &w),
         },
+        "timer" if data["stopped"].as_bool() == Some(true) => tr(l, "Your timer ran for 24 hours and stopped: the time waits as a draft", &[]),
+        "timer" => tr(l, "Your timer has been running for {hours} hours", &[("hours", &data["hours"].as_i64().unwrap_or(0).to_string())]),
         "sla" if s("goal") == Some("response") => tr(l, "The goal for the first response was missed", &[]),
         "sla" => tr(l, "The goal for resolving it was missed", &[]),
         "automation" => match s("message") {

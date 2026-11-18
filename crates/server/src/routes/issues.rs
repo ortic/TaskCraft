@@ -103,12 +103,17 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
             .await?;
     let other_ids: Vec<Uuid> = links.iter().map(|(_, _, s, t)| if *s == id { *t } else { *s }).collect();
     let others: std::collections::HashMap<Uuid, Summary> = issues::load_many_for(&state, user.id, &other_ids).await?.into_iter().map(|o| (o.id, o)).collect();
+    let types = if links.is_empty() { Vec::new() } else { crate::links::types(&state.db, user.workspace_id).await? };
     let links: Vec<Value> = links
         .iter()
         .filter_map(|(lid, kind, src, tgt)| {
             let outward = *src == id;
             let other = others.get(if outward { tgt } else { src })?;
-            Some(json!({"id": lid, "kind": kind, "label": link_label(kind, outward), "outward": outward, "issue": other}))
+            let t = crate::links::find(&types, kind);
+            Some(json!({
+                "id": lid, "kind": kind, "label": crate::links::label(&types, kind, outward), "outward": outward,
+                "dependency": t.is_some_and(|t| t.dependency), "builtin": t.is_none_or(|t| t.builtin && !t.renamed), "issue": other,
+            }))
         })
         .collect();
     let web: Vec<(Uuid, String, String, String, chrono::DateTime<chrono::Utc>)> =
@@ -153,18 +158,6 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
         .unwrap_or(Value::Null);
     v["permissions"] = json!({"edit": role >= Role::Member, "comment": role >= Role::Viewer, "admin": role >= Role::Admin});
     Ok(Json(v))
-}
-
-pub fn link_label(kind: &str, outward: bool) -> &'static str {
-    match (kind, outward) {
-        ("blocks", true) => "blocks",
-        ("blocks", false) => "is blocked by",
-        ("duplicates", true) => "duplicates",
-        ("duplicates", false) => "is duplicated by",
-        ("clones", true) => "clones",
-        ("clones", false) => "is cloned by",
-        _ => "relates to",
-    }
 }
 
 pub async fn update(
@@ -590,6 +583,7 @@ pub async fn suggest(
                 "start",
                 "watcher",
                 "blocked",
+                "link",
                 "comment",
             ]
             .iter()
@@ -606,6 +600,19 @@ pub async fn suggest(
             sqlx::query_scalar("SELECT DISTINCT name FROM issue_types WHERE project_id = ANY($1) ORDER BY name").bind(&visible).fetch_all(&state.db).await?
         }
         "category" | "statuscategory" => vec!["todo".into(), "in_progress".into(), "done".into()],
+        "link" | "links" => {
+            // keys (either way), then the names that read one way
+            let types = crate::links::types(&state.db, user.workspace_id).await?;
+            let mut v: Vec<String> = types.iter().map(|t| t.key.clone()).collect();
+            for t in &types {
+                for n in [&t.outward, &t.inward] {
+                    if !v.iter().any(|x| x.eq_ignore_ascii_case(n)) {
+                        v.push(n.clone());
+                    }
+                }
+            }
+            v
+        }
         "resolution" => {
             // each project's list (or the defaults), then what issues actually carry
             let settings: Vec<Value> = sqlx::query_scalar("SELECT settings FROM projects WHERE id = ANY($1)").bind(&visible).fetch_all(&state.db).await?;
@@ -739,8 +746,12 @@ pub async fn watch(State(state): State<AppState>, CurrentUser(user): CurrentUser
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LinkReq {
-    /// blocks | is blocked by | relates | duplicates | is duplicated by | clones
+    /// a link type's key (read outward: this issue → target), or how the link reads from this
+    /// issue: blocks | is blocked by | relates to | duplicates | … | the workspace's own names
     kind: String,
+    /// with a key: the other direction (the target → this issue)
+    #[serde(default)]
+    inward: bool,
     target: String,
 }
 
@@ -755,15 +766,13 @@ pub async fn add_link(
     if target == id {
         return Err(ApiError::bad("an issue can't link to itself"));
     }
-    let (kind, src, tgt) = match req.kind.as_str() {
-        "blocks" => ("blocks", id, target),
-        "is blocked by" | "blockedBy" => ("blocks", target, id),
-        "duplicates" => ("duplicates", id, target),
-        "is duplicated by" | "duplicatedBy" => ("duplicates", target, id),
-        "clones" => ("clones", id, target),
-        "relates" | "relates to" => ("relates", id, target),
-        _ => return Err(ApiError::bad("kind must be blocks, is blocked by, relates, duplicates, is duplicated by or clones")),
+    let types = crate::links::types(&state.db, user.workspace_id).await?;
+    let Some((kind, outward)) = crate::links::resolve(&types, &req.kind, req.inward) else {
+        let names: Vec<String> = types.iter().map(|t| if t.symmetric() { t.outward.clone() } else { format!("{} / {}", t.outward, t.inward) }).collect();
+        return Err(ApiError::bad(format!("there's no link type {} (link types: {})", req.kind, names.join(", "))));
     };
+    let (src, tgt) = if outward { (id, target) } else { (target, id) };
+    let kind = kind.as_str();
     let lid = new_id();
     let mut tx = state.db.begin().await?;
     sqlx::query("INSERT INTO issue_links (id, source_id, target_id, kind, created_by) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING")
@@ -782,9 +791,9 @@ pub async fn add_link(
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;
-    let c = issues::Change { field: "link", old: Value::Null, new: json!({"kind": req.kind, "key": tkey}) };
+    let c = issues::Change { field: "link", old: Value::Null, new: json!({"kind": crate::links::label(&types, kind, src == id), "key": tkey}) };
     issues::record(&mut tx, id, project, Some(user.id), "link", Some(&c)).await?;
-    let back = issues::Change { field: "link", old: Value::Null, new: json!({"kind": link_label(kind, src != id), "key": skey}) };
+    let back = issues::Change { field: "link", old: Value::Null, new: json!({"kind": crate::links::label(&types, kind, src != id), "key": skey}) };
     issues::record(&mut tx, target, tproject, Some(user.id), "link", Some(&back)).await?;
     sqlx::query("UPDATE issues SET updated_at = now() WHERE id = ANY($1)").bind(vec![id, target]).execute(&mut *tx).await?;
     tx.commit().await?;

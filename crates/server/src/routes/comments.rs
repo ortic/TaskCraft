@@ -478,6 +478,8 @@ pub async fn log_work(
     let remaining = Remaining::parse(&req)?;
     let wid = new_id();
     let mut tx = state.db.begin().await?;
+    // a stopped timer's draft becomes this log (once)
+    crate::timers::take_draft(&mut tx, user.id, id, &req["draftId"]).await?;
     // the remaining estimate: down by the time logged (when someone set it; else it follows by
     // itself), kept as it was, or set anew
     match remaining {

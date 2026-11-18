@@ -191,6 +191,7 @@ pub async fn me(
             "accentColor": settings["accentColor"], "defaultLanguage": settings["defaultLanguage"], "weekStart": settings["weekStart"],
             "retention": if user.is_admin() { settings["retention"].clone() } else { Value::Null },
             "uploads": settings["uploads"],
+            "timer": {"rounding": crate::timers::settings(&settings).0, "reminderHours": crate::timers::settings(&settings).1},
             "timeZone": settings["timeZone"], "dateFormat": settings["dateFormat"],
             "announcement": crate::features::announcement(&settings),
             "features": crate::features::all(&settings),

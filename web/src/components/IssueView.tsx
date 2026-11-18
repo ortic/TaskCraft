@@ -9,13 +9,14 @@ import {
   Mail, MailCheck, LifeBuoy, ClipboardList, Lock, ThumbsUp, Printer, Sparkles,
 } from 'lucide-react'
 import {
-  api, ago, dateTime, duration, may, shortDate, type Comment, type HistoryEvent, type Issue, type IssueDetail, type Named, type Project, type TimeCategory, type WikiPage, type Worklog,
+  api, ago, dateTime, duration, may, shortDate, type Comment, type HistoryEvent, type Issue, type IssueDetail, type LinkType, type Named, type Project, type TimeCategory, type WikiPage, type Worklog,
 } from '../api'
 import { Avatar, BotAvatar, Confirm, Empty, Lozenge, Loading, ErrorBox, Modal, PopButton, Tabs, useFeature, useMe, usePeople, useProject, useProjects, useToast } from '../ui'
 import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
 import { RichText, RichView, EMPTY_DOC, isEmptyDoc } from './Editor'
 import Development, { describeDevEvent } from './Development'
 import { SlaList } from './SlaBadges'
+import { TimerButton } from './Timer'
 import { resolutionLabel, resolutionsOf, useTransition } from './Transition'
 import {
   ComponentsPicker, CustomFieldValue, DateValue, LabelsEditor, NumberValue, ParentPicker, PersonPicker, PriorityPicker, SecurityPicker, SprintPicker, StatusPicker, TypePicker, VersionsPicker,
@@ -407,6 +408,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
           {timeTracking && (
             <SideField label={t('Time spent')}>
               <TimeBar spent={issue.spentMinutes} estimate={issue.estimateMinutes} remaining={issue.remainingMinutes ?? null} />
+              {can && <div style={{ marginTop: 6 }}><TimerButton issueKey={issue.key} /></div>}
             </SideField>
           )}
           <SideField label={t('Start')} field="startDate" filled={!!issue.startDate}>
@@ -628,6 +630,17 @@ const LINK_LABELS: Record<string, () => string> = {
 }
 const linkLabel = (l: string) => LINK_LABELS[l]?.() ?? l
 
+/** The workspace's link types (built-in and its own). */
+export function useLinkTypes() {
+  return useQuery({ queryKey: ['link-types'], queryFn: () => api.get<LinkType[]>('/link-types'), staleTime: 60_000 })
+}
+
+/** How a link type reads in one direction: built-in names translated, the workspace's own as written. */
+export function linkTypeLabel(lt: LinkType, outward: boolean) {
+  const name = outward ? lt.outward : lt.inward
+  return lt.builtin && !lt.renamed ? linkLabel(name) : name
+}
+
 const FIELD_LABELS: Record<string, () => string> = {
   title: () => t('the title'),
   type: () => t('the type'),
@@ -643,25 +656,35 @@ const FIELD_LABELS: Record<string, () => string> = {
   points: () => t('the story points'),
 }
 
-const LINK_KINDS = [
-  { id: 'blocks', label: () => t('blocks') },
-  { id: 'is blocked by', label: () => t('is blocked by') },
-  { id: 'relates', label: () => t('relates to') },
-  { id: 'duplicates', label: () => t('duplicates') },
-  { id: 'is duplicated by', label: () => t('is duplicated by') },
-]
+/** What the link picker offers: each type outward and (unless it reads the same) inward; clones come from cloning. */
+function linkChoices(types: LinkType[] | undefined) {
+  const list = types ?? [
+    { key: 'blocks', outward: 'blocks', inward: 'is blocked by', builtin: true, renamed: false, symmetric: false },
+    { key: 'relates', outward: 'relates to', inward: 'relates to', builtin: true, renamed: false, symmetric: true },
+    { key: 'duplicates', outward: 'duplicates', inward: 'is duplicated by', builtin: true, renamed: false, symmetric: false },
+  ] as LinkType[]
+  return list
+    .filter((lt) => lt.key !== 'clones')
+    .flatMap((lt) => [
+      { id: lt.key, kind: lt.key, inward: false, label: linkTypeLabel(lt, true) },
+      ...(lt.symmetric ? [] : [{ id: `${lt.key}:in`, kind: lt.key, inward: true, label: linkTypeLabel(lt, false) }]),
+    ])
+}
 
 function Links({ issue, adding, onDone, open, can }: { issue: IssueDetail; adding: boolean; onDone: () => void; open: (k: string) => void; can: boolean }) {
   const qc = useQueryClient()
   const toast = useToast()
   const [kind, setKind] = useState('relates')
+  const types = useLinkTypes()
+  const choices = linkChoices(types.data)
   const [q, setQ] = useState('')
   const found = useQuery({ queryKey: ['link-search', q], queryFn: () => api.get<Issue[]>(`/quick?q=${encodeURIComponent(q)}`), enabled: adding })
   const groups = new Map<string, typeof issue.links>()
   for (const l of issue.links) groups.set(l.label, [...(groups.get(l.label) ?? []), l])
   const add = async (target: Issue) => {
     try {
-      await api.post(`/issues/${issue.key}/links`, { kind, target: target.key })
+      const c = choices.find((x) => x.id === kind) ?? { kind: 'relates', inward: false }
+      await api.post(`/issues/${issue.key}/links`, { kind: c.kind, inward: c.inward, target: target.key })
       qc.invalidateQueries({ queryKey: ['issue', issue.key] })
       refreshIssues(qc)
       setQ('')
@@ -677,7 +700,7 @@ function Links({ issue, adding, onDone, open, can }: { issue: IssueDetail; addin
         <div className="card" style={{ padding: 10, marginBottom: 8 }}>
           <div className="row">
             <select className="select input-sm" style={{ width: 'auto' }} value={kind} onChange={(e) => setKind(e.target.value)} aria-label={t('Link type')}>
-              {LINK_KINDS.map((k) => <option key={k.id} value={k.id}>{k.label()}</option>)}
+              {choices.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
             </select>
             <input className="input input-sm" autoFocus placeholder={t('Search issues by key or words…')} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && onDone()} />
             <button className="icon-btn" onClick={onDone} aria-label={t('Cancel')}><X size={15} /></button>
