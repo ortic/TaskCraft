@@ -22,6 +22,8 @@ interface Info {
   /** signing in works (e-mail is set up) */
   signIn: boolean
   forms: { path: string; title: string; project: string }[]
+  /** the requester's organization */
+  organization?: string | null
 }
 interface Listed {
   key: string
@@ -31,6 +33,10 @@ interface Listed {
   createdAt: string
   updatedAt: string
   resolvedAt: string | null
+  /** theirs (else shared with them by a colleague) */
+  mine?: boolean
+  /** a colleague's request: who asked */
+  requester?: string | null
 }
 interface Message {
   id: string
@@ -55,6 +61,9 @@ interface Detail extends Listed {
   canReply: boolean
   canResolve: boolean
   limits: { files: number; mb: number; text: number }
+  organization?: string | null
+  shared?: boolean
+  sharedWith?: string[]
 }
 interface Field {
   id: string
@@ -307,6 +316,7 @@ function Requests() {
                   <StateBadge state={r.state} />
                   <span>{r.key}</span>
                   <span>{r.project}</span>
+                  {r.mine === false && r.requester && <span>{t('from {name}', { name: r.requester })}</span>}
                   <span>{t('updated {when}', { when: ago(r.updatedAt) })}</span>
                 </span>
               </Link>
@@ -532,7 +542,51 @@ function RequestPage({ info }: { info: Info }) {
 
       {r.canReply ? <Reply r={r} onSent={setNews} /> : <p className="portal-note">{t('This request is closed for answers.')}</p>}
       {r.canResolve && <Resolve r={r} onDone={setNews} />}
+      {r.mine !== false && r.organization && <Share r={r} />}
+      {r.mine === false && r.requester && <p className="portal-note">{t('{name} shared this request with you.', { name: r.requester })}</p>}
     </article>
+  )
+}
+
+/** The requester shares the request with their organization or with colleagues in it. */
+function Share({ r }: { r: Detail }) {
+  const qc = useQueryClient()
+  const [err, setErr] = useState('')
+  const colleagues = useQuery({ queryKey: ['portal-colleagues'], queryFn: () => api.get<{ organization: string | null; members: { email: string; name: string | null }[] }>('/portal/colleagues') })
+  const save = async (body: { organization?: boolean; emails?: string[] }) => {
+    setErr('')
+    try {
+      await api.put(`/portal/requests/${encodeURIComponent(r.key)}/share`, body)
+      qc.invalidateQueries({ queryKey: ['portal-request', r.key.toUpperCase()] })
+    } catch (e) {
+      setErr((e as Error).message)
+    }
+  }
+  const with_ = r.sharedWith ?? []
+  return (
+    <section className="portal-section" aria-labelledby="portal-share-h">
+      <h2 id="portal-share-h">{t('Share this request')}</h2>
+      <label className="portal-check">
+        <input type="checkbox" checked={!!r.shared} onChange={(e) => save({ organization: e.target.checked })} />
+        {t('Everyone at {org} can follow and answer this request', { org: r.organization ?? '' })}
+      </label>
+      {!r.shared && (colleagues.data?.members.length ?? 0) > 0 && (
+        <fieldset className="portal-share-people">
+          <legend>{t('Or only these colleagues:')}</legend>
+          {colleagues.data!.members.map((m) => (
+            <label key={m.email} className="portal-check">
+              <input
+                type="checkbox"
+                checked={with_.includes(m.email)}
+                onChange={(e) => save({ emails: e.target.checked ? [...with_, m.email] : with_.filter((x) => x !== m.email) })}
+              />
+              {m.name ? `${m.name} (${m.email})` : m.email}
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {err && <p className="portal-error" role="alert">{err}</p>}
+    </section>
   )
 }
 

@@ -28,6 +28,7 @@ const Settings = lazy(() => import('./pages/Settings'))
 const Timesheet = lazy(() => import('./pages/Timesheet'))
 const TimeReport = lazy(() => import('./pages/TimeReport'))
 const People = lazy(() => import('./pages/People'))
+const Organizations = lazy(() => import('./pages/Organizations'))
 const Queue = lazy(() => import('./pages/Queue'))
 const Dashboards = lazy(() => import('./pages/Dashboards'))
 const Portfolio = lazy(() => import('./pages/Portfolio'))
@@ -86,6 +87,8 @@ export default function App() {
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/api-reference" element={<ApiReference />} />
             <Route path="/people" element={<People />} />
+            <Route path="/organizations" element={<Organizations />} />
+            <Route path="/organizations/:id" element={<Organizations />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/admin/*" element={<Admin />} />
             <Route path="*" element={<div className="empty">{t('Not found')}</div>} />

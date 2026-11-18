@@ -100,3 +100,6 @@
 .portal-suggest li { margin: 4px 0; }
 .portal-suggest a { color: var(--accent-text); font-weight: 500; }
 .portal-suggest-x { display: block; color: var(--text-soft); font-size: 13px; }
+.portal-check { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.portal-share-people { border: 0; padding: 0; margin: 8px 0 0; }
+.portal-share-people legend { padding: 0; margin-bottom: 4px; color: var(--text-faint); font-size: 14px; }

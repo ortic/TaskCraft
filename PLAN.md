@@ -78,7 +78,7 @@
 - [x] Timer on issues: one per person, pause, stop into a draft or a time log, rounding, reminders, 24-hour stop (#2)
 - [x] Calendar feeds: my work, a saved filter, a project; `.ics` downloads (#13)
 - [x] Absences, public holidays per region, sprint capacity, substitutes, away badges (#14)
-- [ ] Requester organizations on the service desk (#3)
+- [x] Requester organizations: domains, members, CSV import, TQL, shorter goals, sharing in the portal (#3)
 - [ ] Workflow approvals (#5)
 - [ ] SCIM provisioning (#11)
 - [ ] Branches and draft pull requests from an issue (#8)

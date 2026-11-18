@@ -590,6 +590,8 @@ pub async fn add_requester(state: &AppState, s: &Summary, r: &NewRequester<'_>) 
         .bind(r.source)
         .execute(&state.db)
         .await?;
+    // the requester's organization: by membership, or by their address's domain
+    crate::organizations::attach(state, s.id, r.email, r.name).await?;
     sqlx::query("UPDATE issue_events SET new_value = new_value || jsonb_build_object('by', $2::text) WHERE issue_id = $1 AND kind = 'created'")
         .bind(s.id)
         .bind(r.name.unwrap_or(r.email))

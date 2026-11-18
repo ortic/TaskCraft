@@ -337,6 +337,8 @@ schemas = {
             "name": ntxt(),
             "mail": d(boolean, "outgoing e-mail works: comments for the requester are e-mailed and they can sign in to the portal"),
             "source": d(txt, "where the request came from: email, form or portal"),
+            "organization": null(S("Named"), "the requester's organization"),
+            "shared": d(boolean, "the organization's members follow it in their portal"),
         },
         ["email"],
         "Who an issue was opened for (a requester without an account).",
@@ -1010,6 +1012,30 @@ op("get", "/me/sign-in", "getMySignInMethods", "Sign-in", "How you sign in",
    res=ok(obj({"passwordLogin": d(boolean, "local passwords sign in here"), "password": d(boolean, "you have a local password that signs in"), "providers": arr(obj({"id": txt, "name": txt, "type": null(A_PROVIDER_TYPE, "null: the provider is no longer configured")}, ["id", "name"]), "single sign-on providers linked to your account")}, ["passwordLogin", "password", "providers"])))
 
 # --- People & teams
+schemas["Organization"] = obj(
+    {"id": uuid, "name": txt, "domains": d(arr(txt), "requesters from these mail domains join by themselves"), "slaPercent": d(num, "service-level goals as a share of the project's (50: twice as fast)"),
+     "memberCount": num, "openRequests": num},
+    ["id", "name", "domains", "slaPercent"],
+    "A requester organization: a customer whose people write to the service desk.",
+)
+op("get", "/organizations", "listOrganizations", "Templates & service levels", "Requester organizations", desc="Not for guests.", res=ok(arr(S("Organization"))))
+op("post", "/organizations", "createOrganization", "Templates & service levels", "Add an organization",
+   req=body(obj({"name": d(txt, "unique, up to 120 characters"), "domains": arr(txt), "notes": txt, "slaPercent": d(num, "10 to 500, default 100")}, ["name"])),
+   res=created(obj({"id": uuid}, ["id"])), err="409")
+op("get", "/organizations/{id}", "getOrganization", "Templates & service levels", "An organization with its members and requests",
+   desc="The requests the caller may see (latest 50, open ones first).",
+   res=ok(obj({"id": uuid, "name": txt, "domains": arr(txt), "notes": ntxt(), "slaPercent": num, "members": arr(obj({"email": email, "name": ntxt()}, ["email"])),
+               "requests": arr(S("IssueSummary"))}, ["id", "name", "members", "requests"])))
+op("patch", "/organizations/{id}", "updateOrganization", "Templates & service levels", "Change an organization", req=body(obj({"name": txt, "domains": arr(txt), "notes": ntxt(), "slaPercent": num})), res=NO, err="404 409")
+op("delete", "/organizations/{id}", "deleteOrganization", "Templates & service levels", "Delete an organization (workspace admins)", desc="Its requests keep their requesters.", res=NO, err="404")
+op("post", "/organizations/{id}/members", "addOrganizationMember", "Templates & service levels", "Add a member (an e-mail address)",
+   desc="Their requests without an organization join it.", req=body(obj({"email": email, "name": txt}, ["email"])), res=NO, err="404")
+op("delete", "/organizations/{id}/members/{email}", "removeOrganizationMember", "Templates & service levels", "Remove a member", pp={"email": (email, "the member's address")}, res=NO, err="404")
+op("post", "/organizations/import", "importOrganizations", "Templates & service levels", "Import organizations and members from CSV",
+   desc="Columns organization, email, name (a header row is skipped); organizations are made as needed.",
+   req=body(txt, "text/csv"), res=ok(obj({"organizations": num, "members": num, "skipped": num}, ["organizations", "members", "skipped"])))
+op("put", "/issues/{key}/organization", "setIssueOrganization", "Templates & service levels", "Which organization a request belongs to (project members)",
+   req=body(obj({"organizationId": nuuid("null: none")}, ["organizationId"])), res=NO)
 op("get", "/absences", "listAbsences", "People & teams", "Absences in a period",
    desc="Everyone's (or one person's, or a project's members'), overlapping the period; default: the last 30 days to the next 180. Why someone is away only for themselves and workspace admins.",
    query=[q("from", "first day", date), q("to", "last day", date), q("user", "one person", uuid), q("project", "the members of this project (key)")], res=ok(arr(S("Absence"))))
@@ -3201,6 +3227,13 @@ op("post", "/portal/session", "startPortalSession", "Service desk portal", "Sign
    res=ok(obj({"email": email}, ["email"]), "Signed in", headers={"Set-Cookie": {"schema": txt, "description": "the portal session (tc_portal)"}}))
 op("delete", "/portal/session", "endPortalSession", "Service desk portal", "Sign out of the portal",
    auth="portal-optional", res={"204": {"description": "Signed out", "headers": {"Set-Cookie": {"schema": txt, "description": "clears tc_portal"}}}})
+op("get", "/portal/colleagues", "listPortalColleagues", "Service desk portal", "The signed-in requester's organization and its members",
+   desc="To share a request with. " + D_PORTAL_NOTE, auth="portal",
+   res=ok(obj({"organization": ntxt(), "members": arr(obj({"email": email, "name": ntxt()}, ["email"]))}, ["organization", "members"])))
+op("put", "/portal/requests/{key}/share", "sharePortalRequest", "Service desk portal", "Share a request (its requester)",
+   desc="`organization`: everyone in the request's organization follows and answers it; `emails`: only these colleagues (members of the organization; replaces the list). "
+        "Only the requester shares; resolving stays theirs. " + D_PORTAL_NOTE, auth="portal",
+   req=body(obj({"organization": boolean, "emails": arr(email)})), res=ok(obj({"shared": boolean, "sharedWith": arr(email)}, ["shared", "sharedWith"])), err="400 404")
 op("get", "/portal/requests", "listPortalRequests", "Service desk portal", "The signed-in requester's requests, latest first",
    desc="Requests opened for the address in every project (at most 500). " + D_PORTAL_NOTE, auth="portal",
    res=ok(obj({"email": email, "requests": arr(S("PortalRequest"))}, ["email", "requests"])), err="401")

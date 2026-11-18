@@ -164,6 +164,7 @@ const BUILTIN: &[&str] = &[
     "blocked",
     "link",
     "links",
+    "organization",
     "rank",
 ];
 
@@ -715,6 +716,16 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
             let col = if field.starts_with("due") { "i.due_date" } else { "i.start_date" };
             time_compare(qb, ctx, field, col, op, values, true)?;
         }
+        "organization" => {
+            let neg = only_eq(field, op)?;
+            let names: Vec<String> = texts(field, values)?.into_iter().map(|s| s.to_lowercase()).collect();
+            qb.push(if neg { "NOT " } else { "" });
+            qb.push(
+                "EXISTS (SELECT 1 FROM issue_requesters r JOIN organizations o ON o.id = r.organization_id WHERE r.issue_id = i.id AND lower(o.name) = ANY(",
+            );
+            qb.push_bind(names);
+            qb.push("))");
+        }
         "link" | "links" => {
             // a link of one of these types, in the direction a name has (keys: either way)
             let neg = only_eq(field, op)?;
@@ -1098,6 +1109,11 @@ fn empty(qb: &mut Qb, ctx: &Ctx, field: &str, negated: bool) -> ApiResult<()> {
         "link" | "links" => {
             qb.push(if negated { "EXISTS" } else { "NOT EXISTS" });
             qb.push(" (SELECT 1 FROM issue_links l WHERE l.source_id = i.id OR l.target_id = i.id)");
+            return Ok(());
+        }
+        "organization" => {
+            qb.push(if negated { "EXISTS" } else { "NOT EXISTS" });
+            qb.push(" (SELECT 1 FROM issue_requesters r WHERE r.issue_id = i.id AND r.organization_id IS NOT NULL)");
             return Ok(());
         }
         other if !is_builtin(other) => {

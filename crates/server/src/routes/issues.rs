@@ -156,6 +156,15 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
         .await?
         .map(|r| json!({"email": r.email, "name": r.name, "mail": state.mailer.enabled(), "source": r.source}))
         .unwrap_or(Value::Null);
+    if v["requester"].is_object() {
+        let org: Option<(Uuid, String, bool)> =
+            sqlx::query_as("SELECT o.id, o.name, r.shared FROM issue_requesters r JOIN organizations o ON o.id = r.organization_id WHERE r.issue_id = $1")
+                .bind(id)
+                .fetch_optional(&state.db)
+                .await?;
+        v["requester"]["organization"] = org.as_ref().map(|(id, name, _)| json!({"id": id, "name": name})).unwrap_or(Value::Null);
+        v["requester"]["shared"] = json!(org.is_some_and(|o| o.2));
+    }
     v["permissions"] = json!({"edit": role >= Role::Member, "comment": role >= Role::Viewer, "admin": role >= Role::Admin});
     Ok(Json(v))
 }
@@ -584,6 +593,7 @@ pub async fn suggest(
                 "watcher",
                 "blocked",
                 "link",
+                "organization",
                 "comment",
             ]
             .iter()
@@ -600,6 +610,12 @@ pub async fn suggest(
             sqlx::query_scalar("SELECT DISTINCT name FROM issue_types WHERE project_id = ANY($1) ORDER BY name").bind(&visible).fetch_all(&state.db).await?
         }
         "category" | "statuscategory" => vec!["todo".into(), "in_progress".into(), "done".into()],
+        "organization" => {
+            sqlx::query_scalar("SELECT name FROM organizations WHERE workspace_id = $1 ORDER BY lower(name) LIMIT 200")
+                .bind(user.workspace_id)
+                .fetch_all(&state.db)
+                .await?
+        }
         "link" | "links" => {
             // keys (either way), then the names that read one way
             let types = crate::links::types(&state.db, user.workspace_id).await?;

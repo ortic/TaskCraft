@@ -161,6 +161,16 @@ calendar. Pick the public holidays that apply to you when the workspace keeps se
 calendars. In the backlog, a sprint with dates shows how much of its working days the team is
 there (click it for each person's days).
 
+## Requester organizations
+
+*Organizations* (in the sidebar when the workspace uses the service desk portal): the customers
+whose people write in. Give one its mail domains and requesters writing from them join it by
+themselves; add members by hand or import a CSV (organization, email, name). An issue's
+requester shows their organization — change it there — and *Its requests* lists the rest; search
+with `organization = "Acme"`. An organization's service-level goals can be a share of the
+project's (50% = twice as fast). In the portal, a requester shares a request with their whole
+organization or with chosen colleagues, who then follow and answer it (resolving stays theirs).
+
 ## Calendar feeds
 
 *Profile & settings → Calendar feeds*: put due dates, sprints and releases into your own calendar

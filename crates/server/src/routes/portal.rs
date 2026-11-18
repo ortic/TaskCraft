@@ -40,9 +40,14 @@ pub async fn info(State(state): State<AppState>, MaybeRequester(email): MaybeReq
             form.listed.then(|| json!({"path": form_path(&form, key), "title": form.title, "project": project}))
         })
         .collect();
+    let organization = match &email {
+        Some(e) => crate::organizations::of_requester(&state, e).await?.map(|o| o.1),
+        None => None,
+    };
     Ok(Json(json!({
         "workspace": {"name": name, "accentColor": settings.get("accentColor")},
         "email": email,
+        "organization": organization,
         "signIn": state.mailer.enabled(),
         "forms": forms,
     })))
@@ -114,15 +119,19 @@ struct Listed {
     created_at: Time,
     updated_at: Time,
     resolved_at: Option<Time>,
+    mine: bool,
+    requester: String,
 }
 
 /// `GET /api/portal/requests` — the signed-in requester's requests, latest first.
 pub async fn requests(State(state): State<AppState>, Requester(email): Requester) -> ApiResult<Json<Value>> {
     let rows: Vec<Listed> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT p.key || '-' || i.number AS key, i.title, p.name AS project, s.category, i.created_at, {SEEN_UPDATE} AS updated_at, i.resolved_at
+        "SELECT p.key || '-' || i.number AS key, i.title, p.name AS project, s.category, i.created_at, {SEEN_UPDATE} AS updated_at, i.resolved_at,
+                lower(r.email) = lower($1) AS mine, COALESCE(r.name, r.email) AS requester
            FROM issue_requesters r JOIN issues i ON i.id = r.issue_id JOIN projects p ON p.id = i.project_id JOIN statuses s ON s.id = i.status_id
-          WHERE r.email = $1 AND i.deleted_at IS NULL
-          ORDER BY updated_at DESC LIMIT 500"
+          WHERE {} AND i.deleted_at IS NULL
+          ORDER BY updated_at DESC LIMIT 500",
+        crate::organizations::visible_sql("$1")
     )))
     .bind(&email)
     .fetch_all(&state.db)
@@ -132,6 +141,7 @@ pub async fn requests(State(state): State<AppState>, Requester(email): Requester
         "requests": rows.iter().map(|r| json!({
             "key": r.key, "title": r.title, "project": r.project, "state": plain_state(&r.category),
             "createdAt": r.created_at, "updatedAt": r.updated_at, "resolvedAt": r.resolved_at,
+            "mine": r.mine, "requester": if r.mine { None } else { Some(r.requester.clone()) },
         })).collect::<Vec<_>>(),
     })))
 }
@@ -153,20 +163,26 @@ struct Found {
     created_at: Time,
     updated_at: Time,
     resolved_at: Option<Time>,
+    /// the visitor is its requester (else it's shared with them)
+    mine: bool,
+    shared: bool,
+    organization: Option<String>,
 }
 
-/// The request `key` (also a former key) if `email` is its requester; else not found, as for
-/// requests that don't exist.
+/// The request `key` (also a former key) if `email` is its requester or it's shared with them;
+/// else not found, as for requests that don't exist.
 async fn find(state: &AppState, email: &str, key: &str) -> ApiResult<Found> {
     let (k, n) = crate::query::split_key(key).ok_or(ApiError::NotFound("request"))?;
     sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT i.id, i.project_id, p.workspace_id, p.key || '-' || i.number AS key, i.title, p.name AS project_name, s.category,
-                p.archived_at IS NOT NULL AS archived, p.settings, r.name, i.description, i.created_at, {SEEN_UPDATE} AS updated_at, i.resolved_at
+                p.archived_at IS NOT NULL AS archived, p.settings, r.name, i.description, i.created_at, {SEEN_UPDATE} AS updated_at, i.resolved_at,
+                lower(r.email) = lower($3) AS mine, r.shared, (SELECT o.name FROM organizations o WHERE o.id = r.organization_id) AS organization
            FROM issues i JOIN projects p ON p.id = i.project_id JOIN statuses s ON s.id = i.status_id JOIN issue_requesters r ON r.issue_id = i.id
-          WHERE r.email = $3 AND i.deleted_at IS NULL
+          WHERE {} AND i.deleted_at IS NULL
             AND ((i.number = $2 AND (upper(p.key) = $1 OR p.id IN (SELECT project_id FROM project_key_aliases WHERE upper(key) = $1)))
                  OR i.id IN (SELECT issue_id FROM issue_key_aliases WHERE upper(project_key) = $1 AND number = $2))
-          ORDER BY upper(p.key) = $1 DESC LIMIT 1"
+          ORDER BY upper(p.key) = $1 DESC LIMIT 1",
+        crate::organizations::visible_sql("$3")
     )))
     .bind(&k)
     .bind(n)
@@ -191,12 +207,13 @@ pub async fn request(State(state): State<AppState>, Requester(email): Requester,
         author_id: Option<Uuid>,
         author: Option<String>,
         author_email: Option<String>,
+        author_name: Option<String>,
         body: Value,
         created_at: Time,
         edited: bool,
     }
     let messages: Vec<Message> = sqlx::query_as(
-        "SELECT c.id, c.author_id, u.name AS author, c.author_email, c.body, c.created_at, c.edited
+        "SELECT c.id, c.author_id, u.name AS author, c.author_email, c.author_name, c.body, c.created_at, c.edited
            FROM comments c LEFT JOIN users u ON u.id = c.author_id WHERE c.issue_id = $1 AND c.for_requester ORDER BY c.created_at",
     )
     .bind(f.id)
@@ -209,14 +226,21 @@ pub async fn request(State(state): State<AppState>, Requester(email): Requester,
             .await?;
     let state_word = plain_state(&f.category);
     let settings = Settings::of(&f.settings);
+    let shared_with: Vec<String> = if f.mine {
+        sqlx::query_scalar("SELECT email FROM request_shares WHERE issue_id = $1 ORDER BY email").bind(f.id).fetch_all(&state.db).await?
+    } else {
+        vec![]
+    };
     Ok(Json(json!({
         "key": f.key, "title": f.title, "project": f.project_name, "state": state_word,
         "createdAt": f.created_at, "updatedAt": f.updated_at, "resolvedAt": f.resolved_at,
         "description": f.description.as_ref().map(portal::public_doc),
         "messages": messages.iter().map(|m| {
-            let mine = m.author_id.is_none() && m.author_email.as_deref() == Some(email.as_str());
+            let mine = m.author_id.is_none() && m.author_email.as_deref().is_some_and(|a| a.eq_ignore_ascii_case(&email));
+            // someone else without an account (the requester or a colleague, on a shared request)
+            let outside = if m.author_id.is_none() { m.author_name.clone().or_else(|| m.author_email.clone()) } else { None };
             json!({
-                "id": m.id, "mine": mine, "author": if mine { None } else { m.author.clone() },
+                "id": m.id, "mine": mine, "author": if mine { None } else { m.author.clone().or(outside) },
                 "body": portal::public_doc(&m.body), "createdAt": m.created_at, "edited": m.edited,
             })
         }).collect::<Vec<_>>(),
@@ -224,7 +248,9 @@ pub async fn request(State(state): State<AppState>, Requester(email): Requester,
             "id": id, "name": name, "mime": mime, "size": size, "createdAt": at, "url": format!("/api/portal/attachments/{id}"),
         })).collect::<Vec<_>>(),
         "canReply": !f.archived,
-        "canResolve": settings.resolve && !f.archived && state_word != "resolved",
+        "canResolve": f.mine && settings.resolve && !f.archived && state_word != "resolved",
+        "mine": f.mine, "requester": if f.mine { None } else { f.name.clone() },
+        "organization": f.organization, "shared": f.shared, "sharedWith": shared_with,
         "limits": {"files": portal::MAX_FILES, "mb": files_limit(&state), "text": portal::MAX_TEXT},
     })))
 }
@@ -290,7 +316,7 @@ pub async fn reply(
     if text.is_empty() && files.is_empty() {
         return Err(ApiError::bad("write a message or add a file"));
     }
-    let by = f.name.clone().unwrap_or_else(|| email.clone());
+    let by = (if f.mine { f.name.clone() } else { None }).unwrap_or_else(|| email.clone());
     let names: Vec<String> = files.iter().map(|(n, _, _)| n.clone()).collect();
     for (name, _, data) in &files {
         crate::files::check(&state, f.workspace_id, name, data).await?;
@@ -304,7 +330,12 @@ pub async fn reply(
         body = if body.is_empty() { line } else { format!("{body}\n\n{line}") };
     }
     let actor = Actor { user: None, workspace: f.workspace_id, depth: 0 };
-    let opts = CommentOpts { via_portal: true, for_requester: true, external: Some((email.clone(), f.name.clone())), ..Default::default() };
+    let opts = CommentOpts {
+        via_portal: true,
+        for_requester: true,
+        external: Some((email.clone(), (if f.mine { f.name.clone() } else { None }))),
+        ..Default::default()
+    };
     let id = add_with(&state, &actor, f.id, text_to_doc(&body), &opts).await?;
     if !names.is_empty() {
         events::publish(&state, Event::new(f.workspace_id, "issue").project(f.project_id).issue(f.id, &f.key)).await;
@@ -329,7 +360,7 @@ pub async fn resolve(
 ) -> ApiResult<Json<Value>> {
     let f = find(&state, &email, &key).await?;
     let settings = Settings::of(&f.settings);
-    if !settings.resolve || f.archived {
+    if !settings.resolve || f.archived || !f.mine {
         return Err(ApiError::Denied("requests here are closed by the team".into()));
     }
     if f.category == "done" {
@@ -378,10 +409,11 @@ pub async fn resolve(
 
 /// `GET /api/portal/attachments/{id}` — one of the requester's own files.
 pub async fn download(State(state): State<AppState>, Requester(email): Requester, Path(id): Path<Uuid>) -> ApiResult<Response> {
-    let row: Option<(String, String, String, i64)> = sqlx::query_as(
+    let row: Option<(String, String, String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT a.name, a.mime, a.storage_key, a.size FROM attachments a JOIN issues i ON i.id = a.issue_id JOIN issue_requesters r ON r.issue_id = a.issue_id
-          WHERE a.id = $1 AND a.by_requester AND r.email = $2 AND i.deleted_at IS NULL",
-    )
+          WHERE a.id = $1 AND a.by_requester AND {} AND i.deleted_at IS NULL",
+        crate::organizations::visible_sql("$2")
+    )))
     .bind(id)
     .bind(&email)
     .fetch_optional(&state.db)

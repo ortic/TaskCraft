@@ -29,6 +29,7 @@ pub mod mcp;
 pub mod metrics;
 pub mod mfa;
 pub mod notify;
+pub mod organizations;
 pub mod photos;
 pub mod portal;
 pub mod privacy;

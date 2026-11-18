@@ -505,7 +505,10 @@ async fn request_forms_open_requests_and_keep_bots_out() {
     assert_eq!(issue["custom"][&severity], "s2");
     assert_eq!(issue["custom"][&environment], "Windows 11");
     assert!(issue["reporter"].is_null());
-    assert_eq!(issue["requester"], json!({"email": "carla@example.org", "name": "Carla Client", "mail": true, "source": "form"}));
+    assert_eq!(
+        issue["requester"],
+        json!({"email": "carla@example.org", "name": "Carla Client", "mail": true, "source": "form", "organization": null, "shared": false})
+    );
     let history = get(&owner, app.url(&format!("/issues/{key}/history"))).await;
     assert!(history.as_array().unwrap().iter().any(|e| e["kind"] == "created" && e["new"]["by"] == "Carla Client"), "{history}");
     let ack: (String, String, Value) =
@@ -603,4 +606,82 @@ async fn the_form_suggests_articles_from_a_wiki_space() {
     assert_eq!(found[0]["excerpt"], "Turn the printer off and on");
     assert!(found[0]["url"].as_str().unwrap().starts_with(&format!("{wiki_url}/pages/")));
     assert_eq!(get(&anon, app.url("/portal/forms/hlp/suggest?q=pr")).await, json!([]), "too short");
+}
+
+/// Organizations: requesters join by their domain; a request shared with the organization (or
+/// with colleagues) shows in their portal; agents see and filter by it; shorter goals.
+#[tokio::test]
+async fn organizations_share_requests() {
+    let app = portal_app().await;
+    let owner = app.setup(true).await;
+    take_mail(&owner, &app).await;
+    let (s, org) = send(&owner, Method::POST, app.url("/organizations"), json!({"name": "Example Corp", "domains": "example.org", "slaPercent": 50})).await;
+    assert_eq!(s, 201, "{org}");
+    let org_id = org["id"].as_str().unwrap().to_string();
+    let janes = write_in(&app, "Jane Doe <jane@example.org>", "VPN down", "j-1@example.org", "The VPN doesn't connect").await;
+    let bobs = write_in(&app, "Bob <bob@example.org>", "New laptop", "b-1@example.org", "I need a laptop").await;
+    let outsider = write_in(&app, "Zed <zed@elsewhere.net>", "Hello", "z-1@elsewhere.net", "Hi").await;
+
+    // agents: the organization on the request, TQL, the organization's page
+    let i = get(&owner, app.url(&format!("/issues/{janes}"))).await;
+    assert_eq!(i["requester"]["organization"]["name"], "Example Corp", "{}", i["requester"]);
+    let found: Value = owner.get(app.url("/search")).query(&[("q", "organization = \"Example Corp\"")]).send().await.unwrap().json().await.unwrap();
+    assert_eq!(found["total"], 2);
+    let found: Value = owner.get(app.url("/search")).query(&[("q", "organization is empty")]).send().await.unwrap().json().await.unwrap();
+    assert!(found.to_string().contains(&outsider));
+    let detail = get(&owner, app.url(&format!("/organizations/{org_id}"))).await;
+    assert_eq!(detail["members"].as_array().unwrap().len(), 2, "joined by their domain: {detail}");
+    assert_eq!(detail["requests"].as_array().unwrap().len(), 2);
+
+    // shorter goals for the organization
+    sqlx::query("UPDATE projects SET settings = settings || '{\"sla\": {\"resolution\": {\"medium\": 8}}}'::jsonb WHERE key = 'SUP'")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    let i = get(&owner, app.url(&format!("/issues/{janes}"))).await;
+    assert_eq!(i["sla"][0]["targetMinutes"], 240, "{}", i["sla"]);
+
+    // the portal: Bob doesn't see Jane's request until she shares it
+    let jane = sign_in(&app, "jane@example.org", "198.51.100.20").await;
+    let bob = sign_in(&app, "bob@example.org", "198.51.100.21").await;
+    assert_eq!(get(&jane, app.url("/portal")).await["organization"], "Example Corp");
+    let list = get(&bob, app.url("/portal/requests")).await;
+    assert_eq!(list["requests"].as_array().unwrap().len(), 1);
+    assert_eq!(send(&bob, Method::GET, app.url(&format!("/portal/requests/{janes}")), json!(null)).await.0, 404);
+    assert_eq!(send(&bob, Method::PUT, app.url(&format!("/portal/requests/{janes}/share")), json!({"organization": true})).await.0, 404, "only Jane shares");
+    let (s, v) = send(&jane, Method::PUT, app.url(&format!("/portal/requests/{janes}/share")), json!({"organization": true})).await;
+    assert_eq!((s, v["shared"].as_bool()), (200, Some(true)), "{v}");
+    let list = get(&bob, app.url("/portal/requests")).await;
+    let shared = list["requests"].as_array().unwrap().iter().find(|r| r["key"] == janes.as_str()).expect("shared with Bob").clone();
+    assert_eq!((shared["mine"].as_bool(), shared["requester"].as_str()), (Some(false), Some("Jane Doe")));
+    let seen = get(&bob, app.url(&format!("/portal/requests/{janes}"))).await;
+    assert_eq!((seen["mine"].as_bool(), seen["canResolve"].as_bool()), (Some(false), Some(false)));
+    let r = bob.post(app.url(&format!("/portal/requests/{janes}/comments"))).multipart(Form::new().text("text", "Same here")).send().await.unwrap();
+    assert!(r.status().is_success(), "colleagues answer too");
+    assert_eq!(send(&bob, Method::POST, app.url(&format!("/portal/requests/{janes}/resolve")), json!({})).await.0, 403);
+
+    // named colleagues instead; addresses outside the organization are refused
+    let colleagues = get(&jane, app.url("/portal/colleagues")).await;
+    assert_eq!(colleagues["members"][0]["email"], "bob@example.org");
+    let (s, _) = send(&jane, Method::PUT, app.url(&format!("/portal/requests/{janes}/share")), json!({"emails": ["zed@elsewhere.net"]})).await;
+    assert_eq!(s, 400);
+    send(&jane, Method::PUT, app.url(&format!("/portal/requests/{janes}/share")), json!({"organization": false, "emails": ["bob@example.org"]})).await;
+    assert_eq!(get(&bob, app.url(&format!("/portal/requests/{janes}"))).await["key"], janes.as_str());
+    send(&jane, Method::PUT, app.url(&format!("/portal/requests/{janes}/share")), json!({"emails": []})).await;
+    assert_eq!(send(&bob, Method::GET, app.url(&format!("/portal/requests/{janes}")), json!(null)).await.0, 404);
+
+    // moving a request to another organization; members by hand and by CSV
+    let (s, _) = send(&owner, Method::PUT, app.url(&format!("/issues/{outsider}/organization")), json!({"organizationId": org_id})).await;
+    assert_eq!(s, 204);
+    let r = owner
+        .post(app.url("/organizations/import"))
+        .header("content-type", "text/csv")
+        .body("organization,email,name\nOther Ltd,ann@other.example,Ann\nExample Corp,carl@example.org,Carl\n")
+        .send()
+        .await
+        .unwrap();
+    let r: Value = r.json().await.unwrap();
+    assert_eq!((r["organizations"].as_i64(), r["members"].as_i64()), (Some(1), Some(2)), "{r}");
+    assert_eq!(get(&owner, app.url("/organizations")).await.as_array().unwrap().len(), 2);
+    let _ = bobs;
 }

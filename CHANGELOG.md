@@ -6,6 +6,12 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 
 ## [Unreleased]
 
+- **Requester organizations** (*Organizations*): customers with members (by e-mail address) and
+  mail domains — requesters from them join by themselves; requests show their organization (it
+  can be changed), TQL `organization = Acme`, an organization's page lists its requests, its
+  service-level goals can be shorter; members by hand or CSV. In the portal, requesters share a
+  request with their organization or chosen colleagues, who follow and answer it too.
+
 - **Time off**: absences (whole or half days, with a substitute) in *Profile & settings*, entered
   by admins for others too; why someone is away only they and admins see. Public holidays per
   region calendar (*Administration → Time off*). "Away until …" in people pickers, mentions, the

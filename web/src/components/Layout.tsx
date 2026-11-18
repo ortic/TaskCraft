@@ -5,7 +5,7 @@ import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate, useSearchPar
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Search, House, FolderKanban, Plus, Moon, Shield, Menu, LogOut, UserCog, Bell, ListFilter, Timer, Users, Kanban, ListTodo, Table, ChartGantt, Calendar, ChartColumn,
-  Package, BookOpen, Settings, Star, X, ExternalLink, LayoutDashboard, Briefcase, Megaphone, TriangleAlert,
+  Package, BookOpen, Settings, Star, X, ExternalLink, LayoutDashboard, Briefcase, Megaphone, TriangleAlert, Building2,
 } from 'lucide-react'
 import { api, ago, type Announcement, type Notification, type SavedView } from '../api'
 import { Avatar, BotAvatar, Logo, Popover, useFeature, useMe, useProject, useProjects, useHotkeys } from '../ui'
@@ -88,6 +88,7 @@ export default function Layout() {
   }
   const isAdmin = user?.role === 'owner' || user?.role === 'admin'
   const timeTracking = useFeature('timeTracking')
+  const portal = useFeature('portal')
   const starred = (projects.data ?? []).filter((p) => p.starred && !p.archivedAt)
   const p = project.data
   const pk = p?.key ?? projectKey?.toUpperCase()
@@ -156,6 +157,7 @@ export default function Layout() {
               <NavLink to="/portfolio" className="nav-item"><Briefcase size={16} /> <span className="nav-label">{t('Portfolio')}</span></NavLink>
               {timeTracking && <NavLink to="/timesheet" className="nav-item"><Timer size={16} /> <span className="nav-label">{t('Timesheet')}</span></NavLink>}
               <NavLink to="/people" className="nav-item"><Users size={16} /> <span className="nav-label">{t('People & teams')}</span></NavLink>
+              {portal && user?.role !== 'guest' && <NavLink to="/organizations" className="nav-item"><Building2 size={16} /> <span className="nav-label">{t('Organizations')}</span></NavLink>}
               {isAdmin && <NavLink to="/admin" className="nav-item"><Shield size={16} /> <span className="nav-label">{t('Administration')}</span></NavLink>}
             </>
           )}

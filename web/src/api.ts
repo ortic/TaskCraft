@@ -16,6 +16,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   let payload: BodyInit | undefined
   if (body instanceof FormData) {
     payload = body
+  } else if (body instanceof Blob) {
+    headers['content-type'] = body.type || 'application/octet-stream'
+    payload = body
   } else if (body !== undefined) {
     headers['content-type'] = 'application/json'
     payload = JSON.stringify(body)
@@ -40,6 +43,8 @@ export const api = {
   patch: <T>(p: string, b?: unknown) => request<T>('PATCH', p, b ?? {}),
   del: <T>(p: string, b?: unknown) => request<T>('DELETE', p, b),
   upload: <T>(p: string, form: FormData) => request<T>('POST', p, form),
+  /** a file as the body (CSV imports and the like) */
+  postFile: <T>(p: string, file: Blob) => request<T>('POST', p, file),
 }
 
 export const qs = (o: Record<string, string | number | boolean | null | undefined>) => {
@@ -238,7 +243,7 @@ export interface IssueDetail extends Issue {
   sla: import('./components/SlaBadges').SlaGoal[]
   /** who it was opened for (no account): by e-mail, on the request form or in the portal;
    *  `mail`: comments for them are e-mailed and they can sign in to the portal */
-  requester: { email: string; name: string | null; mail: boolean; source?: 'email' | 'form' | 'portal' } | null
+  requester: { email: string; name: string | null; mail: boolean; source?: 'email' | 'form' | 'portal'; organization?: Named | null; shared?: boolean } | null
 }
 
 /** What it takes to move an issue into a status (crate::workflow). */

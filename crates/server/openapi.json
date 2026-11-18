@@ -11255,6 +11255,541 @@
     }
    }
   },
+  "/organizations": {
+   "get": {
+    "tags": [
+     "Templates & service levels"
+    ],
+    "summary": "Requester organizations",
+    "operationId": "listOrganizations",
+    "description": "Not for guests.",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/Organization"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "Templates & service levels"
+    ],
+    "summary": "Add an organization",
+    "operationId": "createOrganization",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string",
+          "description": "unique, up to 120 characters"
+         },
+         "domains": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         },
+         "notes": {
+          "type": "string"
+         },
+         "slaPercent": {
+          "type": "integer",
+          "description": "10 to 500, default 100"
+         }
+        },
+        "required": [
+         "name"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          }
+         },
+         "required": [
+          "id"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   }
+  },
+  "/organizations/{id}": {
+   "get": {
+    "tags": [
+     "Templates & service levels"
+    ],
+    "summary": "An organization with its members and requests",
+    "operationId": "getOrganization",
+    "description": "The requests the caller may see (latest 50, open ones first).",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "name": {
+           "type": "string"
+          },
+          "domains": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          },
+          "notes": {
+           "type": [
+            "string",
+            "null"
+           ]
+          },
+          "slaPercent": {
+           "type": "integer"
+          },
+          "members": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "email": {
+              "type": "string",
+              "format": "email"
+             },
+             "name": {
+              "type": [
+               "string",
+               "null"
+              ]
+             }
+            },
+            "required": [
+             "email"
+            ]
+           }
+          },
+          "requests": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/IssueSummary"
+           }
+          }
+         },
+         "required": [
+          "id",
+          "name",
+          "members",
+          "requests"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "Templates & service levels"
+    ],
+    "summary": "Change an organization",
+    "operationId": "updateOrganization",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "domains": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         },
+         "notes": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "slaPercent": {
+          "type": "integer"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "Templates & service levels"
+    ],
+    "summary": "Delete an organization (workspace admins)",
+    "operationId": "deleteOrganization",
+    "description": "Its requests keep their requesters.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/organizations/{id}/members": {
+   "post": {
+    "tags": [
+     "Templates & service levels"
+    ],
+    "summary": "Add a member (an e-mail address)",
+    "operationId": "addOrganizationMember",
+    "description": "Their requests without an organization join it.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "email": {
+          "type": "string",
+          "format": "email"
+         },
+         "name": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "email"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/organizations/{id}/members/{email}": {
+   "delete": {
+    "tags": [
+     "Templates & service levels"
+    ],
+    "summary": "Remove a member",
+    "operationId": "removeOrganizationMember",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "email",
+      "in": "path",
+      "required": true,
+      "description": "the member's address",
+      "schema": {
+       "type": "string",
+       "format": "email"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/organizations/import": {
+   "post": {
+    "tags": [
+     "Templates & service levels"
+    ],
+    "summary": "Import organizations and members from CSV",
+    "operationId": "importOrganizations",
+    "description": "Columns organization, email, name (a header row is skipped); organizations are made as needed.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "text/csv": {
+       "schema": {
+        "type": "string"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "organizations": {
+           "type": "integer"
+          },
+          "members": {
+           "type": "integer"
+          },
+          "skipped": {
+           "type": "integer"
+          }
+         },
+         "required": [
+          "organizations",
+          "members",
+          "skipped"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     }
+    }
+   }
+  },
+  "/issues/{key}/organization": {
+   "put": {
+    "tags": [
+     "Templates & service levels"
+    ],
+    "summary": "Which organization a request belongs to (project members)",
+    "operationId": "setIssueOrganization",
+    "parameters": [
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "issue key (e.g. WEB-12; former keys keep working) or issue id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "organizationId": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "uuid",
+          "description": "null: none"
+         }
+        },
+        "required": [
+         "organizationId"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
   "/projects/{key}/templates": {
    "get": {
     "tags": [
@@ -13159,6 +13694,148 @@
     },
     "security": [
      {},
+     {
+      "portalSession": []
+     }
+    ]
+   }
+  },
+  "/portal/colleagues": {
+   "get": {
+    "tags": [
+     "Service desk portal"
+    ],
+    "summary": "The signed-in requester's organization and its members",
+    "operationId": "listPortalColleagues",
+    "description": "To share a request with. Needs a portal session (cookie tc_portal, from POST /portal/session); 401 without one.",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "organization": {
+           "type": [
+            "string",
+            "null"
+           ]
+          },
+          "members": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "email": {
+              "type": "string",
+              "format": "email"
+             },
+             "name": {
+              "type": [
+               "string",
+               "null"
+              ]
+             }
+            },
+            "required": [
+             "email"
+            ]
+           }
+          }
+         },
+         "required": [
+          "organization",
+          "members"
+         ]
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "portalSession": []
+     }
+    ]
+   }
+  },
+  "/portal/requests/{key}/share": {
+   "put": {
+    "tags": [
+     "Service desk portal"
+    ],
+    "summary": "Share a request (its requester)",
+    "operationId": "sharePortalRequest",
+    "description": "`organization`: everyone in the request's organization follows and answers it; `emails`: only these colleagues (members of the organization; replaces the list). Only the requester shares; resolving stays theirs. Needs a portal session (cookie tc_portal, from POST /portal/session); 401 without one.",
+    "parameters": [
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "issue key (e.g. WEB-12; former keys keep working) or issue id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "organization": {
+          "type": "boolean"
+         },
+         "emails": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "format": "email"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "shared": {
+           "type": "boolean"
+          },
+          "sharedWith": {
+           "type": "array",
+           "items": {
+            "type": "string",
+            "format": "email"
+           }
+          }
+         },
+         "required": [
+          "shared",
+          "sharedWith"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "security": [
      {
       "portalSession": []
      }
@@ -17906,6 +18583,21 @@
      "source": {
       "type": "string",
       "description": "where the request came from: email, form or portal"
+     },
+     "organization": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Named"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "the requester's organization"
+     },
+     "shared": {
+      "type": "boolean",
+      "description": "the organization's members follow it in their portal"
      }
     },
     "required": [
@@ -20120,6 +20812,42 @@
      "memberIds"
     ],
     "description": "A team: people who can be given project roles together (provider groups can be mirrored into teams)."
+   },
+   "Organization": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "name": {
+      "type": "string"
+     },
+     "domains": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "requesters from these mail domains join by themselves"
+     },
+     "slaPercent": {
+      "type": "integer",
+      "description": "service-level goals as a share of the project's (50: twice as fast)"
+     },
+     "memberCount": {
+      "type": "integer"
+     },
+     "openRequests": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "domains",
+     "slaPercent"
+    ],
+    "description": "A requester organization: a customer whose people write to the service desk."
    },
    "SlaSettings": {
     "type": "object",

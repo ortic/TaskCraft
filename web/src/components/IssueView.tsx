@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Link2, Paperclip, Eye, EyeOff, Ellipsis, Heart, FolderInput, Pencil, Copy, Trash, ExternalLink, Plus, X, Ban, BookOpen, Clock, CornerDownRight, MessageSquare, Activity, Timer, FileText, Check,
   Mail, MailCheck, LifeBuoy, ClipboardList, Lock, ThumbsUp, Printer, Sparkles,
+  Building2,
 } from 'lucide-react'
 import {
   api, ago, dateTime, duration, may, shortDate, type Comment, type HistoryEvent, type Issue, type IssueDetail, type LinkType, type Named, type Project, type TimeCategory, type WikiPage, type Worklog,
@@ -17,6 +18,7 @@ import { RichText, RichView, EMPTY_DOC, isEmptyDoc } from './Editor'
 import Development, { describeDevEvent } from './Development'
 import { SlaList } from './SlaBadges'
 import { TimerButton } from './Timer'
+import { useOrganizations } from '../pages/Organizations'
 import { resolutionLabel, resolutionsOf, useTransition } from './Transition'
 import {
   ComponentsPicker, CustomFieldValue, DateValue, LabelsEditor, NumberValue, ParentPicker, PersonPicker, PriorityPicker, SecurityPicker, SprintPicker, StatusPicker, TypePicker, VersionsPicker,
@@ -340,7 +342,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
           <SideField label={t('Reporter')}>
             <PersonPicker value={issue.reporter} disabled={!can} allowNone={false} label={t('Reporter')} onChange={(id) => set({ reporterId: id })} />
           </SideField>
-          {issue.requester && <RequesterField requester={issue.requester} />}
+          {issue.requester && <RequesterField issueKey={issue.key} requester={issue.requester} can={can} />}
           <SideField label={t('Priority')} field="priority">
             <PriorityPicker value={issue.priority} disabled={!can} onChange={(p) => set({ priority: p })} />
           </SideField>
@@ -478,7 +480,10 @@ function SideField({ label, children, field, filled }: { label: string; children
 }
 
 /** Who the issue was opened for (no account), and how it reached the project. */
-function RequesterField({ requester }: { requester: NonNullable<IssueDetail['requester']> }) {
+function RequesterField({ issueKey, requester, can }: { issueKey: string; requester: NonNullable<IssueDetail['requester']>; can: boolean }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const orgs = useOrganizations(can)
   const source = requester.source ?? 'email'
   const how =
     source === 'form'
@@ -495,6 +500,32 @@ function RequesterField({ requester }: { requester: NonNullable<IssueDetail['req
           <a href={`mailto:${requester.email}`} className="faint small">{requester.email}</a>
           <span className="faint small">{how.label}</span>
         </span>
+      </span>
+      <span className="row small" style={{ gap: 6, marginTop: 4 }}>
+        <Building2 size={13} aria-hidden className="faint" />
+        {can ? (
+          <select
+            className="select input-sm"
+            style={{ width: 'auto', maxWidth: 180 }}
+            value={requester.organization?.id ?? ''}
+            aria-label={t('Organization')}
+            onChange={async (e) => {
+              try {
+                await api.put(`/issues/${issueKey}/organization`, { organizationId: e.target.value || null })
+                qc.invalidateQueries({ queryKey: ['issue', issueKey] })
+              } catch (err) {
+                toast((err as Error).message)
+              }
+            }}
+          >
+            <option value="">{t('No organization')}</option>
+            {(orgs.data ?? []).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+        ) : (
+          <span>{requester.organization?.name ?? t('No organization')}</span>
+        )}
+        {requester.organization && <Link to={`/organizations/${requester.organization.id}`} className="small">{t('Its requests')}</Link>}
+        {requester.shared && <span className="badge" title={t('Its organization’s members follow it in their portal')}>{t('Shared')}</span>}
       </span>
     </SideField>
   )

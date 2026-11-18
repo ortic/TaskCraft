@@ -57,12 +57,15 @@ struct Clock {
     resolved_at: Option<DateTime<Utc>>,
     responded_at: Option<DateTime<Utc>>,
     settings: Value,
+    /// the requester's organization's goals, as a share of the project's
+    sla_percent: Option<i32>,
 }
 
 /// Goals of the given issues (issues of projects without goals are left out).
 pub async fn for_issues(state: &AppState, ids: &[Uuid]) -> ApiResult<HashMap<Uuid, Vec<Goal>>> {
     let rows: Vec<Clock> = sqlx::query_as(
         "SELECT i.id, i.created_at, i.priority, i.resolved_at, p.settings,
+                (SELECT o.sla_percent FROM issue_requesters r JOIN organizations o ON o.id = r.organization_id WHERE r.issue_id = i.id) AS sla_percent,
                 LEAST(
                   (SELECT min(e.created_at) FROM issue_events e WHERE e.issue_id = i.id AND e.field = 'status' AND e.new_value->>'category' <> 'todo'),
                   (SELECT min(c.created_at) FROM comments c WHERE c.issue_id = i.id AND c.author_id IS NOT NULL AND c.author_id IS DISTINCT FROM i.reporter_id)
@@ -77,11 +80,12 @@ pub async fn for_issues(state: &AppState, ids: &[Uuid]) -> ApiResult<HashMap<Uui
     let mut out = HashMap::new();
     for r in rows {
         let mut goals = Vec::new();
-        if let Some(h) = target_hours(&r.settings, "response", r.priority) {
+        let share = r.sla_percent.unwrap_or(100).clamp(10, 500) as f64 / 100.0;
+        if let Some(h) = target_hours(&r.settings, "response", r.priority).map(|h| h * share) {
             // resolving also counts as a response
             goals.push(evaluate("response", h, r.created_at, r.responded_at.or(r.resolved_at), now));
         }
-        if let Some(h) = target_hours(&r.settings, "resolution", r.priority) {
+        if let Some(h) = target_hours(&r.settings, "resolution", r.priority).map(|h| h * share) {
             goals.push(evaluate("resolution", h, r.created_at, r.resolved_at, now));
         }
         if !goals.is_empty() {
