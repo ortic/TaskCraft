@@ -414,6 +414,39 @@ taskcraft import-backup FILE   # another tracker's XML site backup (.zip or unpa
 taskcraft import-… PROJECT…    # from another tracker's API (see "Migrating from another tracker")
 ```
 
+### `tc`: everyday work from the terminal
+
+`tc` is a small separate program (in the release archives and the container image next to
+`taskcraft`; `cargo build --release -p taskcraft-cli` builds it) that talks to a TaskCraft server
+over its REST API — for people who live in a terminal, and for scripts and CI jobs.
+
+```bash
+tc login https://tasks.example.com      # opens the browser: approve, and the token is kept in a profile
+tc issue list                           # your open issues
+tc issue list 'project = WEB and sprint in openSprints() order by rank'    # any TQL
+tc issue view WEB-12 --comments
+tc issue create -p WEB "Checkout button is grey" --type Bug --priority high --label shop -d "Markdown, or - for stdin"
+tc issue edit WEB-12 --title "…" --due 2026-12-01 --points 3 --assignee mia
+tc issue move WEB-12 "In progress"      # a status by name or its beginning
+tc issue assign WEB-12 me               # or a name, an e-mail address, none
+tc comment WEB-12 "Fixed in the next build"
+tc link WEB-12 blocks WEB-15
+tc log 1h30m WEB-12 -m "Styles"         # tc timer start / pause / resume / stop / status
+tc branch WEB-12                        # git checkout -b web-12-short-title (--remote: on the Git server, --pr: with a draft pull request)
+tc open WEB-12                          # in the browser
+```
+
+On a branch named after an issue (`web-12-short-title`), the key can be left out: `tc issue view`,
+`tc comment "Done"`, `tc log 45m`, `tc issue move Review`. `--json` prints what the API answered,
+for scripts. Signing in: `tc login` shows a code and opens *Sign in the command line?* in the
+browser, where you approve it as yourself (single sign-on and second factors apply as usual); the
+client then receives an API token of its own (*tc on <computer>*, revocable under *Profile &
+settings → API tokens*) and keeps it in `~/.config/taskcraft/config.json` (mode 600). Several
+servers are named profiles (`tc --profile work login …`, `tc profile list`, `tc profile use
+work`). In scripts and CI set `TASKCRAFT_URL` and `TASKCRAFT_TOKEN` instead (or `tc login URL
+--token …`). The client uses only operations of the OpenAPI description; a test fails when one
+of them is missing there.
+
 ### Backup and restore
 
 `taskcraft backup taskcraft-2026-11-12.tar.gz` writes the whole workspace — every table, taken in

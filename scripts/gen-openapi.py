@@ -3422,6 +3422,23 @@ op("delete", "/admin/workspace/logo", "deleteWorkspaceLogo", "Administration", "
    desc="Workspace admins, in the browser.", auth="session", res=NO)
 op("get", "/workspace/logo", "getWorkspaceLogo", "Administration", "The workspace's logo",
    desc="Anyone in the workspace (404 without one).", res=raw("image/png", "the image (or JPEG, GIF, WebP)"))
+# ---- signing in to the command-line client ----
+op("post", "/cli/logins", "startCliLogin", "Auth & account", "Start a sign-in of the command-line client",
+   desc="No account needed. The client shows `url` (and `code`); the person approves there; the client polls POST /cli/token with `verifier`. Codes live ten minutes and work once.",
+   auth="public", req=body(obj({"name": d(txt, "how the client names itself, e.g. the computer's name")})),
+   res=created(obj({"code": d(txt, "ABCD-EFGH"), "verifier": d(txt, "the client's secret"), "url": uri, "expiresIn": d(num, "seconds"), "interval": d(num, "seconds between polls")},
+                   ["code", "verifier", "url", "expiresIn", "interval"])), err="429")
+op("get", "/cli/logins/{code}", "getCliLogin", "Auth & account", "Which command-line client asks to sign in", desc="A session, not a token.", auth="session",
+   pp={"code": (txt, "the code the client shows")}, res=ok(obj({"name": txt, "createdAt": dt, "approved": boolean}, ["name", "createdAt", "approved"])))
+op("post", "/cli/logins/{code}/approve", "approveCliLogin", "Auth & account", "Let the command-line client act as you",
+   desc="A session, not a token. The client then receives an API token of its own (named \"tc on …\", listed under your API tokens).", auth="session",
+   pp={"code": (txt, "the code the client shows")}, res=NO)
+op("delete", "/cli/logins/{code}", "denyCliLogin", "Auth & account", "Refuse a command-line client's sign-in", auth="session", pp={"code": (txt, "the code the client shows")}, res=NO)
+op("post", "/cli/token", "takeCliToken", "Auth & account", "Pick up the command-line client's token",
+   desc="No account needed: the verifier is the key. 202 while the person hasn't approved; then, once, the token; 404 when the sign-in ran out or was refused.", auth="public",
+   req=body(obj({"verifier": txt}, ["verifier"])),
+   res={**ok(obj({"token": d(txt, "an API token (write)"), "user": obj({"name": txt, "email": ntxt()}, ["name"])}, ["token", "user"])), "202": {"description": "Not approved yet"}}, err="-401 -403")
+
 schemas["ScimToken"] = obj(
     {"id": uuid, "name": txt, "providerId": ntxt("the single sign-on provider whose group sync shares its teams"), "defaultRole": enum("member", "guest"), "createdAt": dt,
      "lastUsedAt": null(dt), "requests": num, "lastError": ntxt("the last request that failed (not found doesn't count)"), "lastErrorAt": null(dt),

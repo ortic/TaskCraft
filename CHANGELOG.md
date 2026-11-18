@@ -6,6 +6,13 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 
 ## [Unreleased]
 
+- **`tc`, a command-line client** (a small separate binary in the release archives and the
+  image): `tc issue list` (TQL) / `view` / `create` / `edit` / `move` / `assign`, `tc comment`,
+  `tc link`, `tc log`, `tc timer`, `tc branch` (locally or on the Git server), `tc open`. The
+  issue key comes from the current Git branch when left out; `--json` for scripts. `tc login`
+  signs in through the browser — you approve a code and the client gets an API token of its
+  own — or set `TASKCRAFT_URL` and `TASKCRAFT_TOKEN`; several servers as profiles.
+
 - **Branches and draft pull requests from an issue**: a connected repository can carry a token
   for its server's API (GitHub, GitLab, Gitea, Forgejo); *Create branch* on an issue creates the
   branch there from a base branch — optionally with a draft pull / merge request — and links it

@@ -82,7 +82,7 @@
 - [x] Workflow approvals: steps and quorums, approvers from people / teams / roles / fields / the requester, e-mail links, delegation, reminders and timeouts, TQL, automation triggers, paused service levels (#5)
 - [x] SCIM provisioning: people created / taken over / deactivated (sessions and tokens end), groups as teams, tokens per identity provider with last sync and errors (#11)
 - [x] Branches and draft pull requests from an issue (GitHub, GitLab, Gitea / Forgejo APIs; a project permission; MCP `create_branch`); pull requests with checks, reviews and reviewers from webhooks (#8)
-- [ ] Command-line client (#9)
+- [x] Command-line client `tc`: browser sign-in and profiles, issues (TQL list, view, create, edit, move, assign), comments, links, time and timer, branches; the key from the Git branch; `--json`; a test against the OpenAPI description (#9)
 - [ ] Extensions: scripted automation actions (#10)
 - [ ] AI coding agents (#7)
 

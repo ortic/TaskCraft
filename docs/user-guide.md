@@ -229,6 +229,16 @@ and mute the kinds you don't want.
 - **WikiCraft**: connect your own WikiCraft account to see page titles you have access to.
 - **Your data**: download everything TaskCraft keeps about you as JSON.
 
+## The command line
+
+`tc` brings the everyday things to the terminal: `tc issue list` (your open issues, or any TQL
+query), `tc issue view`, `tc issue create`, `tc issue move WEB-12 "In progress"`, `tc comment`,
+`tc log 1h30m`, `tc timer start`, `tc branch` and `tc open`. On a branch named after an issue
+the key can be left out. `tc login https://your-server` opens the browser, where you approve
+the sign-in; the token it gets is listed under *Profile & settings → API tokens*, and deleting
+it there signs the command line out. `tc --help` and `tc issue --help` list everything;
+`--json` is for scripts.
+
 ## Keyboard shortcuts
 
 | Keys | Does |

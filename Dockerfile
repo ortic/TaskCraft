@@ -18,7 +18,8 @@ COPY crates ./crates
 COPY --from=web /web/dist ./web/dist
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release -p taskcraft --features "$FEATURES" && cp target/release/taskcraft /taskcraft
+    cargo build --release -p taskcraft --features "$FEATURES" && cargo build --release -p taskcraft-cli \
+    && cp target/release/taskcraft /taskcraft && cp target/release/tc /tc
 
 # ---- runtime ----
 FROM debian:bookworm-slim
@@ -31,6 +32,7 @@ RUN extra=""; case "$FEATURES" in *saml*) extra="libxml2 libxmlsec1 libxmlsec1-o
     apt-get update && apt-get install -y --no-install-recommends ca-certificates $extra && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home /data taskcraft && mkdir -p /data && chown -R taskcraft /data
 COPY --from=server /taskcraft /usr/local/bin/taskcraft
+COPY --from=server /tc /usr/local/bin/tc
 COPY LICENSE-MIT LICENSE-APACHE /usr/share/doc/taskcraft/
 USER taskcraft
 ENV TASKCRAFT_BIND=0.0.0.0:8788 \

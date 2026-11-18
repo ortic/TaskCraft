@@ -1288,6 +1288,305 @@
     ]
    }
   },
+  "/cli/logins": {
+   "post": {
+    "tags": [
+     "Auth & account"
+    ],
+    "summary": "Start a sign-in of the command-line client",
+    "operationId": "startCliLogin",
+    "description": "No account needed. The client shows `url` (and `code`); the person approves there; the client polls POST /cli/token with `verifier`. Codes live ten minutes and work once.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string",
+          "description": "how the client names itself, e.g. the computer's name"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "code": {
+           "type": "string",
+           "description": "ABCD-EFGH"
+          },
+          "verifier": {
+           "type": "string",
+           "description": "the client's secret"
+          },
+          "url": {
+           "type": "string",
+           "format": "uri"
+          },
+          "expiresIn": {
+           "type": "integer",
+           "description": "seconds"
+          },
+          "interval": {
+           "type": "integer",
+           "description": "seconds between polls"
+          }
+         },
+         "required": [
+          "code",
+          "verifier",
+          "url",
+          "expiresIn",
+          "interval"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "429": {
+      "$ref": "#/components/responses/TooMany"
+     }
+    },
+    "security": [
+     {}
+    ]
+   }
+  },
+  "/cli/logins/{code}": {
+   "get": {
+    "tags": [
+     "Auth & account"
+    ],
+    "summary": "Which command-line client asks to sign in",
+    "operationId": "getCliLogin",
+    "description": "A session, not a token.",
+    "parameters": [
+     {
+      "name": "code",
+      "in": "path",
+      "required": true,
+      "description": "the code the client shows",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "name": {
+           "type": "string"
+          },
+          "createdAt": {
+           "type": "string",
+           "format": "date-time"
+          },
+          "approved": {
+           "type": "boolean"
+          }
+         },
+         "required": [
+          "name",
+          "createdAt",
+          "approved"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "security": [
+     {
+      "session": []
+     }
+    ]
+   },
+   "delete": {
+    "tags": [
+     "Auth & account"
+    ],
+    "summary": "Refuse a command-line client's sign-in",
+    "operationId": "denyCliLogin",
+    "parameters": [
+     {
+      "name": "code",
+      "in": "path",
+      "required": true,
+      "description": "the code the client shows",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "security": [
+     {
+      "session": []
+     }
+    ]
+   }
+  },
+  "/cli/logins/{code}/approve": {
+   "post": {
+    "tags": [
+     "Auth & account"
+    ],
+    "summary": "Let the command-line client act as you",
+    "operationId": "approveCliLogin",
+    "description": "A session, not a token. The client then receives an API token of its own (named \"tc on …\", listed under your API tokens).",
+    "parameters": [
+     {
+      "name": "code",
+      "in": "path",
+      "required": true,
+      "description": "the code the client shows",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Done (no content)"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    },
+    "security": [
+     {
+      "session": []
+     }
+    ]
+   }
+  },
+  "/cli/token": {
+   "post": {
+    "tags": [
+     "Auth & account"
+    ],
+    "summary": "Pick up the command-line client's token",
+    "operationId": "takeCliToken",
+    "description": "No account needed: the verifier is the key. 202 while the person hasn't approved; then, once, the token; 404 when the sign-in ran out or was refused.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "verifier": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "verifier"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "token": {
+           "type": "string",
+           "description": "an API token (write)"
+          },
+          "user": {
+           "type": "object",
+           "properties": {
+            "name": {
+             "type": "string"
+            },
+            "email": {
+             "type": [
+              "string",
+              "null"
+             ]
+            }
+           },
+           "required": [
+            "name"
+           ]
+          }
+         },
+         "required": [
+          "token",
+          "user"
+         ]
+        }
+       }
+      }
+     },
+     "202": {
+      "description": "Not approved yet"
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     }
+    },
+    "security": [
+     {}
+    ]
+   }
+  },
   "/auth/mfa": {
    "post": {
     "tags": [

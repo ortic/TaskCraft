@@ -10,6 +10,7 @@ pub mod automation;
 pub mod backup;
 pub mod calendar;
 pub mod chat;
+pub mod cli_login;
 pub mod config;
 pub mod demo;
 pub mod doc;

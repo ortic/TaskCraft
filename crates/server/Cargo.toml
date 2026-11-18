@@ -73,6 +73,8 @@ reqwest = { version = "0.13.5", default-features = false, features = ["json", "c
 # signs the ID tokens of the mock OpenID provider in tests/sso.rs
 rsa = { version = "0.9.10", features = ["getrandom"] }
 tempfile = "3.27.0"
+# the command-line client, run against the test server (tests/cli.rs)
+taskcraft-cli = { path = "../cli" }
 
 [features]
 default = []

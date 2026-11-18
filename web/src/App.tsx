@@ -34,6 +34,7 @@ const Queue = lazy(() => import('./pages/Queue'))
 const Dashboards = lazy(() => import('./pages/Dashboards'))
 const Portfolio = lazy(() => import('./pages/Portfolio'))
 const ApiReference = lazy(() => import('./pages/ApiReference'))
+const CliAuthorize = lazy(() => import('./pages/CliAuthorize'))
 
 export default function App() {
   const setup = useQuery({ queryKey: ['setup'], queryFn: () => api.get<{ needsSetup: boolean }>('/setup') })
@@ -62,6 +63,8 @@ export default function App() {
     return <Navigate to={`/login?next=${encodeURIComponent(loc.pathname + loc.search)}`} replace />
   }
   if (gate.show) return <ToastProvider><TwoFactorGate me={me.data!} onDone={gate.done} /></ToastProvider>
+  // `tc login` sends the person here to approve the command-line client
+  if (loc.pathname === '/cli/authorize') return <Suspense fallback={<Loading />}><CliAuthorize /></Suspense>
   return (
     <ToastProvider>
       <Suspense fallback={<Loading />}>

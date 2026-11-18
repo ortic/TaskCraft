@@ -492,6 +492,28 @@ test('git: a token for creating branches from issues', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Create branch' })).toHaveCount(0)
 })
 
+test('command line: approving a sign-in', async ({ page, request }) => {
+  await login(page)
+  // what `tc login` does first
+  const started = await (await request.post('/api/cli/logins', { data: { name: 'build-box' } })).json()
+  await page.goto(`/cli/authorize?code=${started.code}`)
+  await expect(page.getByRole('heading', { name: 'Sign in the command line?' })).toBeVisible()
+  await expect(page.getByText('build-box')).toBeVisible()
+  await expect(page.getByText(started.code)).toBeVisible()
+  await a11y(page)
+  expect((await request.post('/api/cli/token', { data: { verifier: started.verifier } })).status()).toBe(202)
+  await page.getByRole('button', { name: 'Approve' }).click()
+  await expect(page.getByRole('heading', { name: 'The command line is signed in' })).toBeVisible()
+  // the client picks its token up, and it works
+  const got = await (await request.post('/api/cli/token', { data: { verifier: started.verifier } })).json()
+  expect(got.token).toMatch(/^tct_/)
+  const me = await (await request.get('/api/v1/me', { headers: { authorization: `Bearer ${got.token}` } })).json()
+  expect(me.user.name).toBe('Olivia Owner')
+  // a code that doesn't exist
+  await page.goto('/cli/authorize?code=AAAA-BBBB')
+  await expect(page.getByRole('heading', { name: 'This sign-in doesn’t exist any more' })).toBeVisible()
+})
+
 test('private issues with security levels', async ({ page }) => {
   await login(page)
   await page.goto('/projects/WEB/settings/permissions')

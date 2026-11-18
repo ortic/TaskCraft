@@ -1,0 +1,20 @@
+[package]
+name = "taskcraft-cli"
+description = "tc — TaskCraft from the command line"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "tc"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.6.7", features = ["derive", "env"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time", "io-std", "io-util"] }
+
+[lints]
+workspace = true
