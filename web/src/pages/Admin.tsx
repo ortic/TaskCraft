@@ -469,6 +469,7 @@ function FeaturesForm({ me }: { me: Me }) {
     { id: 'portal', label: () => t('Service desk portal'), hint: () => t('Request forms and the portal where requesters follow their requests. E-mail in keeps working.') },
     { id: 'automation', label: () => t('Automation'), hint: () => t('Rules that act on changes and on schedules. Existing rules are kept, but don’t run.') },
     { id: 'sharing', label: () => t('Sharing with links'), hint: () => t('Read-only pages projects share by link (status pages, roadmaps). Turned off, every link stops working.') },
+    { id: 'calendarFeeds', label: () => t('Calendar feeds'), hint: () => t('Secret addresses calendar apps subscribe to (due dates, sprints, releases). Turned off, every feed stops.') },
     { id: 'ai', label: () => t('AI assistance'), hint: () => `${t('Summaries of long threads and searching in plain words. Only what the person asking may read is sent, and only when they ask.')} ${aiSetupText(me)}` },
   ]
   const saved = me.workspace?.features ?? {}

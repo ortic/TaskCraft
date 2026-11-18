@@ -9,6 +9,7 @@ import { ErrorBox, Loading, PopButton, Spinner, useMe, useProject, useToast } fr
 import { PriorityIcon, TypeIcon } from '../icons'
 import { useCreateIssue, useOpenIssue } from '../components/Layout'
 import { refreshIssues } from '../components/IssueView'
+import { CalendarExport } from '../components/CalendarFeeds'
 
 interface SearchResult {
   total: number
@@ -324,6 +325,7 @@ function CalendarView({ project }: { project: Project }) {
           {data.isFetching && <Spinner size={14} />}
         </div>
         <span className="spacer" />
+        <CalendarExport projectKey={project.key} />
         <div className="seg" role="group" aria-label={t('Show issues by')}>
           <button className={mode === 'due' ? 'active' : ''} aria-pressed={mode === 'due'} onClick={() => setParam('by', null)}>
             {t('Due date')}

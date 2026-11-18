@@ -6,6 +6,11 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 
 ## [Unreleased]
 
+- **Calendar feeds** (*Profile & settings → Calendar feeds*): secret addresses calendar apps
+  subscribe to — your work, a saved filter or a project, with due dates (from the start date),
+  sprints and releases — read as their owner; shown once, renewable; the workspace can turn them
+  off. Projects' calendars subscribe or download `.ics`; any search downloads as `.ics`.
+
 - **Timer**: start one on an issue and it runs in the top bar on every device; pause, resume,
   stop and log (rounded up as the workspace says — *Administration → Time tracking*). Stopped
   timers not logged yet wait as **time drafts** only their owner sees (reports leave them out);

@@ -6,6 +6,7 @@ pub mod app;
 pub mod auth;
 pub mod automation;
 pub mod backup;
+pub mod calendar;
 pub mod chat;
 pub mod config;
 pub mod demo;

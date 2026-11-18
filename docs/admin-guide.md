@@ -41,7 +41,7 @@ projects if you like). Then *Administration → Overview*:
   as information or a warning, until a date or until you take it down. People can close it; a new
   one shows again.
 - **Features**: turn off what the workspace doesn't use — time tracking, votes, the service desk
-  portal, automation, sharing with links, AI assistance. They disappear for everyone and the API refuses them;
+  portal, automation, sharing with links, AI assistance, calendar feeds. They disappear for everyone and the API refuses them;
   turning one on again brings everything back as it was.
 - **Uploads**: blocked file endings (`exe, bat, cmd, …`) and a size limit. With a virus scanner set
   up on the server every file is checked before it's stored; the card says whether one is.

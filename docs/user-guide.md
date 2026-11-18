@@ -151,6 +151,15 @@ time: starting another one stops the first. A stopped timer you don't log right 
 **time draft** in the top bar — only you see drafts, and reports don't count them until they're
 logged. A timer that runs on and on reminds you after some hours and stops by itself after 24.
 
+## Calendar feeds
+
+*Profile & settings → Calendar feeds*: put due dates, sprints and releases into your own calendar
+app. A feed is a secret address your calendar subscribes to and keeps up to date — **my work**
+(your open issues with due dates, sprints and releases of your projects), a **saved filter**, or a
+**project**. It shows only what you may see. The address is shown once; *New address* replaces it
+(the old one stops working). On a project's calendar, *Subscribe…* makes a project feed and
+*Download .ics* saves its due dates as a file.
+
 ## Notifications and e-mail
 
 The bell shows what happened on issues you're involved in: assignments, mentions, comments,

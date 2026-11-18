@@ -76,7 +76,7 @@
 
 - [x] Link types of the workspace's own (outward / inward names, dependency), TQL `link` and `linkedIssues()`, imports keep them (#12)
 - [x] Timer on issues: one per person, pause, stop into a draft or a time log, rounding, reminders, 24-hour stop (#2)
-- [ ] Calendar feeds (#13)
+- [x] Calendar feeds: my work, a saved filter, a project; `.ics` downloads (#13)
 - [ ] Absences (#14)
 - [ ] Requester organizations on the service desk (#3)
 - [ ] Workflow approvals (#5)

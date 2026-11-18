@@ -681,6 +681,224 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /me/calendar-feeds:
+    get:
+      tags:
+      - Auth & account
+      summary: The caller's calendar feeds
+      operationId: listCalendarFeeds
+      description: 'Their addresses aren''t kept: they''re shown once, when a feed is made or renewed.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                    kind:
+                      type: string
+                      enum:
+                      - mine
+                      - filter
+                      - project
+                    viewId:
+                      type:
+                      - string
+                      - 'null'
+                      format: uuid
+                    viewName:
+                      type:
+                      - string
+                      - 'null'
+                    projectKey:
+                      type:
+                      - string
+                      - 'null'
+                    parts:
+                      description: '{issues, sprints, releases}: false leaves a part out'
+                    createdAt:
+                      type: string
+                      format: date-time
+                    lastUsedAt:
+                      type:
+                      - string
+                      - 'null'
+                      format: date-time
+                  required:
+                  - id
+                  - kind
+                  - parts
+                  - createdAt
+                  - lastUsedAt
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Auth & account
+      summary: Make a calendar feed
+      operationId: createCalendarFeed
+      description: 'A secret address calendar apps subscribe to (read as the caller: it shows what they may see). `mine`:
+        issues assigned to the caller that have a due date, and the sprints and releases of the projects they belong to; `filter`:
+        a saved filter''s issues with a due date (one they may see); `project`: a project''s issues with a due date, sprints
+        and releases. When the workspace has calendar feeds turned off: 400.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind:
+                  type: string
+                  enum:
+                  - mine
+                  - filter
+                  - project
+                viewId:
+                  type: string
+                  format: uuid
+                  description: for filter
+                projectKey:
+                  type: string
+                  description: for project
+                parts:
+                  type: object
+                  properties:
+                    issues:
+                      type: boolean
+                    sprints:
+                      type: boolean
+                    releases:
+                      type: boolean
+                  description: 'default: all'
+              required:
+              - kind
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  url:
+                    type: string
+                    format: uri
+                    description: the feed's address, shown this once
+                required:
+                - id
+                - url
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /me/calendar-feeds/{id}/renew:
+    post:
+      tags:
+      - Auth & account
+      summary: A new address for a calendar feed
+      operationId: renewCalendarFeed
+      description: The old address stops working.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  url:
+                    type: string
+                    format: uri
+                required:
+                - id
+                - url
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /me/calendar-feeds/{id}:
+    delete:
+      tags:
+      - Auth & account
+      summary: Delete a calendar feed
+      operationId: deleteCalendarFeed
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /calendar/{token}:
+    get:
+      tags:
+      - Auth & account
+      summary: A calendar feed (iCalendar)
+      operationId: getCalendarFeed
+      description: 'No sign-in: the address is the secret (`{token}.ics`). All-day events for issues (from their start to
+        their due date), sprints and releases. 404 when the feed is gone, its owner deactivated or the workspace turned feeds
+        off.'
+      parameters:
+      - name: token
+        in: path
+        required: true
+        description: the feed's secret, with .ics
+        schema:
+          type: string
+      responses:
+        '200':
+          description: an iCalendar file
+          content:
+            text/calendar:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+      - {}
   /auth/mfa:
     post:
       tags:
@@ -6432,6 +6650,38 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /search.ics:
+    get:
+      tags:
+      - Search & TQL
+      summary: Search results with a due date as a calendar file (iCalendar)
+      operationId: exportIssuesIcs
+      description: The first 1,000 matches that have a due date, each an all-day event from its start date (when there is
+        one) to its due date, with a link to the issue.
+      parameters:
+      - name: q
+        in: query
+        required: false
+        description: a TQL query (see the description at the top); empty matches every issue the caller can see
+        schema:
+          type: string
+      - name: project
+        in: query
+        required: false
+        description: limit the search to this project (key or id)
+        schema:
+          type: string
+      responses:
+        '200':
+          description: an iCalendar file
+          content:
+            text/calendar:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /quick:
     get:
       tags:
@@ -9808,6 +10058,8 @@ paths:
                       type: boolean
                     ai:
                       type: boolean
+                    calendarFeeds:
+                      type: boolean
                   description: 'false turns a part off: it''s hidden and the API refuses it (400; the portal answers 404);
                     left out: on'
                 uploads:
@@ -12336,6 +12588,8 @@ components:
                 sharing:
                   type: boolean
                 ai:
+                  type: boolean
+                calendarFeeds:
                   type: boolean
               description: parts of TaskCraft that are on
             ai:

@@ -640,7 +640,7 @@ schemas["Me"] = obj(
                     "dateFormat": null(enum("dmy", "mdy", "ymd"), "how dates are written (null: as the language writes them)"),
                     "announcement": null(obj({"id": uuid, "text": txt, "tone": enum("info", "warning"), "until": null(dt, "shown until"), "at": dt}, ["id", "text", "tone"]),
                                          "the announcement for everyone while it's current"),
-                    "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean}), "parts of TaskCraft that are on"),
+                    "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean, "calendarFeeds": boolean}), "parts of TaskCraft that are on"),
                     "ai": d(boolean, "AI assistance can be used (the server has a model and the workspace hasn't turned it off)"),
                     "aiSetup": null(obj({"provider": enum("anthropic", "openai-compatible"), "model": txt, "local": d(boolean, "the model runs in the server's own network")}), "the AI setup (admins only)"),
                     "logo": null(txt, "the logo's address (/api/workspace/logo?v=…); null: TaskCraft's mark"),
@@ -1531,6 +1531,28 @@ op("get", "/search.csv", "exportIssuesCsv", "Search & TQL", "Search results as C
 op("get", "/search.xlsx", "exportIssuesXlsx", "Search & TQL", "Search results as an Excel workbook",
    desc="The same columns as the CSV export, numbers as numbers, with a frozen header row and a filter.",
    query=[q("q", E_TQL), E_PROJECT, E_SUBPROJECTS, E_ORDER], res=raw("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "issues.xlsx (attachment)"))
+op("get", "/search.ics", "exportIssuesIcs", "Search & TQL", "Search results with a due date as a calendar file (iCalendar)",
+   desc="The first 1,000 matches that have a due date, each an all-day event from its start date (when there is one) to its due date, with a link to the issue.",
+   query=[q("q", E_TQL), E_PROJECT], res=raw("text/calendar", "an iCalendar file"))
+op("get", "/me/calendar-feeds", "listCalendarFeeds", "Auth & account", "The caller's calendar feeds",
+   desc="Their addresses aren't kept: they're shown once, when a feed is made or renewed.",
+   res=ok(arr(obj({"id": uuid, "kind": enum("mine", "filter", "project"), "viewId": nuuid(), "viewName": ntxt(), "projectKey": ntxt(),
+                    "parts": d(anyval, "{issues, sprints, releases}: false leaves a part out"), "createdAt": dt, "lastUsedAt": ndt()},
+                   ["id", "kind", "parts", "createdAt", "lastUsedAt"]))))
+op("post", "/me/calendar-feeds", "createCalendarFeed", "Auth & account", "Make a calendar feed",
+   desc="A secret address calendar apps subscribe to (read as the caller: it shows what they may see). `mine`: issues assigned to the caller that have a due date, and the sprints and "
+        "releases of the projects they belong to; `filter`: a saved filter's issues with a due date (one they may see); `project`: a project's issues with a due date, sprints and releases. "
+        "When the workspace has calendar feeds turned off: 400.",
+   req=body(obj({"kind": enum("mine", "filter", "project"), "viewId": d(uuid, "for filter"), "projectKey": d(txt, "for project"),
+                 "parts": obj({"issues": boolean, "sprints": boolean, "releases": boolean}, [], "default: all")}, ["kind"])),
+   res=created(obj({"id": uuid, "url": d(uri, "the feed's address, shown this once")}, ["id", "url"])), err="404")
+op("post", "/me/calendar-feeds/{id}/renew", "renewCalendarFeed", "Auth & account", "A new address for a calendar feed",
+   desc="The old address stops working.", res=ok(obj({"id": uuid, "url": uri}, ["id", "url"])), err="404")
+op("delete", "/me/calendar-feeds/{id}", "deleteCalendarFeed", "Auth & account", "Delete a calendar feed", res=NO, err="404")
+op("get", "/calendar/{token}", "getCalendarFeed", "Auth & account", "A calendar feed (iCalendar)",
+   desc="No sign-in: the address is the secret (`{token}.ics`). All-day events for issues (from their start to their due date), sprints and releases. "
+        "404 when the feed is gone, its owner deactivated or the workspace turned feeds off.",
+   auth="public", pp={"token": (txt, "the feed's secret, with .ics")}, res=raw("text/calendar", "an iCalendar file"))
 op("get", "/quick", "quickSearch", "Search & TQL", "Quick search by key or words (pickers, command palette)",
    desc="Up to 15 issues whose key, title or description match; without `q` the caller's recently viewed issues.",
    query=[q("q", "words or an issue key"), E_PROJECT], res=ok(arr(S("IssueSummary"))))
@@ -3210,7 +3232,7 @@ op("put", "/admin/workspace", "updateWorkspace", "Administration", "Rename the w
        "dateFormat": null(enum("auto", "dmy", "mdy", "ymd"), "how dates are written (auto or null: as the language writes them)"),
        "announcement": null(obj({"text": d(txt, "up to 500 characters (empty: taken down)"), "tone": enum("info", "warning"), "until": null(dt, "shown until (null: until taken down)")}, ["text"]),
                             "a message at the top of every page (null: taken down)"),
-       "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean}),
+       "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean, "calendarFeeds": boolean}),
                      "false turns a part off: it's hidden and the API refuses it (400; the portal answers 404); left out: on"),
        "uploads": obj(
            {
