@@ -120,8 +120,8 @@ pub async fn list(State(state): State<AppState>, CurrentUser(user): CurrentUser)
 /// open sprints, boards and the allowed moves.
 pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, Path(key): Path<String>) -> ApiResult<Json<Value>> {
     let (p, role) = by_key(&state, &user, &key, Role::Viewer).await?;
-    let statuses: Vec<(Uuid, String, String, Option<String>, f64, Value)> =
-        sqlx::query_as("SELECT id, name, category, color, position, rules FROM statuses WHERE project_id = $1 ORDER BY position")
+    let statuses: Vec<(Uuid, String, String, Option<String>, f64, Value, Option<Value>)> =
+        sqlx::query_as("SELECT id, name, category, color, position, rules, approval FROM statuses WHERE project_id = $1 ORDER BY position")
             .bind(p.id)
             .fetch_all(&state.db)
             .await?;
@@ -186,7 +186,7 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
         json!({
             "starred": starred,
             "leadName": lead_name,
-            "statuses": statuses.iter().map(|(id, n, c, col, pos, rules)| json!({"id": id, "name": n, "category": c, "color": col, "position": pos, "rules": rules})).collect::<Vec<_>>(),
+            "statuses": statuses.iter().map(|(id, n, c, col, pos, rules, approval)| json!({"id": id, "name": n, "category": c, "color": col, "position": pos, "rules": rules, "approval": approval})).collect::<Vec<_>>(),
             "types": types.iter().map(|(id, n, i, c, l, t, f)| json!({"id": id, "name": n, "icon": i, "color": c, "level": l, "template": t, "fields": f})).collect::<Vec<_>>(),
             "versions": versions.iter().map(|(id, n, d, s, sd, rd, ra)| json!({"id": id, "name": n, "description": d, "status": s, "startDate": sd, "releaseDate": rd, "releasedAt": ra})).collect::<Vec<_>>(),
             "components": components.iter().map(|(id, n, d, l)| json!({"id": id, "name": n, "description": d, "leadId": l})).collect::<Vec<_>>(),
@@ -781,6 +781,12 @@ pub async fn update_status(
         let rules = crate::workflow::check_rules(r)?;
         sqlx::query("UPDATE statuses SET rules = $2 WHERE id = $1").bind(id).bind(&rules).execute(&state.db).await?;
     }
+    // a status that waits for a decision (crate::approvals); null: none
+    if let Some(a) = req.get("approval") {
+        let approval = crate::approvals::check_config(&state, user.workspace_id, project, id, a).await?;
+        sqlx::query("UPDATE statuses SET approval = $2 WHERE id = $1").bind(id).bind(&approval).execute(&state.db).await?;
+        crate::app::audit(&state, user.workspace_id, Some(user.id), "status.approval", Some(id.to_string()), json!({"on": approval.is_some()})).await;
+    }
     changed(&state, &user, project).await;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -815,6 +821,12 @@ pub async fn delete_status(
         sqlx::query("UPDATE issues SET status_id = $2, updated_at = now() WHERE status_id = $1").bind(id).bind(to).execute(&mut *tx).await?;
     }
     sqlx::query("DELETE FROM statuses WHERE id = $1").bind(id).execute(&mut *tx).await?;
+    // an approval that led here is off (its issues would have nowhere to go)
+    sqlx::query("UPDATE statuses SET approval = NULL WHERE project_id = $1 AND (approval->>'approvedStatusId' = $2 OR approval->>'rejectedStatusId' = $2)")
+        .bind(project)
+        .bind(id.to_string())
+        .execute(&mut *tx)
+        .await?;
     // boards forget the status
     let boards: Vec<(Uuid, Value)> = sqlx::query_as("SELECT id, config FROM boards WHERE project_id = $1").bind(project).fetch_all(&mut *tx).await?;
     for (bid, mut cfg) in boards {
@@ -1563,8 +1575,8 @@ fn next_run(trigger: &Value, enabled: bool) -> Option<chrono::DateTime<chrono::U
 }
 
 fn check_rule(req: &Value) -> ApiResult<()> {
-    if !matches!(req["trigger"]["event"].as_str(), Some("created" | "status" | "assigned" | "field" | "commented" | "schedule")) {
-        return Err(ApiError::bad("trigger.event must be created, status, assigned, field, commented or schedule"));
+    if !matches!(req["trigger"]["event"].as_str(), Some("created" | "status" | "assigned" | "field" | "commented" | "approved" | "rejected" | "schedule")) {
+        return Err(ApiError::bad("trigger.event must be created, status, assigned, field, commented, approved, rejected or schedule"));
     }
     if req["trigger"]["event"] == "schedule" {
         crate::schedule::parse(&req["trigger"]["schedule"]).map_err(ApiError::BadRequest)?;

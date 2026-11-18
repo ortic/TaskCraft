@@ -359,6 +359,7 @@ schemas = {
                     "attachments": arr(S("IssueAttachment")),
                     "children": arr(S("IssueSummary"), "sub-tasks / issues of the epic, by rank"),
                     "sla": arr(S("SlaGoal")),
+                    "approval": null(obj({"id": uuid, "statusName": txt}, ["id", "statusName"]), "the approval request it waits on (details: GET /issues/{key}/approvals)"),
                     "requester": null(S("IssueRequester")),
                     "permissions": obj({"edit": boolean, "comment": boolean, "admin": boolean}, desc="what the caller may do"),
                 },
@@ -431,7 +432,8 @@ schemas = {
         "An entry of an issue's history.",
     ),
     "SearchResult": obj({"total": d(num, "all matches (not just this page)"), "issues": arr(S("IssueSummary"))}, ["total", "issues"]),
-    "Status": obj({"id": uuid, "name": txt, "category": S("StatusCategory"), "color": ntxt(), "position": number, "rules": S("StatusRules")}, ["id", "name", "category"]),
+    "Status": obj({"id": uuid, "name": txt, "category": S("StatusCategory"), "color": ntxt(), "position": number, "rules": S("StatusRules"),
+                   "approval": null(S("ApprovalConfig"), "the status waits for a decision (null: it doesn't)")}, ["id", "name", "category"]),
     "StatusRules": obj(
         {
             "who": enum("everyone", "admins", "teams", desc="who may move issues into the status (project admins always may); default everyone who can edit"),
@@ -1036,6 +1038,74 @@ op("post", "/organizations/import", "importOrganizations", "Templates & service 
    req=body(txt, "text/csv"), res=ok(obj({"organizations": num, "members": num, "skipped": num}, ["organizations", "members", "skipped"])))
 op("put", "/issues/{key}/organization", "setIssueOrganization", "Templates & service levels", "Which organization a request belongs to (project members)",
    req=body(obj({"organizationId": nuuid("null: none")}, ["organizationId"])), res=NO)
+# ==== Workflow approvals ====
+
+APPROVER = obj(
+    {"kind": enum("user", "team", "role", "field", "assignee", "reporter", "requester",
+                  desc="a person, a team's members, a project role, the person in a person field, the issue's assignee or reporter, or its requester (who decides on the portal)"),
+     "id": d(uuid, "user, team, field: which one"), "role": enum("admin", "member", desc="role: project admins, or members and up")},
+    ["kind"],
+)
+schemas["ApprovalConfig"] = obj(
+    {
+        "steps": arr(obj(
+            {"name": d(txt, "up to 60 characters"), "approvers": arr(APPROVER, "1 to 20; with nobody left to ask, the project's lead, else its admins"),
+             "quorum": enum("any", "all", "count", "percent", desc="how many approvals the step needs (default any: one)"),
+             "value": d(num, "count: how many; percent: what share of those asked (rounded up)"),
+             "rejection": enum("any", "quorum", desc="any (default): one rejection fails the step; quorum: only when the approvals can't be reached any more")},
+            ["approvers"]), "1 to 5"),
+        "parallel": d(boolean, "all steps ask at once (default: one after another)"),
+        "approvedStatusId": d(uuid, "where the issue moves when every step is approved"),
+        "rejectedStatusId": d(uuid, "where it moves when a step is rejected"),
+        "selfApproval": d(boolean, "whoever moved the issue into the status may be asked too (default false)"),
+        "remindHours": d(num, "remind those who haven't decided, every so many hours (1 to 720)"),
+        "timeout": obj({"hours": d(num, "1 to 8760, counted from the start of a step"), "action": enum("reassign", "skip", "reject"), "userId": d(uuid, "reassign: who is asked as well")}, ["hours", "action"],
+                       "what happens to a step nobody decides in time"),
+        "pauseSla": d(boolean, "service-level clocks stand still while the issue waits"),
+    },
+    ["steps", "approvedStatusId", "rejectedStatusId"],
+    "An approval step on a status: an issue entering it opens a request; the decision moves it on, nobody takes those two moves by hand meanwhile, and leaving the status another way cancels the request.",
+)
+schemas["Approval"] = obj(
+    {
+        "id": uuid, "issueId": uuid, "state": enum("pending", "approved", "rejected", "cancelled"),
+        "statusId": nuuid(), "statusName": txt, "requestedBy": null(S("Named"), "who moved the issue into the status (null: automation)"),
+        "createdAt": dt, "decidedAt": null(dt), "parallel": boolean, "approvedStatusId": uuid, "rejectedStatusId": uuid,
+        "steps": arr(obj(
+            {"id": uuid, "name": txt, "state": enum("waiting", "pending", "approved", "rejected", "skipped", "cancelled", desc="waiting: an earlier step comes first"),
+             "quorum": txt, "value": null(num), "needed": d(num, "approvals it takes"), "startedAt": null(dt), "decidedAt": null(dt), "dueAt": null(dt, "when its timeout strikes"),
+             "approvers": arr(obj(
+                 {"id": uuid, "user": null(S("Named")), "email": null(email, "a requester without an account"), "decision": null(enum("approved", "rejected"), "null: still asked"),
+                  "comment": ntxt(), "decidedAt": null(dt), "for": null(S("Named"), "asked in this person's place (delegated, or their substitute while they're away)")},
+                 ["id"]))},
+            ["id", "name", "state", "approvers"])),
+        "canDecide": arr(uuid, "the open steps the caller is asked in"),
+        "canManage": d(boolean, "the caller may add approvers (project admins, while it's pending)"),
+        "issue": d(S("IssueSummary"), "only in GET /approvals"),
+    },
+    ["id", "issueId", "state", "statusName", "steps", "canDecide"],
+    "An approval request of an issue.",
+)
+A_DECISION = obj({"decision": enum("approve", "reject"), "comment": d(txt, "up to 2000 characters; lands in the history"), "stepId": d(uuid, "which step, when the caller is asked in several")}, ["decision"])
+op("get", "/approvals", "listApprovals", "Issues", "Approval requests waiting for the caller",
+   desc="Pending requests the caller is asked to decide (`scope=mine`, the default) or asked for (`scope=requested`), oldest first, each with its issue.",
+   query=[q("scope", "mine | requested", enum("mine", "requested"))], res=ok(arr(S("Approval"))))
+op("get", "/issues/{key}/approvals", "listIssueApprovals", "Issues", "An issue's approval requests, latest first", res=ok(arr(S("Approval"))))
+op("post", "/approvals/{id}/decide", "decideApproval", "Issues", "Approve or reject",
+   desc="Only those asked in an open step (403 otherwise), once each. When the request is decided the issue moves to the approved or rejected status; "
+        "automation rules with the trigger `approved` / `rejected` run and whoever asked is told. 409 when it's decided or cancelled already.",
+   req=body(A_DECISION), res=NO, err="409")
+op("post", "/approvals/{id}/delegate", "delegateApproval", "Issues", "Hand the decision to someone else",
+   desc="An approver hands their open vote to another person who sees the issue (not to whoever asked, unless the status allows it). "
+        "Project admins who aren't asked add an approver to the open step instead.",
+   req=body(obj({"userId": uuid, "stepId": uuid, "comment": txt}, ["userId"])), res=NO, err="409")
+PP_APPROVAL_LINK = {"token": (txt, "from the link in the approver's e-mail")}
+A_LINK = obj({"key": txt, "title": txt, "step": txt, "requestedBy": ntxt(), "state": txt, "decision": null(enum("approved", "rejected")), "open": d(boolean, "the decision is still wanted"), "url": uri},
+             ["key", "title", "step", "open"])
+op("get", "/approval-links/{token}", "getApprovalLink", "Issues", "What an approval e-mail asks to decide",
+   desc="No session: the link is the key (signed, one approver's vote). Reading it decides nothing.", auth="public", pp=PP_APPROVAL_LINK, res=ok(A_LINK))
+op("post", "/approval-links/{token}", "decideApprovalLink", "Issues", "Decide from the link in the e-mail", desc="The confirmed decision; works once (403 afterwards).", auth="public", pp=PP_APPROVAL_LINK,
+   req=body(obj({"decision": enum("approve", "reject"), "comment": txt}, ["decision"])), res=ok(A_LINK), err="403 409")
 op("get", "/absences", "listAbsences", "People & teams", "Absences in a period",
    desc="Everyone's (or one person's, or a project's members'), overlapping the period; default: the last 30 days to the next 180. Why someone is away only for themselves and workspace admins.",
    query=[q("from", "first day", date), q("to", "last day", date), q("user", "one person", uuid), q("project", "the members of this project (key)")], res=ok(arr(S("Absence"))))
@@ -1197,7 +1267,7 @@ schemas["Schedule"] = obj(
 )
 schemas["AutomationTrigger"] = obj(
     {
-        "event": enum("created", "status", "assigned", "field", "commented", "schedule"),
+        "event": enum("created", "status", "assigned", "field", "commented", "approved", "rejected", "schedule", desc="approved / rejected: an approval request of the issue was decided"),
         "fromStatusId": d(uuid, "status: only moves from this status"),
         "toStatusId": d(uuid, "status: only moves to this status"),
         "toCategory": d(S("StatusCategory"), "status: only moves into this category"),
@@ -1369,7 +1439,8 @@ op("post", "/projects/{key}/statuses", "createStatus", "Project configuration", 
    req=body(obj({"name": txt, "category": d(S("StatusCategory"), "also accepts to do, open, new, backlog, in progress, doing, closed, resolved, …"), "color": txt}, ["name", "category"])),
    res=created(B_ID), err="409")
 op("patch", "/statuses/{id}", "updateStatus", "Project configuration", "Rename a status, change its category or colour, or set its rules (project admins)",
-   req=body(obj({"name": txt, "category": S("StatusCategory"), "color": ntxt(), "rules": d(S("StatusRules"), "replaces the rules ({} or null: none)")})), res=NO, err="409")
+   req=body(obj({"name": txt, "category": S("StatusCategory"), "color": ntxt(), "rules": d(S("StatusRules"), "replaces the rules ({} or null: none)"),
+                 "approval": null(S("ApprovalConfig"), "issues entering the status wait for this decision (null: none)")})), res=NO, err="409")
 op("delete", "/statuses/{id}", "deleteStatus", "Project configuration", "Delete a status (project admins)",
    desc="Its issues move to `moveTo`; boards drop it from their columns. A project keeps at least one status.", query=B_MOVE_TO("status"), res=NO)
 op("put", "/projects/{key}/order/{what}", "reorderProjectItems", "Project configuration", "Put statuses, types, fields, versions or security levels in order (project admins)",
@@ -2099,7 +2170,7 @@ schemas["Notification"] = obj(
     {
         "id": uuid,
         "actor": null(S("Named"), "who caused it (null: the system, automation or a requester)"),
-        "kind": enum("assigned", "status", "mentioned", "commented", "sla", "automation"),
+        "kind": enum("assigned", "status", "mentioned", "commented", "sla", "automation", "approval", "approvalResult"),
         "data": d(
             obj(
                 {
@@ -2798,6 +2869,7 @@ schemas["PortalRequestDetail"] = {
                 "files": arr(S("PortalFile")),
                 "canReply": d(boolean, "the project isn't archived"),
                 "canResolve": d(boolean, "the project lets requesters mark requests resolved, and it isn't resolved yet"),
+                "approval": null(obj({"id": uuid, "step": txt}, ["id", "step"]), "the decision the visitor is asked for (POST …/approval)"),
                 "limits": obj(
                     {"files": d(num, "files per message"), "mb": d(num, "MB of files per message, together"), "text": d(num, "characters per message")},
                     ["files", "mb", "text"],
@@ -3253,6 +3325,9 @@ op("post", "/portal/requests/{key}/resolve", "resolvePortalRequest", "Service de
    auth="portal",
    req=body(obj({"text": d(txt, "a last word (up to 20,000 characters)")})),
    res=ok(obj({"state": D_PORTAL_STATE}, ["state"])), err="401 403")
+op("post", "/portal/requests/{key}/approval", "decidePortalApproval", "Service desk portal", "Approve or reject, as the requester",
+   desc="Where a status asks the requester (the request's `approval` says so; else 404). " + D_PORTAL_NOTE, auth="portal",
+   req=body(obj({"decision": enum("approve", "reject"), "comment": txt}, ["decision"])), res=NO, err="401")
 op("get", "/portal/attachments/{id}", "downloadPortalAttachment", "Service desk portal", "Download one of the requester's own files",
    desc="Images, PDFs, videos and plain text inline, everything else as a download. " + D_PORTAL_NOTE, auth="portal",
    pp={"id": (uuid, "file id")}, res=raw("application/octet-stream", "The file"), err="401")

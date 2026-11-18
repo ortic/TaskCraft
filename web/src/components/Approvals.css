@@ -1,0 +1,29 @@
+/* Workflow approvals: the settings dialog, the request on an issue, the page behind the e-mail link. */
+.ap-step { display: flex; flex-direction: column; gap: 8px; }
+.ap-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ap-chip { display: inline-flex; align-items: center; gap: 4px; padding-inline-end: 4px; }
+.ap-chip-x { display: inline-flex; border: 0; background: none; color: inherit; padding: 2px; border-radius: 4px; cursor: pointer; }
+.ap-chip-x:hover, .ap-chip-x:focus-visible { background: color-mix(in srgb, currentColor 15%, transparent); }
+.ap-quorum { gap: 8px; flex-wrap: wrap; }
+.ap-num { width: 84px; }
+.ap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 12px; }
+
+.ap-panel { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.ap-panel.ap-mine { border-color: var(--warning); }
+.ap-panel .section-head h3 { display: inline-flex; align-items: center; gap: 6px; }
+.ap-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ap-step-row.ap-waiting, .ap-step-row.ap-cancelled, .ap-step-row.ap-skipped { opacity: 0.7; }
+.ap-voters { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.ap-voters li { display: flex; align-items: center; gap: 6px; font-size: 13px; min-width: 0; }
+.ap-voters li > span { min-width: 0; overflow-wrap: anywhere; }
+.ap-yes { color: var(--success); flex: none; }
+.ap-no { color: var(--danger); flex: none; }
+.ap-voters .faint { flex: none; }
+.ap-voters li > span .faint { flex: initial; }
+.ap-decide { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.ap-home { margin-bottom: 16px; }
+.ap-link h1 { font-size: 20px; }
+.ap-link-issue { font-size: 15px; margin: 8px 0 4px; overflow-wrap: anywhere; }
+.ap-options { display: flex; flex-direction: column; }
+.ap-options .row { min-height: 28px; margin: 0; }
+.ap-options input[type=checkbox] { width: 16px; height: 16px; margin: 0; }

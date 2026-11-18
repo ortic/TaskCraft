@@ -4,6 +4,7 @@ pub mod absences;
 pub mod access;
 pub mod ai;
 pub mod app;
+pub mod approvals;
 pub mod auth;
 pub mod automation;
 pub mod backup;

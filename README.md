@@ -39,6 +39,14 @@ One binary, PostgreSQL, optional S3. Built with the same stack as WikiCraft.
   with a small form that asks for what's missing on the board, in the issue and in bulk changes;
   **resolutions** (Done, Won't do, Duplicate, … per project) set when an issue is done; **fields
   per issue type** — which ones a type hides and which it requires
+- **Approvals**: a status can wait for a decision — approvers from people, teams, project roles,
+  a person field, the assignee, the reporter or the requester (on the portal); several steps in
+  sequence or in parallel; quorums (one, all, a number, a share); decisions on the issue, from
+  *Waiting for your approval* or from the e-mail's link, with a comment or handed to someone
+  else; substitutes for people away; reminders and timeouts; the approved and rejected moves
+  follow the decision and can't be taken by hand; TQL `approval = pending`, `approver = me()`;
+  automation triggers; service-level clocks that pause; history and audit log
+  (`GET /approvals`, `GET /issues/{KEY}/approvals`, `POST /approvals/{id}/decide`, `/delegate`)
 - **Move issues to another project** (the old key keeps working; type, status and custom fields are mapped, sub-tasks move along)
 - **CSV import** with column mapping and a dry run: statuses, types, people, sprints and releases matched by name (missing statuses created and put on the board); issue numbers kept when the project key stays, other keys keep working as links; parents by key or id; times in hours, durations or seconds, booked to whoever did the work; people who haven't joined yet or have left keep their issues; wiki-markup descriptions converted
 - **Migration from another tracker**: upload its XML site backup (.zip) in the browser, check what it holds, choose projects and how people come over, and import people, projects, issues with their numbers, comments, time logs, attachments, links, watchers, components, releases, sprints and the history the reports replay (see [Migrating from another tracker](#migrating-from-another-tracker))
@@ -85,7 +93,7 @@ files, HTML and plain text (the first 100 000 characters, read in the background
 
 Fields: `project key title text description comment type status category priority assignee
 reporter creator labels sprint version affects component parent/epic points estimate spent created
-updated resolved resolution security due start remaining watcher voter votes blocked link organization` and custom fields. Operators `= != ~ !~ > >= < <=`,
+updated resolved resolution security due start remaining watcher voter votes blocked link organization approval approver` and custom fields. Operators `= != ~ !~ > >= < <=`,
 `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions:
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`,
 `openSprints()`, `futureSprints()`, `closedSprints()`, `releasedVersions()`,

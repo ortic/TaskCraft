@@ -117,7 +117,15 @@ reports can then include the whole tree.
   issues (by role, teams or people, with a default for new issues).
 - **Workflow**: statuses with their category (to do, in progress, done), free or restricted
   transitions, and rules per status — who may move issues there, which fields must be filled, a
-  required comment, the resolutions to choose from.
+  required comment, the resolutions to choose from. A status can also carry an **approval**:
+  issues entering it wait for a decision by the people, teams, project roles, person field,
+  assignee, reporter or requester you name — in up to five steps (one after another or all at
+  once), each needing one, all, a number or a share of approvals — and then move to the status
+  you chose for approved or rejected. Reminders, a timeout (hand the step to someone, skip it or
+  reject), whether whoever asks may approve too, and whether service-level clocks pause
+  meanwhile are set there as well. With nobody left to ask (everyone excluded or gone), the
+  project's lead is asked, else its admins. Deleting a status an approval leads to turns that
+  approval off.
 - **Issue types**: icons, levels (epic, standard, sub-task), a description template, and per type
   which fields are hidden or required.
 - **Fields & components**: custom fields (text, number, select, multi-select, date, person,

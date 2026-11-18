@@ -289,6 +289,10 @@ function Notifications() {
         return x.data.goal === 'response' ? t('First-response goal missed') : t('Resolution goal missed')
       case 'substitute':
         return t('{who} assigned {name}, who is away: you substitute', { who, name: x.data.for ?? '' })
+      case 'approval':
+        return x.data.for ? t('Your approval is needed, in place of {name}', { name: x.data.for }) : t('Your approval is needed ({step})', { step: x.data.step ?? '' })
+      case 'approvalResult':
+        return x.data.result === 'approved' ? t('The approval you asked for was given') : t('The approval you asked for was rejected')
       case 'timer':
         return x.data.stopped ? t('Your timer stopped after 24 hours: the time waits as a draft') : t('Your timer has been running for {hours} hours', { hours: x.data.hours ?? '' })
       default:

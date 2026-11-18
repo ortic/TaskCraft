@@ -476,6 +476,7 @@ const KINDS: { id: string; label: () => string; desc: () => string }[] = [
   { id: 'mentioned', label: () => t('Mentions'), desc: () => t('Someone @mentions you in a description or comment.') },
   { id: 'commented', label: () => t('Comments'), desc: () => t('New comments on issues you watch.') },
   { id: 'status', label: () => t('Status changes'), desc: () => t('Issues you watch move to another status.') },
+  { id: 'approval', label: () => t('Approvals'), desc: () => t('An issue waits for your approval.') },
 ]
 
 type EmailMode = 'digest' | 'instant' | 'off'

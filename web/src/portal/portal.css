@@ -103,3 +103,8 @@
 .portal-check { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
 .portal-share-people { border: 0; padding: 0; margin: 8px 0 0; }
 .portal-share-people legend { padding: 0; margin-bottom: 4px; color: var(--text-faint); font-size: 14px; }
+.portal-approve { border: 1px solid var(--warning); border-radius: var(--radius); padding: 14px 16px; }
+.portal-approve h2 { margin-top: 0; }
+.portal-approve label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.portal-approve-buttons { display: flex; gap: 8px; margin-top: 10px; }
+.portal-approve-buttons .btn { height: 38px; }

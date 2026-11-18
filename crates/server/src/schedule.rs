@@ -157,6 +157,9 @@ pub async fn tick(state: &AppState) {
     if let Err(e) = crate::extract::index_pending(state).await {
         tracing::warn!(error = %e, "reading files for search");
     }
+    if let Err(e) = crate::approvals::tick(state).await {
+        tracing::warn!(error = %e, "approvals");
+    }
     if let Err(e) = crate::timers::housekeeping(state).await {
         tracing::warn!(error = %e, "timers");
     }

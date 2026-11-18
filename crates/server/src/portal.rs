@@ -418,6 +418,13 @@ async fn secret(state: &AppState) -> ApiResult<String> {
     Ok(sqlx::query_scalar("SELECT secret FROM portal_secret").fetch_one(&state.db).await?)
 }
 
+/// A signature over `what` with the installation's secret (links in e-mails that need no session).
+pub async fn sign(state: &AppState, what: &str) -> ApiResult<String> {
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret(state).await?.as_bytes()).expect("any key length");
+    mac.update(what.as_bytes());
+    Ok(hex::encode(mac.finalize().into_bytes()))
+}
+
 fn stamp_mac(secret: &str, project: Uuid, at: i64) -> Hmac<Sha256> {
     let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes()).expect("any key length");
     mac.update(format!("form:{project}:{at}").as_bytes());

@@ -150,6 +150,8 @@ pub async fn get(State(state): State<AppState>, CurrentUser(user): CurrentUser, 
     );
     v["children"] = json!(children);
     v["sla"] = json!(crate::sla::for_issues(&state, &[id]).await?.remove(&id).unwrap_or_default());
+    // the request it waits on, if any (GET /issues/{key}/approvals has the details)
+    v["approval"] = crate::approvals::pending_of(&state, id).await?;
     // who it was opened for (no account): by e-mail, on the request form or in the portal;
     // `mail`: comments for them are e-mailed and they can sign in to the portal
     v["requester"] = crate::mail_in::requester(&state, id)
@@ -594,6 +596,8 @@ pub async fn suggest(
                 "blocked",
                 "link",
                 "organization",
+                "approval",
+                "approver",
                 "comment",
             ]
             .iter()
@@ -610,6 +614,7 @@ pub async fn suggest(
             sqlx::query_scalar("SELECT DISTINCT name FROM issue_types WHERE project_id = ANY($1) ORDER BY name").bind(&visible).fetch_all(&state.db).await?
         }
         "category" | "statuscategory" => vec!["todo".into(), "in_progress".into(), "done".into()],
+        "approval" => vec!["pending".into(), "approved".into(), "rejected".into()],
         "organization" => {
             sqlx::query_scalar("SELECT name FROM organizations WHERE workspace_id = $1 ORDER BY lower(name) LIMIT 200")
                 .bind(user.workspace_id)

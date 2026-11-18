@@ -17,6 +17,7 @@ import { PriorityIcon, TypeIcon, priorityLabel } from '../icons'
 import { RichText, RichView, EMPTY_DOC, isEmptyDoc } from './Editor'
 import Development, { describeDevEvent } from './Development'
 import { SlaList } from './SlaBadges'
+import { ApprovalPanel } from './Approvals'
 import { TimerButton } from './Timer'
 import { useOrganizations } from '../pages/Organizations'
 import { resolutionLabel, resolutionsOf, useTransition } from './Transition'
@@ -243,6 +244,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
           </div>
         )}
 
+        <ApprovalPanel issue={issue} onChanged={() => { qc.invalidateQueries({ queryKey: ['issue', issue.key] }); qc.invalidateQueries({ queryKey: ['history', issue.key] }); refreshIssues(qc) }} />
         <Development issue={issue} />
         <div className="section">
           <Tabs
@@ -1140,6 +1142,32 @@ function Comments({ issue, meId }: { issue: IssueDetail; meId?: string }) {
 }
 
 /** One history entry as a sentence. */
+/** An approval's entries in the history: asked, each vote, handed over, late, decided. */
+function describeApprovalEvent(e: HistoryEvent): React.ReactNode {
+  const step = String(e.new?.step ?? '')
+  const said = e.new?.comment ? <span className="faint">: “{String(e.new.comment)}”</span> : null
+  switch (e.new?.action) {
+    case 'requested':
+      return t('asked for approval in {status}', { status: String(e.new?.status ?? '') })
+    case 'cancelled':
+      return t('withdrew the approval request')
+    case 'voteApproved':
+      return <>{t('approved ({step})', { step })}{said}</>
+    case 'voteRejected':
+      return <>{t('rejected ({step})', { step })}{said}</>
+    case 'delegated':
+      return <>{t('handed the decision to {name} ({step})', { name: String(e.new?.to ?? ''), step })}{said}</>
+    case 'timeout':
+      return e.new?.outcome === 'skip' ? t('skipped the late step {step}', { step }) : e.new?.outcome === 'reject' ? t('rejected the late step {step}', { step }) : t('handed the late step {step} on', { step })
+    case 'approved':
+      return t('completed the approval: approved')
+    case 'rejected':
+      return t('completed the approval: rejected')
+    default:
+      return t('changed the approval')
+  }
+}
+
 export function describeEvent(e: HistoryEvent): React.ReactNode {
   const name = (v: any): string =>
     v == null ? t('none') : Array.isArray(v) ? (v.length ? v.map(name).join(', ') : t('none')) : typeof v === 'object' ? (v.name ?? v.key ?? v.value ?? JSON.stringify(v)) : String(v)
@@ -1158,6 +1186,8 @@ export function describeEvent(e: HistoryEvent): React.ReactNode {
       return t('logged {time}', { time: duration(e.new?.minutes) })
     case 'attachment':
       return e.new ? t('attached {name}', { name: e.new.name }) : t('removed the attachment {name}', { name: e.old?.name })
+    case 'approval':
+      return describeApprovalEvent(e)
     case 'dev':
       return describeDevEvent(e)
     case 'link':

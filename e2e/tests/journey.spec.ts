@@ -381,6 +381,67 @@ test('workflow rules ask for what a status needs', async ({ page }) => {
   })
 })
 
+test('approvals: a status waits for a decision', async ({ page }) => {
+  await login(page)
+  // Review asks the project's admins; whoever asks may approve too (there's only the owner here)
+  await page.goto('/projects/OPS/settings/workflow')
+  await page.getByRole('button', { name: 'Approval · Review' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('button', { name: 'Save' })).toBeDisabled()
+  await dialog.getByLabel('Add an approver').selectOption({ label: 'Project admins' })
+  await dialog.getByLabel('When approved, move to').selectOption({ label: 'Done' })
+  await dialog.getByLabel('Whoever moves the issue here may approve it too').check()
+  await a11y(page, '[role=dialog]')
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByRole('button', { name: 'Approval: on · Review' })).toBeVisible()
+  // an issue enters the status
+  const key = await page.evaluate(async () => {
+    const p = await (await fetch('/api/projects/OPS')).json()
+    const review = p.statuses.find((s: { name: string }) => s.name === 'Review').id
+    const r = await fetch('/api/issues', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-taskcraft': '1' },
+      body: JSON.stringify({ projectKey: 'OPS', title: 'Rotate the backup keys', statusId: review }),
+    })
+    return (await r.json()).key as string
+  })
+  // it waits on the start page; the issue shows who is asked and takes the decision
+  await page.goto('/')
+  const waiting = page.locator('.ap-home')
+  await expect(waiting.getByRole('heading', { name: 'Waiting for your approval' })).toBeVisible()
+  await waiting.getByText('Rotate the backup keys').click()
+  const panel = page.locator('.ap-panel')
+  await expect(panel.getByRole('heading', { name: 'Waiting for approval' })).toBeVisible()
+  await expect(panel.locator('.ap-voters').getByText('Olivia Owner')).toBeVisible()
+  await a11y(page, '.ap-panel')
+  await panel.getByLabel('Comment on your decision').fill('Keys are in the vault.')
+  await panel.getByRole('button', { name: 'Approve' }).click()
+  await expect(panel).toBeHidden()
+  await page.goto(`/issues/${key}`)
+  await expect(page.getByText('Done', { exact: true }).first()).toBeVisible()
+  await page.getByRole('tab', { name: /History/ }).click()
+  await expect(page.getByText('Keys are in the vault.')).toBeVisible()
+  await expect(page.getByText('completed the approval: approved')).toBeVisible()
+  // the link from the e-mail: decided already, and it says so without deciding anything
+  const sink = `http://127.0.0.1:${process.env.E2E_MAIL_PORT ?? '8797'}/messages`
+  let link = ''
+  for (let i = 0; i < 40 && !link; i++) {
+    const mails: { to: string[]; text: string }[] = await (await fetch(sink)).json()
+    link = mails.map((m) => m.text.match(/https?:\/\/\S+(\/approve\/[0-9a-f.]+)/)?.[1] ?? '').filter(Boolean).pop() ?? ''
+    if (!link) await new Promise((r) => setTimeout(r, 500))
+  }
+  expect(link).not.toBe('')
+  await page.goto(link)
+  await expect(page.getByRole('heading', { name: 'You approved' })).toBeVisible()
+  await a11y(page)
+  // off again for the steps after this one
+  await page.evaluate(async () => {
+    const p = await (await fetch('/api/projects/OPS')).json()
+    const id = p.statuses.find((s: { name: string }) => s.name === 'Review').id
+    await fetch(`/api/statuses/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json', 'x-taskcraft': '1' }, body: JSON.stringify({ approval: null }) })
+  })
+})
+
 test('private issues with security levels', async ({ page }) => {
   await login(page)
   await page.goto('/projects/WEB/settings/permissions')

@@ -8,7 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   SlidersHorizontal, Users, Workflow, Shapes, TextCursorInput, Kanban, Bot, Plug, Trash, Shield, GripVertical, Plus, Pencil, X, Check, ArrowRight,
   Archive, ArchiveArrowUp, TriangleExclamationPoint, Type, Hash, CircleDot, ListChecks, Calendar, User, SquareCheck, Link as LinkIcon, Puzzle, Search,
-  ExternalLink, BookOpen, Undo2, Info, Lock, LockOpen, Columns3, Funnel, ChevronDown, ChevronRight, FileStack, Timer, Upload, Mail, LifeBuoy, Download, Globe,
+  ExternalLink, BookOpen, Undo2, Info, Lock, LockOpen, Columns3, Funnel, ChevronDown, ChevronRight, FileStack, Timer, Upload, Mail, LifeBuoy, Download, Globe, Stamp,
 } from 'lucide-react'
 import {
   api, ago, dateTime, PRIORITIES, PROJECT_ACTIONS, TYPE_FIELDS, type ProjectAction, type Category, type CustomField, type FieldOption, type IssueType, type Named, type Priority, type Project, type Role,
@@ -19,6 +19,7 @@ import { Avatar, Choices, Confirm, Empty, ErrorBox, Loading, Lozenge, Modal, Pop
 import { PROJECT_COLORS, PROJECT_ICONS, ProjectIcon, TYPE_ICONS, TypeIcon, priorityLabel } from '../icons'
 import { AddPersonButton, OptionChip, PersonPicker } from '../components/fields'
 import { useOpenIssue } from '../components/Layout'
+import { ApprovalDialog, approvalSummary } from '../components/Approvals'
 import ShareSettings from './ShareSettings'
 import { ServiceLevelsSection, TemplatesSection } from '../components/TemplateSettings'
 import { ImportSection } from '../components/ImportSettings'
@@ -32,7 +33,7 @@ import './ProjectSettings.css'
 type Grant = { subjectType: 'user' | 'team'; subjectId: string; role: Role; name: string | null }
 type MembersData = { defaultRole: Role; grants: Grant[]; people: { id: string; name: string; role: Role }[] }
 type Team = { id: string; name: string; memberIds: string[]; color?: string | null }
-type TriggerEvent = 'created' | 'status' | 'assigned' | 'field' | 'commented' | 'schedule'
+type TriggerEvent = 'created' | 'status' | 'assigned' | 'field' | 'commented' | 'approved' | 'rejected' | 'schedule'
 type Trigger = { event: TriggerEvent; toStatusId?: string; fromStatusId?: string; toCategory?: Category; field?: string; schedule?: Schedule }
 type ActionKind = 'setStatus' | 'assign' | 'setPriority' | 'addLabel' | 'removeLabel' | 'setSprint' | 'comment' | 'notify' | 'chat'
 type NotifyTo = 'assignee' | 'reporter' | 'watchers' | 'lead'
@@ -1075,6 +1076,7 @@ function WorkflowSection() {
   const { project, run, patch } = useSettings()
   const [deleting, setDeleting] = useState<Status | null>(null)
   const [ruling, setRuling] = useState<Status | null>(null)
+  const [approving, setApproving] = useState<Status | null>(null)
   const [name, setName] = useState('')
   const [cat, setCat] = useState<Category>('todo')
   const [color, setColor] = useState('#5b8def')
@@ -1116,6 +1118,14 @@ function WorkflowSection() {
                 <ListChecks size={14} /> {ruleCount(s.rules) ? t('{count} rules', { count: ruleCount(s.rules) }) : t('Rules')}
               </button>
               <button
+                className={`btn btn-sm${s.approval ? ' ps-approval-on' : ''}`}
+                onClick={() => setApproving(s)}
+                title={t('Issues entering {name} wait for a decision', { name: s.name })}
+                aria-label={`${approvalSummary(s)} · ${s.name}`}
+              >
+                <Stamp size={14} /> {approvalSummary(s)}
+              </button>
+              <button
                 className="icon-btn"
                 title={t('Delete status')}
                 aria-label={t('Delete {name}', { name: s.name })}
@@ -1144,6 +1154,8 @@ function WorkflowSection() {
       <TransitionsEditor key={`${statuses.map((s) => s.id).join()}|${project.settings.workflow}|${project.transitions.map((x) => x.from + x.to).join()}`} />
 
       <ResolutionsEditor key={resolutionsOf(project).join('|')} />
+
+      {approving && <ApprovalDialog status={approving} project={project} onSave={(approval) => { update(approving, { approval }); setApproving(null) }} onClose={() => setApproving(null)} />}
 
       {ruling && <RulesDialog status={ruling} onSave={(rules) => { update(ruling, { rules }); setRuling(null) }} onClose={() => setRuling(null)} />}
 
@@ -2492,6 +2504,8 @@ const EVENTS: { id: TriggerEvent; label: () => string }[] = [
   { id: 'assigned', label: () => t('an issue is assigned') },
   { id: 'field', label: () => t('a field changes') },
   { id: 'commented', label: () => t('someone comments') },
+  { id: 'approved', label: () => t('an approval is given') },
+  { id: 'rejected', label: () => t('an approval is rejected') },
   { id: 'schedule', label: () => t('on a schedule') },
 ]
 const TRIGGER_FIELDS: { id: string; label: () => string }[] = [
@@ -2534,6 +2548,10 @@ function describeTrigger(tr: Trigger, project: Project): string {
       return t('an issue is assigned')
     case 'commented':
       return t('someone comments on an issue')
+    case 'approved':
+      return t('an approval is given')
+    case 'rejected':
+      return t('an approval is rejected')
     case 'schedule':
       return describeSchedule(tr.schedule)
     case 'field':

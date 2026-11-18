@@ -9,6 +9,7 @@ import { PriorityIcon, ProjectIcon, TypeIcon } from '../icons'
 import { DueText } from '../components/fields'
 import { useOpenIssue } from '../components/Layout'
 import { describeEvent } from '../components/IssueView'
+import { MyApprovals } from '../components/Approvals'
 
 interface MyWork {
   assigned: Issue[]
@@ -75,6 +76,7 @@ export default function Home() {
         <Stat value={w?.doneThisWeek.length} label={t('Finished in the last 7 days')} tone="success" />
         <Stat value={w ? duration(w.loggedThisWeek) : undefined} label={t('Time logged this week')} />
       </div>
+      <MyApprovals open={open} />
       <div className="home-grid">
         <section className="panel">
           <div style={{ padding: '6px 14px 0' }}>

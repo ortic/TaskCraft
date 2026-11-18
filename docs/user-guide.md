@@ -171,6 +171,26 @@ with `organization = "Acme"`. An organization's service-level goals can be a sha
 project's (50% = twice as fast). In the portal, a requester shares a request with their whole
 organization or with chosen colleagues, who then follow and answer it (resolving stays theirs).
 
+## Approvals
+
+Some statuses wait for a decision (a project admin sets this up under *Project settings →
+Workflow → Approval*: who is asked, in how many steps, how many must agree, and where the issue
+goes when it's approved or rejected). Move an issue into such a status and the approvers are
+told — in TaskCraft and by e-mail. While it waits, the issue shows *Waiting for approval* with
+every step, who is asked and what they said; nobody moves it to the approved or rejected status
+by hand, and moving it anywhere else withdraws the request.
+
+When it's your turn, the issue offers **Approve** and **Reject** (a comment lands in the
+history), and *Hand over to…* passes your decision to a colleague. Everything that waits for you
+is on the start page under *Waiting for your approval*, or search `approver = me()`. The button
+in the e-mail opens a page that asks again before anything is decided. If you're away with a
+substitute (*Time off*), they're asked as well. Whoever asked hears how it ended; by default
+they can't approve their own request. Useful searches: `approval = pending`,
+`approval = rejected`, `approver = "Mia Member"`.
+
+On the service desk, a status can ask the **requester**: they approve or reject on the portal
+page of their request.
+
 ## Calendar feeds
 
 *Profile & settings → Calendar feeds*: put due dates, sprints and releases into your own calendar

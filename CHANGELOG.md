@@ -6,6 +6,18 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 
 ## [Unreleased]
 
+- **Workflow approvals** (*Project settings → Workflow → Approval* on a status): issues entering
+  the status wait for a decision. Approvers are people, teams, project roles, a person field, the
+  assignee, the reporter or the requester (who decides on the portal); steps run one after
+  another or all at once, each needing one, all, a number or a share of approvals. Approvers
+  decide on the issue, from *Waiting for your approval* on the start page or from the link in
+  the e-mail (a page that asks first), with a comment, or hand the decision to someone else;
+  substitutes are asked for people who are away. Approved and rejected issues move on by
+  themselves and nobody takes those two moves by hand meanwhile. Reminders and timeouts
+  (reassign, skip, reject), TQL `approval = pending` and `approver = me()`, automation triggers
+  *an approval is given / rejected*, service-level clocks that pause while waiting; everything
+  in the history and the audit log.
+
 - **Requester organizations** (*Organizations*): customers with members (by e-mail address) and
   mail domains — requesters from them join by themselves; requests show their organization (it
   can be changed), TQL `organization = Acme`, an organization's page lists its requests, its

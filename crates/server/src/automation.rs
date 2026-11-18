@@ -42,8 +42,12 @@ pub async fn matches(state: &AppState, s: &Summary, workspace: Uuid, condition: 
     qb.build_query_scalar::<bool>().fetch_one(&state.db).await.unwrap_or(false)
 }
 
-fn triggered(t: &Value, changes: &[Change], created: bool, commented: bool) -> bool {
+fn triggered(t: &Value, changes: &[Change], created: bool, commented: bool, event: Option<&str>) -> bool {
     let find = |f: &str| changes.iter().find(|c| c.field == f);
+    // an approval was decided: only the rules waiting for exactly that
+    if let Some(e) = event {
+        return t["event"].as_str() == Some(e);
+    }
     match t["event"].as_str().unwrap_or("") {
         "created" => created,
         "commented" => commented,
@@ -75,15 +79,20 @@ fn triggered(t: &Value, changes: &[Change], created: bool, commented: bool) -> b
 
 /// Runs the project's rules after a change (boxed: rules change issues, which runs rules).
 pub fn run<'a>(state: &'a AppState, actor: &'a Actor, s: &'a Summary, changes: &'a [Change], created: bool) -> BoxFuture<'a, ()> {
-    Box::pin(run_inner(state, actor, s, changes, created, false))
+    Box::pin(run_inner(state, actor, s, changes, created, false, None))
 }
 
 /// Runs the project's comment rules.
 pub fn run_commented<'a>(state: &'a AppState, actor: &'a Actor, s: &'a Summary) -> BoxFuture<'a, ()> {
-    Box::pin(run_inner(state, actor, s, &[], false, true))
+    Box::pin(run_inner(state, actor, s, &[], false, true, None))
 }
 
-async fn run_inner(state: &AppState, actor: &Actor, s: &Summary, changes: &[Change], created: bool, commented: bool) {
+/// Runs the project's rules for an approval's outcome (`approved` | `rejected`).
+pub fn run_event<'a>(state: &'a AppState, actor: &'a Actor, s: &'a Summary, event: &'static str) -> BoxFuture<'a, ()> {
+    Box::pin(run_inner(state, actor, s, &[], false, false, Some(event)))
+}
+
+async fn run_inner(state: &AppState, actor: &Actor, s: &Summary, changes: &[Change], created: bool, commented: bool, event: Option<&str>) {
     if actor.depth >= 3 {
         return;
     }
@@ -97,7 +106,7 @@ async fn run_inner(state: &AppState, actor: &Actor, s: &Summary, changes: &[Chan
         return;
     }
     for rule in rules {
-        if !triggered(&rule.trigger, changes, created, commented) || !matches(state, s, actor.workspace, &rule.condition).await {
+        if !triggered(&rule.trigger, changes, created, commented, event) || !matches(state, s, actor.workspace, &rule.condition).await {
             continue;
         }
         let bot = Actor { user: None, workspace: actor.workspace, depth: actor.depth + 1 };
@@ -212,11 +221,14 @@ mod tests {
     #[test]
     fn triggers() {
         let to_done = Change { field: "status", old: json!({"id": "a", "category": "todo"}), new: json!({"id": "b", "category": "done"}) };
-        assert!(triggered(&json!({"event": "status"}), std::slice::from_ref(&to_done), false, false));
-        assert!(triggered(&json!({"event": "status", "toCategory": "done"}), std::slice::from_ref(&to_done), false, false));
-        assert!(!triggered(&json!({"event": "status", "toStatusId": "c"}), std::slice::from_ref(&to_done), false, false));
-        assert!(triggered(&json!({"event": "created"}), &[], true, false));
-        assert!(!triggered(&json!({"event": "status"}), std::slice::from_ref(&to_done), true, false));
-        assert!(triggered(&json!({"event": "commented"}), &[], false, true));
+        assert!(triggered(&json!({"event": "status"}), std::slice::from_ref(&to_done), false, false, None));
+        assert!(triggered(&json!({"event": "status", "toCategory": "done"}), std::slice::from_ref(&to_done), false, false, None));
+        assert!(!triggered(&json!({"event": "status", "toStatusId": "c"}), std::slice::from_ref(&to_done), false, false, None));
+        assert!(triggered(&json!({"event": "created"}), &[], true, false, None));
+        assert!(!triggered(&json!({"event": "status"}), std::slice::from_ref(&to_done), true, false, None));
+        assert!(triggered(&json!({"event": "commented"}), &[], false, true, None));
+        assert!(triggered(&json!({"event": "approved"}), &[], false, false, Some("approved")));
+        assert!(!triggered(&json!({"event": "rejected"}), &[], false, false, Some("approved")));
+        assert!(!triggered(&json!({"event": "created"}), &[], true, false, Some("approved")));
     }
 }

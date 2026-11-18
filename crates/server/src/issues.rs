@@ -584,6 +584,7 @@ pub async fn create(state: &AppState, actor: &Actor, mut n: NewIssue) -> ApiResu
         }),
     };
     record(&mut tx, id, n.project, actor.user, "created", Some(&created)).await?;
+    crate::approvals::entered(state, &mut tx, actor, id, n.project, snapshot.0).await?;
     tx.commit().await?;
     let row = load(state, id).await?;
     let s = summary(state, row);
@@ -857,6 +858,8 @@ pub async fn apply(
                         .await?;
                     let (name, category) = row.ok_or_else(|| ApiError::bad("unknown status for this project"))?;
                     check_transition(tx, project, cur.status_id, s, actor).await?;
+                    // a pending approval: its own two moves aren't taken by hand, any other cancels it
+                    crate::approvals::leaving(tx, actor, id, project, s).await?;
                     let (old_name, old_cat): (String, String) =
                         sqlx::query_as("SELECT name, category FROM statuses WHERE id = $1").bind(cur.status_id).fetch_one(&mut **tx).await?;
                     changes.push(Change {
@@ -1123,6 +1126,10 @@ pub async fn apply(
     if let (Some(to), Some(user)) = (moved_to, person) {
         crate::workflow::enforce(tx, user, id, to, comment).await?;
     }
+    // a status that waits for a decision asks for it (a new issue: once it's complete, in `create`)
+    if let Some(to) = moved_to.filter(|_| !quiet) {
+        crate::approvals::entered(state, tx, actor, id, project, to).await?;
+    }
     // what its type requires (people only): all of it when creating or changing the type, else
     // the fields changed can't be emptied
     if person.is_some() {
@@ -1303,6 +1310,9 @@ pub async fn after_change(state: &AppState, actor: &Actor, s: &Summary, changes:
         return;
     }
     crate::notify::changes(state, actor, s, changes, created).await;
+    if created || changes.iter().any(|c| c.field == "status") {
+        crate::approvals::asked(state, s.id).await;
+    }
     let mut e = Event::new(actor.workspace, "issue").project(s.project_id).issue(s.id, &s.key);
     e.actor_id = actor.user;
     events::publish(state, e).await;

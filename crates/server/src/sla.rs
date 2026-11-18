@@ -59,6 +59,8 @@ struct Clock {
     settings: Value,
     /// the requester's organization's goals, as a share of the project's
     sla_percent: Option<i32>,
+    /// seconds spent waiting for approvals that pause the clocks
+    paused_secs: f64,
 }
 
 /// Goals of the given issues (issues of projects without goals are left out).
@@ -66,6 +68,8 @@ pub async fn for_issues(state: &AppState, ids: &[Uuid]) -> ApiResult<HashMap<Uui
     let rows: Vec<Clock> = sqlx::query_as(
         "SELECT i.id, i.created_at, i.priority, i.resolved_at, p.settings,
                 (SELECT o.sla_percent FROM issue_requesters r JOIN organizations o ON o.id = r.organization_id WHERE r.issue_id = i.id) AS sla_percent,
+                COALESCE((SELECT sum(extract(epoch FROM COALESCE(a.decided_at, now()) - a.created_at))::float8 FROM approvals a
+                           WHERE a.issue_id = i.id AND (a.config->>'pauseSla')::boolean), 0) AS paused_secs,
                 LEAST(
                   (SELECT min(e.created_at) FROM issue_events e WHERE e.issue_id = i.id AND e.field = 'status' AND e.new_value->>'category' <> 'todo'),
                   (SELECT min(c.created_at) FROM comments c WHERE c.issue_id = i.id AND c.author_id IS NOT NULL AND c.author_id IS DISTINCT FROM i.reporter_id)
@@ -81,12 +85,14 @@ pub async fn for_issues(state: &AppState, ids: &[Uuid]) -> ApiResult<HashMap<Uui
     for r in rows {
         let mut goals = Vec::new();
         let share = r.sla_percent.unwrap_or(100).clamp(10, 500) as f64 / 100.0;
+        // the clocks stand still while the issue waits for an approval that pauses them
+        let start = r.created_at + Duration::seconds(r.paused_secs as i64);
         if let Some(h) = target_hours(&r.settings, "response", r.priority).map(|h| h * share) {
             // resolving also counts as a response
-            goals.push(evaluate("response", h, r.created_at, r.responded_at.or(r.resolved_at), now));
+            goals.push(evaluate("response", h, start.min(r.responded_at.or(r.resolved_at).unwrap_or(start)), r.responded_at.or(r.resolved_at), now));
         }
         if let Some(h) = target_hours(&r.settings, "resolution", r.priority).map(|h| h * share) {
-            goals.push(evaluate("resolution", h, r.created_at, r.resolved_at, now));
+            goals.push(evaluate("resolution", h, start.min(r.resolved_at.unwrap_or(start)), r.resolved_at, now));
         }
         if !goals.is_empty() {
             out.insert(r.id, goals);

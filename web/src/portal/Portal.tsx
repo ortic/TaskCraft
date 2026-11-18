@@ -60,6 +60,8 @@ interface Detail extends Listed {
   files: FileInfo[]
   canReply: boolean
   canResolve: boolean
+  /** the decision the visitor is asked for */
+  approval?: { id: string; step: string } | null
   limits: { files: number; mb: number; text: number }
   organization?: string | null
   shared?: boolean
@@ -540,6 +542,7 @@ function RequestPage({ info }: { info: Info }) {
         )}
       </section>
 
+      {r.approval && <Approve r={r} onDone={setNews} />}
       {r.canReply ? <Reply r={r} onSent={setNews} /> : <p className="portal-note">{t('This request is closed for answers.')}</p>}
       {r.canResolve && <Resolve r={r} onDone={setNews} />}
       {r.mine !== false && r.organization && <Share r={r} />}
@@ -689,6 +692,40 @@ function Resolve({ r, onDone }: { r: Detail; onDone: (news: string) => void }) {
       >
         <CircleCheck size={15} aria-hidden /> {t('Mark as resolved')}
       </button>
+    </section>
+  )
+}
+
+/** The support team asks the requester to approve (or reject) what's proposed. */
+function Approve({ r, onDone }: { r: Detail; onDone: (news: string) => void }) {
+  const qc = useQueryClient()
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [comment, setComment] = useState('')
+  const decide = async (decision: 'approve' | 'reject') => {
+    setBusy(true)
+    setErr('')
+    try {
+      await api.post(`/portal/requests/${r.key}/approval`, { decision, comment: comment.trim() || undefined })
+      onDone(decision === 'approve' ? t('Approved. Thank you!') : t('Rejected. Thank you for letting us know.'))
+      await qc.invalidateQueries({ queryKey: ['portal-request', r.key] })
+      qc.invalidateQueries({ queryKey: ['portal-requests'] })
+    } catch (e) {
+      setErr(errText(e))
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="portal-section portal-approve" aria-labelledby="portal-approve-h">
+      <h2 id="portal-approve-h">{t('Your decision is needed')}</h2>
+      <p className="portal-faint">{t('We’re waiting for your approval before we go on ({step}).', { step: r.approval!.step })}</p>
+      <label htmlFor="portal-approve-comment">{t('Comment (optional)')}</label>
+      <textarea id="portal-approve-comment" className="textarea" rows={2} maxLength={2000} value={comment} onChange={(e) => setComment(e.target.value)} />
+      {err && <p className="portal-error" role="alert">{err}</p>}
+      <div className="portal-approve-buttons">
+        <button type="button" className="btn btn-primary" disabled={busy} onClick={() => decide('approve')}><CircleCheck size={15} aria-hidden /> {t('Approve')}</button>
+        <button type="button" className="btn" disabled={busy} onClick={() => decide('reject')}>{t('Reject')}</button>
+      </div>
     </section>
   )
 }

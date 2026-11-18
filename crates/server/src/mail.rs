@@ -724,6 +724,12 @@ pub fn describe(l: &str, kind: &str, data: &Value, who: &str) -> String {
         "sla" if s("for").is_some() => {
             tr(l, "A service-level goal of {name}, who is away, was missed: you're the substitute", &[("name", s("for").unwrap_or(""))])
         }
+        "approval" if s("for").is_some() => {
+            tr(l, "Your approval is needed ({step}), in place of {name}", &[("step", s("step").unwrap_or("")), ("name", s("for").unwrap_or(""))])
+        }
+        "approval" => tr(l, "Your approval is needed ({step})", &[("step", s("step").unwrap_or(""))]),
+        "approvalResult" if s("result") == Some("approved") => tr(l, "The approval you asked for was given", &[]),
+        "approvalResult" => tr(l, "The approval you asked for was rejected", &[]),
         "timer" if data["stopped"].as_bool() == Some(true) => tr(l, "Your timer ran for 24 hours and stopped: the time waits as a draft", &[]),
         "timer" => tr(l, "Your timer has been running for {hours} hours", &[("hours", &data["hours"].as_i64().unwrap_or(0).to_string())]),
         "sla" if s("goal") == Some("response") => tr(l, "The goal for the first response was missed", &[]),

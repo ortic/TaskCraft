@@ -10,6 +10,7 @@ import { applyAccent } from './look'
 import Layout from './components/Layout'
 import { ForgotPassword, Login, Setup, Welcome } from './pages/Auth'
 import { TwoFactorGate, useTwoFactorGate } from './components/Security'
+import { ApprovePage } from './components/Approvals'
 import Home from './pages/Home'
 import Projects from './pages/Projects'
 import Board from './pages/Board'
@@ -53,6 +54,8 @@ export default function App() {
   applyAccent(me.data?.workspace?.accentColor)
   setDateSettings(me.data?.workspace?.dateFormat, me.data?.profile?.timezone || me.data?.workspace?.timeZone)
   if (loc.pathname === '/welcome') return <Welcome />
+  // the link in an approver's e-mail: a page that asks before anything is decided, signed in or not
+  if (loc.pathname.startsWith('/approve/')) return <ApprovePage />
   if (!user) {
     if (loc.pathname === '/login') return <Login />
     if (loc.pathname === '/forgot-password') return <ForgotPassword />

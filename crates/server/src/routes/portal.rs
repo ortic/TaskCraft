@@ -251,6 +251,8 @@ pub async fn request(State(state): State<AppState>, Requester(email): Requester,
         "canResolve": f.mine && settings.resolve && !f.archived && state_word != "resolved",
         "mine": f.mine, "requester": if f.mine { None } else { f.name.clone() },
         "organization": f.organization, "shared": f.shared, "sharedWith": shared_with,
+        // the decision the visitor is asked for, if any (POST …/approval)
+        "approval": crate::approvals::for_requester(&state, f.id, &email).await?,
         "limits": {"files": portal::MAX_FILES, "mb": files_limit(&state), "text": portal::MAX_TEXT},
     })))
 }

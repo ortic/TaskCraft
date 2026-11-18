@@ -165,6 +165,9 @@ const BUILTIN: &[&str] = &[
     "link",
     "links",
     "organization",
+    "approval",
+    "approver",
+    "approvers",
     "rank",
 ];
 
@@ -716,6 +719,34 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
             let col = if field.starts_with("due") { "i.due_date" } else { "i.start_date" };
             time_compare(qb, ctx, field, col, op, values, true)?;
         }
+        "approval" => {
+            // pending: a request is open; approved / rejected: how the latest one ended
+            let neg = only_eq(field, op)?;
+            let states: Vec<String> = texts(field, values)?.into_iter().map(|s| s.to_lowercase()).collect();
+            if let Some(s) = states.iter().find(|s| !matches!(s.as_str(), "pending" | "approved" | "rejected" | "cancelled")) {
+                return bad(format!("approval is pending, approved, rejected or cancelled, not {s}"));
+            }
+            qb.push(if neg { "NOT " } else { "" });
+            qb.push("COALESCE((SELECT a.state FROM approvals a WHERE a.issue_id = i.id ORDER BY a.state = 'pending' DESC, a.created_at DESC LIMIT 1) = ANY(");
+            qb.push_bind(states);
+            qb.push("), false)");
+        }
+        "approver" | "approvers" => {
+            // asked right now and not decided yet
+            let neg = only_eq(field, op)?;
+            let (ids, names) = people(ctx, field, values)?;
+            qb.push(if neg { "NOT " } else { "" });
+            qb.push(
+                "EXISTS (SELECT 1 FROM approvals a JOIN approval_steps st ON st.approval_id = a.id JOIN approval_votes v ON v.step_id = st.id JOIN users u ON u.id = v.user_id
+                          WHERE a.issue_id = i.id AND a.state = 'pending' AND st.state = 'pending' AND v.decision IS NULL AND (u.id = ANY(",
+            );
+            qb.push_bind(ids);
+            qb.push(") OR lower(u.name) = ANY(");
+            qb.push_bind(names.clone());
+            qb.push(") OR lower(u.email) = ANY(");
+            qb.push_bind(names);
+            qb.push(")))");
+        }
         "organization" => {
             let neg = only_eq(field, op)?;
             let names: Vec<String> = texts(field, values)?.into_iter().map(|s| s.to_lowercase()).collect();
@@ -1109,6 +1140,16 @@ fn empty(qb: &mut Qb, ctx: &Ctx, field: &str, negated: bool) -> ApiResult<()> {
         "link" | "links" => {
             qb.push(if negated { "EXISTS" } else { "NOT EXISTS" });
             qb.push(" (SELECT 1 FROM issue_links l WHERE l.source_id = i.id OR l.target_id = i.id)");
+            return Ok(());
+        }
+        "approval" => {
+            qb.push(if negated { "EXISTS" } else { "NOT EXISTS" });
+            qb.push(" (SELECT 1 FROM approvals a WHERE a.issue_id = i.id)");
+            return Ok(());
+        }
+        "approver" | "approvers" => {
+            qb.push(if negated { "EXISTS" } else { "NOT EXISTS" });
+            qb.push(" (SELECT 1 FROM approvals a JOIN approval_steps st ON st.approval_id = a.id JOIN approval_votes v ON v.step_id = st.id WHERE a.issue_id = i.id AND a.state = 'pending' AND st.state = 'pending' AND v.decision IS NULL)");
             return Ok(());
         }
         "organization" => {

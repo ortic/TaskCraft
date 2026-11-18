@@ -79,7 +79,7 @@
 - [x] Calendar feeds: my work, a saved filter, a project; `.ics` downloads (#13)
 - [x] Absences, public holidays per region, sprint capacity, substitutes, away badges (#14)
 - [x] Requester organizations: domains, members, CSV import, TQL, shorter goals, sharing in the portal (#3)
-- [ ] Workflow approvals (#5)
+- [x] Workflow approvals: steps and quorums, approvers from people / teams / roles / fields / the requester, e-mail links, delegation, reminders and timeouts, TQL, automation triggers, paused service levels (#5)
 - [ ] SCIM provisioning (#11)
 - [ ] Branches and draft pull requests from an issue (#8)
 - [ ] Command-line client (#9)

@@ -3154,6 +3154,11 @@ paths:
                 rules:
                   $ref: '#/components/schemas/StatusRules'
                   description: 'replaces the rules ({} or null: none)'
+                approval:
+                  anyOf:
+                  - $ref: '#/components/schemas/ApprovalConfig'
+                  - type: 'null'
+                  description: 'issues entering the status wait for this decision (null: none)'
       responses:
         '204':
           description: Done (no content)
@@ -4810,6 +4815,297 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /approvals:
+    get:
+      tags:
+      - Issues
+      summary: Approval requests waiting for the caller
+      operationId: listApprovals
+      description: Pending requests the caller is asked to decide (`scope=mine`, the default) or asked for (`scope=requested`),
+        oldest first, each with its issue.
+      parameters:
+      - name: scope
+        in: query
+        required: false
+        description: mine | requested
+        schema:
+          type: string
+          enum:
+          - mine
+          - requested
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Approval'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /issues/{key}/approvals:
+    get:
+      tags:
+      - Issues
+      summary: An issue's approval requests, latest first
+      operationId: listIssueApprovals
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: issue key (e.g. WEB-12; former keys keep working) or issue id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Approval'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /approvals/{id}/decide:
+    post:
+      tags:
+      - Issues
+      summary: Approve or reject
+      operationId: decideApproval
+      description: Only those asked in an open step (403 otherwise), once each. When the request is decided the issue moves
+        to the approved or rejected status; automation rules with the trigger `approved` / `rejected` run and whoever asked
+        is told. 409 when it's decided or cancelled already.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision:
+                  type: string
+                  enum:
+                  - approve
+                  - reject
+                comment:
+                  type: string
+                  description: up to 2000 characters; lands in the history
+                stepId:
+                  type: string
+                  format: uuid
+                  description: which step, when the caller is asked in several
+              required:
+              - decision
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /approvals/{id}/delegate:
+    post:
+      tags:
+      - Issues
+      summary: Hand the decision to someone else
+      operationId: delegateApproval
+      description: An approver hands their open vote to another person who sees the issue (not to whoever asked, unless the
+        status allows it). Project admins who aren't asked add an approver to the open step instead.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                stepId:
+                  type: string
+                  format: uuid
+                comment:
+                  type: string
+              required:
+              - userId
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /approval-links/{token}:
+    get:
+      tags:
+      - Issues
+      summary: What an approval e-mail asks to decide
+      operationId: getApprovalLink
+      description: 'No session: the link is the key (signed, one approver''s vote). Reading it decides nothing.'
+      parameters:
+      - name: token
+        in: path
+        required: true
+        description: from the link in the approver's e-mail
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  title:
+                    type: string
+                  step:
+                    type: string
+                  requestedBy:
+                    type:
+                    - string
+                    - 'null'
+                  state:
+                    type: string
+                  decision:
+                    type:
+                    - string
+                    - 'null'
+                    enum:
+                    - approved
+                    - rejected
+                    - null
+                  open:
+                    type: boolean
+                    description: the decision is still wanted
+                  url:
+                    type: string
+                    format: uri
+                required:
+                - key
+                - title
+                - step
+                - open
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+      - {}
+    post:
+      tags:
+      - Issues
+      summary: Decide from the link in the e-mail
+      operationId: decideApprovalLink
+      description: The confirmed decision; works once (403 afterwards).
+      parameters:
+      - name: token
+        in: path
+        required: true
+        description: from the link in the approver's e-mail
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision:
+                  type: string
+                  enum:
+                  - approve
+                  - reject
+                comment:
+                  type: string
+              required:
+              - decision
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  title:
+                    type: string
+                  step:
+                    type: string
+                  requestedBy:
+                    type:
+                    - string
+                    - 'null'
+                  state:
+                    type: string
+                  decision:
+                    type:
+                    - string
+                    - 'null'
+                    enum:
+                    - approved
+                    - rejected
+                    - null
+                  open:
+                    type: boolean
+                    description: the decision is still wanted
+                  url:
+                    type: string
+                    format: uri
+                required:
+                - key
+                - title
+                - step
+                - open
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+      - {}
   /issues:
     post:
       tags:
@@ -9454,6 +9750,48 @@ paths:
           $ref: '#/components/responses/NotFound'
       security:
       - portalSession: []
+  /portal/requests/{key}/approval:
+    post:
+      tags:
+      - Service desk portal
+      summary: Approve or reject, as the requester
+      operationId: decidePortalApproval
+      description: Where a status asks the requester (the request's `approval` says so; else 404). Needs a portal session
+        (cookie tc_portal, from POST /portal/session); 401 without one.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: issue key (e.g. WEB-12; former keys keep working) or issue id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision:
+                  type: string
+                  enum:
+                  - approve
+                  - reject
+                comment:
+                  type: string
+              required:
+              - decision
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+      - portalSession: []
   /portal/attachments/{id}:
     get:
       tags:
@@ -12584,6 +12922,20 @@ components:
             type: array
             items:
               $ref: '#/components/schemas/SlaGoal'
+          approval:
+            type:
+            - object
+            - 'null'
+            properties:
+              id:
+                type: string
+                format: uuid
+              statusName:
+                type: string
+            required:
+            - id
+            - statusName
+            description: 'the approval request it waits on (details: GET /issues/{key}/approvals)'
           requester:
             anyOf:
             - $ref: '#/components/schemas/IssueRequester'
@@ -12842,6 +13194,11 @@ components:
           type: number
         rules:
           $ref: '#/components/schemas/StatusRules'
+        approval:
+          anyOf:
+          - $ref: '#/components/schemas/ApprovalConfig'
+          - type: 'null'
+          description: 'the status waits for a decision (null: it doesn''t)'
       required:
       - id
       - name
@@ -14143,6 +14500,271 @@ components:
       - domains
       - slaPercent
       description: 'A requester organization: a customer whose people write to the service desk.'
+    ApprovalConfig:
+      type: object
+      properties:
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: up to 60 characters
+              approvers:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    kind:
+                      type: string
+                      enum:
+                      - user
+                      - team
+                      - role
+                      - field
+                      - assignee
+                      - reporter
+                      - requester
+                      description: a person, a team's members, a project role, the person in a person field, the issue's assignee
+                        or reporter, or its requester (who decides on the portal)
+                    id:
+                      type: string
+                      format: uuid
+                      description: 'user, team, field: which one'
+                    role:
+                      type: string
+                      enum:
+                      - admin
+                      - member
+                      description: 'role: project admins, or members and up'
+                  required:
+                  - kind
+                description: 1 to 20; with nobody left to ask, the project's lead, else its admins
+              quorum:
+                type: string
+                enum:
+                - any
+                - all
+                - count
+                - percent
+                description: 'how many approvals the step needs (default any: one)'
+              value:
+                type: integer
+                description: 'count: how many; percent: what share of those asked (rounded up)'
+              rejection:
+                type: string
+                enum:
+                - any
+                - quorum
+                description: 'any (default): one rejection fails the step; quorum: only when the approvals can''t be reached
+                  any more'
+            required:
+            - approvers
+          description: 1 to 5
+        parallel:
+          type: boolean
+          description: 'all steps ask at once (default: one after another)'
+        approvedStatusId:
+          type: string
+          format: uuid
+          description: where the issue moves when every step is approved
+        rejectedStatusId:
+          type: string
+          format: uuid
+          description: where it moves when a step is rejected
+        selfApproval:
+          type: boolean
+          description: whoever moved the issue into the status may be asked too (default false)
+        remindHours:
+          type: integer
+          description: remind those who haven't decided, every so many hours (1 to 720)
+        timeout:
+          type: object
+          properties:
+            hours:
+              type: integer
+              description: 1 to 8760, counted from the start of a step
+            action:
+              type: string
+              enum:
+              - reassign
+              - skip
+              - reject
+            userId:
+              type: string
+              format: uuid
+              description: 'reassign: who is asked as well'
+          required:
+          - hours
+          - action
+          description: what happens to a step nobody decides in time
+        pauseSla:
+          type: boolean
+          description: service-level clocks stand still while the issue waits
+      required:
+      - steps
+      - approvedStatusId
+      - rejectedStatusId
+      description: 'An approval step on a status: an issue entering it opens a request; the decision moves it on, nobody takes
+        those two moves by hand meanwhile, and leaving the status another way cancels the request.'
+    Approval:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        issueId:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum:
+          - pending
+          - approved
+          - rejected
+          - cancelled
+        statusId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        statusName:
+          type: string
+        requestedBy:
+          anyOf:
+          - $ref: '#/components/schemas/Named'
+          - type: 'null'
+          description: 'who moved the issue into the status (null: automation)'
+        createdAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        parallel:
+          type: boolean
+        approvedStatusId:
+          type: string
+          format: uuid
+        rejectedStatusId:
+          type: string
+          format: uuid
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              state:
+                type: string
+                enum:
+                - waiting
+                - pending
+                - approved
+                - rejected
+                - skipped
+                - cancelled
+                description: 'waiting: an earlier step comes first'
+              quorum:
+                type: string
+              value:
+                type:
+                - integer
+                - 'null'
+              needed:
+                type: integer
+                description: approvals it takes
+              startedAt:
+                type:
+                - string
+                - 'null'
+                format: date-time
+              decidedAt:
+                type:
+                - string
+                - 'null'
+                format: date-time
+              dueAt:
+                type:
+                - string
+                - 'null'
+                format: date-time
+                description: when its timeout strikes
+              approvers:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                    user:
+                      anyOf:
+                      - $ref: '#/components/schemas/Named'
+                      - type: 'null'
+                    email:
+                      type:
+                      - string
+                      - 'null'
+                      format: email
+                      description: a requester without an account
+                    decision:
+                      type:
+                      - string
+                      - 'null'
+                      enum:
+                      - approved
+                      - rejected
+                      - null
+                      description: 'null: still asked'
+                    comment:
+                      type:
+                      - string
+                      - 'null'
+                    decidedAt:
+                      type:
+                      - string
+                      - 'null'
+                      format: date-time
+                    for:
+                      anyOf:
+                      - $ref: '#/components/schemas/Named'
+                      - type: 'null'
+                      description: asked in this person's place (delegated, or their substitute while they're away)
+                  required:
+                  - id
+            required:
+            - id
+            - name
+            - state
+            - approvers
+        canDecide:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: the open steps the caller is asked in
+        canManage:
+          type: boolean
+          description: the caller may add approvers (project admins, while it's pending)
+        issue:
+          $ref: '#/components/schemas/IssueSummary'
+          description: only in GET /approvals
+      required:
+      - id
+      - issueId
+      - state
+      - statusName
+      - steps
+      - canDecide
+      description: An approval request of an issue.
     SlaSettings:
       type: object
       description: 'Service-level goals in calendar hours per priority (0–8760; null removes one): time to first response
@@ -14439,7 +15061,10 @@ components:
           - assigned
           - field
           - commented
+          - approved
+          - rejected
           - schedule
+          description: 'approved / rejected: an approval request of the issue was decided'
         fromStatusId:
           type: string
           format: uuid
@@ -16491,6 +17116,8 @@ components:
           - commented
           - sla
           - automation
+          - approval
+          - approvalResult
         data:
           type: object
           properties:
@@ -17105,6 +17732,20 @@ components:
           canResolve:
             type: boolean
             description: the project lets requesters mark requests resolved, and it isn't resolved yet
+          approval:
+            type:
+            - object
+            - 'null'
+            properties:
+              id:
+                type: string
+                format: uuid
+              step:
+                type: string
+            required:
+            - id
+            - step
+            description: the decision the visitor is asked for (POST …/approval)
           limits:
             type: object
             properties:

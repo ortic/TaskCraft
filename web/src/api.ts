@@ -241,6 +241,8 @@ export interface IssueDetail extends Issue {
   permissions: { edit: boolean; comment: boolean; admin: boolean }
   /** service-level goals (projects with service levels) */
   sla: import('./components/SlaBadges').SlaGoal[]
+  /** the approval request it waits on, if any */
+  approval?: { id: string; statusName: string } | null
   /** who it was opened for (no account): by e-mail, on the request form or in the portal;
    *  `mail`: comments for them are e-mailed and they can sign in to the portal */
   requester: { email: string; name: string | null; mail: boolean; source?: 'email' | 'form' | 'portal'; organization?: Named | null; shared?: boolean } | null
@@ -255,9 +257,37 @@ export interface StatusRules {
   resolution?: string
 }
 
+/** Who a step of an approval asks (crate::approvals). */
+export interface Approver {
+  kind: 'user' | 'team' | 'role' | 'field' | 'assignee' | 'reporter' | 'requester'
+  id?: string
+  role?: 'admin' | 'member'
+}
+
+export interface ApprovalStepConfig {
+  name: string
+  approvers: Approver[]
+  quorum?: 'any' | 'all' | 'count' | 'percent'
+  value?: number
+  rejection?: 'any' | 'quorum'
+}
+
+/** A status that waits for a decision. */
+export interface ApprovalConfig {
+  steps: ApprovalStepConfig[]
+  parallel?: boolean
+  approvedStatusId: string
+  rejectedStatusId: string
+  selfApproval?: boolean
+  remindHours?: number
+  timeout?: { hours: number; action: 'reassign' | 'skip' | 'reject'; userId?: string }
+  pauseSla?: boolean
+}
+
 export interface Status extends StatusRef {
   position: number
   rules?: StatusRules
+  approval?: ApprovalConfig | null
 }
 
 export interface IssueType extends TypeRef {
@@ -425,7 +455,7 @@ export interface Notification {
   id: string
   actor: Named | null
   kind: 'assigned' | 'mentioned' | 'commented' | 'status' | string
-  data: { key: string; title: string; from?: string; to?: string; excerpt?: string; commentId?: string; message?: string; goal?: string; by?: string; hours?: number; stopped?: boolean; for?: string; until?: string }
+  data: { key: string; title: string; from?: string; to?: string; excerpt?: string; commentId?: string; message?: string; goal?: string; by?: string; hours?: number; stopped?: boolean; for?: string; until?: string; step?: string; result?: string }
   createdAt: string
   read: boolean
 }
