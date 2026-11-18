@@ -81,7 +81,7 @@
 - [x] Requester organizations: domains, members, CSV import, TQL, shorter goals, sharing in the portal (#3)
 - [x] Workflow approvals: steps and quorums, approvers from people / teams / roles / fields / the requester, e-mail links, delegation, reminders and timeouts, TQL, automation triggers, paused service levels (#5)
 - [x] SCIM provisioning: people created / taken over / deactivated (sessions and tokens end), groups as teams, tokens per identity provider with last sync and errors (#11)
-- [ ] Branches and draft pull requests from an issue (#8)
+- [x] Branches and draft pull requests from an issue (GitHub, GitLab, Gitea / Forgejo APIs; a project permission; MCP `create_branch`); pull requests with checks, reviews and reviewers from webhooks (#8)
 - [ ] Command-line client (#9)
 - [ ] Extensions: scripted automation actions (#10)
 - [ ] AI coding agents (#7)

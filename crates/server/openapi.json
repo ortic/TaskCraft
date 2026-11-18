@@ -13691,16 +13691,263 @@
           "branchName": {
            "type": "string",
            "description": "e.g. web-12-short-title"
+          },
+          "repositories": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "string",
+              "format": "uuid"
+             },
+             "repo": {
+              "type": "string"
+             },
+             "kind": {
+              "type": "string",
+              "enum": [
+               "github",
+               "gitlab",
+               "gitea"
+              ]
+             },
+             "defaultBranch": {
+              "type": [
+               "string",
+               "null"
+              ]
+             }
+            },
+            "required": [
+             "id",
+             "repo",
+             "kind"
+            ]
+           },
+           "description": "where the caller may create a branch for the issue (POST …/branch)"
           }
          },
          "required": [
           "links",
           "connected",
-          "branchName"
+          "branchName",
+          "repositories"
          ]
         }
        }
       }
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     }
+    }
+   }
+  },
+  "/issues/{key}/branch": {
+   "post": {
+    "tags": [
+     "Integrations (WikiCraft, Git)"
+    ],
+    "summary": "Create a branch for the issue on the Git server",
+    "operationId": "createIssueBranch",
+    "description": "Project members, as the project's `createBranches` permission says. The branch is created through the server's API from `base` and linked to the issue at once (the project's rule for started work applies); with `pullRequest` a draft pull / merge request is opened too — on GitHub that takes an empty first commit on the branch. When the server refuses the pull request the branch stays and `warning` says why. 409: the branch exists already.",
+    "parameters": [
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "description": "issue key (e.g. WEB-12; former keys keep working) or issue id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "integrationId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "which repository, when several are connected"
+         },
+         "name": {
+          "type": "string",
+          "description": "default: the suggested name"
+         },
+         "base": {
+          "type": "string",
+          "description": "default: the repository's default branch"
+         },
+         "pullRequest": {
+          "type": "boolean",
+          "description": "also open a draft pull request"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "branch": {
+           "type": "object",
+           "properties": {
+            "name": {
+             "type": "string"
+            },
+            "url": {
+             "type": "string",
+             "format": "uri"
+            },
+            "base": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "name",
+            "url",
+            "base"
+           ]
+          },
+          "pullRequest": {
+           "type": "object",
+           "properties": {
+            "number": {
+             "type": [
+              "integer",
+              "null"
+             ]
+            },
+            "url": {
+             "type": "string",
+             "format": "uri"
+            }
+           },
+           "required": [
+            "url"
+           ]
+          },
+          "warning": {
+           "type": "string"
+          },
+          "links": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/DevelopmentLink"
+           }
+          }
+         },
+         "required": [
+          "branch",
+          "links"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
+     },
+     "401": {
+      "$ref": "#/components/responses/Unauthorized"
+     },
+     "403": {
+      "$ref": "#/components/responses/Forbidden"
+     },
+     "404": {
+      "$ref": "#/components/responses/NotFound"
+     },
+     "409": {
+      "$ref": "#/components/responses/Conflict"
+     }
+    }
+   }
+  },
+  "/git-integrations/{id}/api": {
+   "put": {
+    "tags": [
+     "Integrations (WikiCraft, Git)"
+    ],
+    "summary": "Connect a repository's server API (project admins)",
+    "operationId": "setGitApiAccess",
+    "description": "The token TaskCraft creates branches and draft pull requests with (write access to code and pull requests). It's tried at once — the answer names the default branch — and never shown again. `token: null` disconnects. Requests to private addresses need TASKCRAFT_WEBHOOK_ALLOW_PRIVATE.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "integration id",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "token": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "description": "null: no API access any more"
+         },
+         "kind": {
+          "type": "string",
+          "enum": [
+           "github",
+           "gitlab",
+           "gitea"
+          ],
+          "description": "default: by the webhook's provider; gitea also for Forgejo"
+         },
+         "url": {
+          "type": "string",
+          "description": "the API's address when it can't be told from the repository's (e.g. https://host/gitlab/api/v4)"
+         }
+        },
+        "required": [
+         "token"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GitIntegration"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/BadRequest"
      },
      "401": {
       "$ref": "#/components/responses/Unauthorized"
@@ -22036,7 +22283,7 @@
         "nobody"
        ]
       },
-      "description": "who may: deleteIssues, moveIssues, manageSprints, manageReleases (member or admin; default member), setSecurity (member or admin; default member), moderateComments and logTimeForOthers (member, admin or nobody; default admin). Project admins may whatever members may."
+      "description": "who may: deleteIssues, moveIssues, manageSprints, manageReleases (member or admin; default member), setSecurity (member or admin; default member), moderateComments and logTimeForOthers (member, admin or nobody; default admin), createBranches (member, admin or nobody; default member). Project admins may whatever members may."
      },
      "resolutions": {
       "type": "array",
@@ -25387,6 +25634,39 @@
      "secret": {
       "type": "string",
       "description": "only in the answers that create it (connecting, a new secret): the webhook secret, shown once"
+     },
+     "api": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "kind": {
+        "type": "string",
+        "enum": [
+         "github",
+         "gitlab",
+         "gitea"
+        ]
+       },
+       "url": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "the API's address when it isn't the usual one"
+       },
+       "defaultBranch": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      },
+      "required": [
+       "kind"
+      ],
+      "description": "the server's API is connected: branches and draft pull requests can be created from issues (the token is never shown)"
      }
     },
     "required": [
@@ -25596,6 +25876,65 @@
      "at": {
       "type": "string",
       "format": "date-time"
+     },
+     "draft": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "pull requests: not ready for review yet"
+     },
+     "checks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "pending",
+       "success",
+       "failure",
+       null
+      ],
+      "description": "pull requests: checks / CI as the Git server last reported"
+     },
+     "review": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "approved",
+       "changes_requested",
+       null
+      ],
+      "description": "pull requests: where the reviews stand"
+     },
+     "reviewers": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "object",
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "state": {
+         "type": "string",
+         "enum": [
+          "requested",
+          "approved",
+          "changes_requested"
+         ]
+        }
+       },
+       "required": [
+        "name",
+        "state"
+       ]
+      },
+      "description": "pull requests: who was asked and what they said"
      }
     },
     "required": [

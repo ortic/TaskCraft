@@ -171,7 +171,11 @@ reports can then include the whole tree.
   query) or the roadmap — with an optional password and end date. Private issues and restricted
   comments never show; names only when you choose so. Revoking a link stops it at once.
 - **Integrations**: Git hosting (commits, branches and pull requests on the issues they name, and
-  rules that move issues when a branch is pushed or merged).
+  rules that move issues when a branch is pushed or merged). Give a repository a token for its
+  server's API (*Create branches…*; GitHub, GitLab, Gitea, Forgejo) and people create an issue's
+  branch — and a draft pull request — from the issue; *Members & roles → permissions* says who
+  may. Enable the review, check and pipeline events on the repository's webhook to see a pull
+  request's checks and reviews on its issues.
 - **Import**: issues from a CSV file into this project.
 - **Trash**: deleted issues, restorable until the retention period ends.
 - **Export, archive or delete**: workspace admins export the project as a `.zip` that another

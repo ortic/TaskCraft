@@ -622,6 +622,7 @@ export const PROJECT_ACTIONS = {
   moderateComments: { default: 'admin', nobody: true },
   logTimeForOthers: { default: 'admin', nobody: true },
   setSecurity: { default: 'member', nobody: false },
+  createBranches: { default: 'member', nobody: true },
 } as const
 export type ProjectAction = keyof typeof PROJECT_ACTIONS
 

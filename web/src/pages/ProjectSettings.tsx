@@ -1183,6 +1183,7 @@ const ACTION_LABELS: Record<ProjectAction, () => string> = {
   moderateComments: () => t('Edit and delete other people’s comments'),
   logTimeForOthers: () => t('Log and change time for other people'),
   setSecurity: () => t('Change who sees an issue (security level)'),
+  createBranches: () => t('Create branches and pull requests on the Git server'),
 }
 
 /** Who may do the sensitive things in this project. */

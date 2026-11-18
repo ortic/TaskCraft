@@ -381,6 +381,168 @@ pub fn parse_generic(v: &Value, repo_url: &str) -> Result<Activity, String> {
     Ok(a)
 }
 
+// ---- the state of a pull request: draft, checks, reviews ----
+
+/// What a delivery says about a pull request beyond open / merged / closed.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PrStatus {
+    pub number: Option<i64>,
+    /// its branch, when the delivery doesn't name the pull request (commit statuses)
+    pub branch: Option<String>,
+    pub draft: Option<bool>,
+    /// pending | success | failure
+    pub checks: Option<String>,
+    /// the people asked to review, as they are now
+    pub requested: Option<Vec<String>>,
+    /// someone's review: (name, approved | changes_requested | dismissed)
+    pub review: Option<(String, String)>,
+}
+
+fn checks_word(s: &str) -> Option<&'static str> {
+    match s.to_ascii_lowercase().as_str() {
+        "success" | "passed" | "neutral" | "skipped" => Some("success"),
+        "failure" | "failed" | "error" | "timed_out" | "cancelled" | "canceled" | "action_required" | "startup_failure" => Some("failure"),
+        "pending" | "running" | "queued" | "in_progress" | "requested" | "created" | "waiting_for_resource" | "preparing" | "scheduled" => Some("pending"),
+        _ => None,
+    }
+}
+
+/// GitHub, Gitea and Forgejo: `pull_request` (draft, requested reviewers), reviews, check suites
+/// and runs, commit statuses.
+pub fn status_github(event: &str, v: &Value) -> Option<PrStatus> {
+    let pr = &v["pull_request"];
+    let number = pr["number"].as_i64().or_else(|| v["number"].as_i64());
+    let names = |list: &Value| list.as_array().map(|a| a.iter().filter_map(|u| opt(&u["login"]).or_else(|| opt(&u["username"]))).collect::<Vec<_>>());
+    match event {
+        "pull_request" => Some(PrStatus {
+            number,
+            // Gitea marks drafts by a title prefix
+            draft: pr["draft"].as_bool().or_else(|| pr["title"].as_str().map(|t| t.starts_with("WIP:") || t.starts_with("[WIP]") || t.starts_with("Draft:"))),
+            requested: names(&pr["requested_reviewers"]),
+            ..Default::default()
+        }),
+        "pull_request_review" | "pull_request_approved" | "pull_request_rejected" | "pull_request_review_approved" | "pull_request_review_rejected" => {
+            let who = opt(&v["review"]["user"]["login"]).or_else(|| opt(&v["sender"]["login"]))?;
+            let state = v["review"]["state"].as_str().or_else(|| v["review"]["type"].as_str()).unwrap_or(event).to_ascii_lowercase();
+            let state = match state.as_str() {
+                s if s.contains("approved") => "approved",
+                s if s.contains("changes_requested") || s.contains("rejected") => "changes_requested",
+                "dismissed" => "dismissed",
+                _ => return None,
+            };
+            Some(PrStatus { number, review: Some((who, state.into())), ..Default::default() })
+        }
+        "check_suite" | "check_run" => {
+            let c = &v[event];
+            let word = c["conclusion"].as_str().and_then(checks_word).or_else(|| c["status"].as_str().and_then(checks_word))?;
+            let prs = if event == "check_suite" { &c["pull_requests"] } else { &c["check_suite"]["pull_requests"] };
+            let branch = opt(&c["head_branch"]).or_else(|| opt(&c["check_suite"]["head_branch"]));
+            Some(PrStatus { number: prs[0]["number"].as_i64(), branch, checks: Some(word.into()), ..Default::default() })
+        }
+        "status" => Some(PrStatus { branch: opt(&v["branches"][0]["name"]), checks: Some(checks_word(v["state"].as_str()?)?.into()), ..Default::default() })
+            .filter(|s| s.branch.is_some()),
+        _ => None,
+    }
+}
+
+/// GitLab: merge requests (draft, reviewers, approvals) and pipelines.
+pub fn status_gitlab(event: &str, v: &Value) -> Option<PrStatus> {
+    let a = &v["object_attributes"];
+    match (event, v["object_kind"].as_str()) {
+        ("Merge Request Hook", _) | (_, Some("merge_request")) => {
+            let who = opt(&v["user"]["name"]).or_else(|| opt(&v["user"]["username"]));
+            let review = match (a["action"].as_str(), who) {
+                (Some("approved" | "approval"), Some(w)) => Some((w, "approved".to_string())),
+                (Some("unapproved" | "unapproval"), Some(w)) => Some((w, "dismissed".to_string())),
+                _ => None,
+            };
+            Some(PrStatus {
+                number: a["iid"].as_i64(),
+                draft: a["draft"].as_bool().or_else(|| a["work_in_progress"].as_bool()),
+                requested: v["reviewers"].as_array().map(|r| r.iter().filter_map(|u| opt(&u["name"]).or_else(|| opt(&u["username"]))).collect()),
+                review,
+                ..Default::default()
+            })
+        }
+        ("Pipeline Hook", _) | (_, Some("pipeline")) => Some(PrStatus {
+            number: v["merge_request"]["iid"].as_i64(),
+            branch: opt(&a["ref"]),
+            checks: Some(checks_word(a["status"].as_str()?)?.into()),
+            ..Default::default()
+        }),
+        _ => None,
+    }
+}
+
+/// Brings a delivery's news to the pull requests it's about (of this repository); the issues
+/// showing them refresh. Returns how many links changed.
+pub async fn apply_status(state: &AppState, hook: &Hook, s: &PrStatus) -> ApiResult<usize> {
+    let rows: Vec<(Uuid, Uuid, Option<Value>)> = sqlx::query_as(
+        "SELECT id, issue_id, reviewers FROM dev_links WHERE integration_id = $1 AND kind = 'pull_request'
+            AND (number = $2 OR ($2 IS NULL AND branch = $3 AND state = 'open'))",
+    )
+    .bind(hook.id)
+    .bind(s.number.and_then(|n| i32::try_from(n).ok()))
+    .bind(&s.branch)
+    .fetch_all(&state.db)
+    .await?;
+    for (id, _, reviewers) in &rows {
+        let mut list: Vec<(String, String)> = reviewers
+            .as_ref()
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|r| Some((r["name"].as_str()?.to_string(), r["state"].as_str()?.to_string())))
+            .collect();
+        if let Some(asked) = &s.requested {
+            // whoever decided stays; the others are those asked now
+            list.retain(|(n, st)| st != "requested" || asked.contains(n));
+            for n in asked {
+                match list.iter_mut().find(|(x, _)| x == n) {
+                    // asked again after a review: it's open again
+                    Some(r) => r.1 = "requested".into(),
+                    None => list.push((clip(n, 100), "requested".into())),
+                }
+            }
+        }
+        if let Some((who, st)) = &s.review {
+            list.retain(|(n, _)| n != who);
+            if st != "dismissed" {
+                list.push((clip(who, 100), st.clone()));
+            }
+        }
+        list.truncate(30);
+        let review = if list.iter().any(|r| r.1 == "changes_requested") {
+            Some("changes_requested")
+        } else if list.iter().any(|r| r.1 == "approved") {
+            Some("approved")
+        } else {
+            None
+        };
+        sqlx::query(
+            "UPDATE dev_links SET draft = COALESCE($2, draft), checks = COALESCE($3, checks), review = $4, reviewers = $5, updated_at = now() WHERE id = $1",
+        )
+        .bind(id)
+        .bind(s.draft)
+        .bind(&s.checks)
+        .bind(review)
+        .bind(json!(list.iter().map(|(n, st)| json!({"name": n, "state": st})).collect::<Vec<_>>()))
+        .execute(&state.db)
+        .await?;
+    }
+    let issues: BTreeSet<Uuid> = rows.iter().map(|r| r.1).collect();
+    for issue in issues {
+        let key: Option<String> = sqlx::query_scalar("SELECT p.key || '-' || i.number FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1")
+            .bind(issue)
+            .fetch_optional(&state.db)
+            .await?;
+        if let Some(key) = key {
+            events::publish(state, Event::new(hook.workspace_id, "issue").project(hook.project_id).issue(issue, &key)).await;
+        }
+    }
+    Ok(rows.len())
+}
+
 // ---- integrations and links ----
 
 /// A connected repository (the webhook's target).
@@ -411,12 +573,20 @@ pub struct DevLink {
     pub number: Option<i32>,
     pub repo: Option<String>,
     pub at: DateTime<Utc>,
+    /// pull requests: not ready for review yet
+    pub draft: Option<bool>,
+    /// pull requests: pending | success | failure (checks / CI)
+    pub checks: Option<String>,
+    /// pull requests: approved | changes_requested
+    pub review: Option<String>,
+    /// pull requests: `[{name, state: requested | approved | changes_requested}]`
+    pub reviewers: Option<Value>,
 }
 
 /// An issue's development links: pull requests first, then branches, then commits (newest first).
 pub async fn links(state: &AppState, issue: Uuid) -> ApiResult<Vec<DevLink>> {
     Ok(sqlx::query_as(
-        "SELECT id, kind, title, url, author, state, sha, branch, number, repo, at FROM dev_links WHERE issue_id = $1
+        "SELECT id, kind, title, url, author, state, sha, branch, number, repo, at, draft, checks, review, reviewers FROM dev_links WHERE issue_id = $1
           ORDER BY CASE kind WHEN 'pull_request' THEN 0 WHEN 'branch' THEN 1 ELSE 2 END, at DESC LIMIT 300",
     )
     .bind(issue)
@@ -663,6 +833,82 @@ pub async fn process(state: &AppState, hook: &Hook, a: &Activity) -> ApiResult<O
         }
     }
     Ok(out)
+}
+
+/// Links a branch or pull request someone made from the issue itself (it's theirs in the
+/// history); a draft when it's a pull request.
+#[allow(clippy::too_many_arguments)]
+pub async fn link_created(
+    state: &AppState,
+    hook: &Hook,
+    issue: Uuid,
+    user: Uuid,
+    kind: &'static str,
+    title: &str,
+    url: &str,
+    branch: &str,
+    number: Option<i64>,
+    author: Option<&str>,
+) -> ApiResult<()> {
+    let pr = kind == "pull_request";
+    let item = Item {
+        kind,
+        title: clip(title, 300),
+        url: url.to_string(),
+        author: author.map(|a| clip(a, 200)),
+        state: pr.then(|| "open".to_string()),
+        sha: None,
+        branch: Some(clip(branch, 250)),
+        number: number.and_then(|n| i32::try_from(n).ok()),
+        at: Utc::now(),
+        numbers: vec![],
+    };
+    let mut tx = state.db.begin().await?;
+    let added = sqlx::query(
+        "INSERT INTO dev_links (id, issue_id, integration_id, kind, title, url, author, state, branch, number, repo, at, draft, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) ON CONFLICT (issue_id, url) DO NOTHING",
+    )
+    .bind(new_id())
+    .bind(issue)
+    .bind(hook.id)
+    .bind(item.kind)
+    .bind(&item.title)
+    .bind(&item.url)
+    .bind(&item.author)
+    .bind(&item.state)
+    .bind(&item.branch)
+    .bind(item.number)
+    .bind(repo_name(&hook.repo_url))
+    .bind(item.at)
+    .bind(pr.then_some(true))
+    .bind(user)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if added > 0 {
+        let c = Change { field: if pr { "pull_request" } else { "branch" }, old: Value::Null, new: link_json(&item) };
+        issues::record(&mut tx, issue, hook.project_id, Some(user), "dev", Some(&c)).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+/// After a branch was made from an issue: the project's "work started" rule, and screens refresh.
+pub async fn after_created(state: &AppState, hook: &Hook, issue: Uuid, key: &str) {
+    let on_open: Option<Uuid> = sqlx::query_scalar("SELECT opened_status_id FROM git_rules WHERE project_id = $1")
+        .bind(hook.project_id)
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()
+        .flatten();
+    if let Some(target) = on_open {
+        let bot = Actor { user: None, workspace: hook.workspace_id, depth: 0 };
+        if let Err(e) = move_forward(state, &bot, hook.project_id, issue, target).await {
+            tracing::warn!(issue = %issue, error = %e, "git rule: can't move the issue");
+        }
+    }
+    events::publish(state, Event::new(hook.workspace_id, "issue").project(hook.project_id).issue(issue, key)).await;
 }
 
 fn link_json(item: &Item) -> Value {

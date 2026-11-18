@@ -233,6 +233,8 @@ pub fn api() -> Router<AppState> {
         .route("/git-integrations/{id}", delete(git::delete))
         .route("/git-integrations/{id}/secret", post(git::rotate))
         .route("/issues/{key}/development", get(git::development))
+        .route("/issues/{key}/branch", post(git::create_branch_route))
+        .route("/git-integrations/{id}/api", put(git::put_api))
         // e-mail in: messages from mail servers, a project's e-mail settings
         .route("/integrations/mail-in", post(mail_in::receive))
         .route("/projects/{key}/mail-in", get(mail_in::settings).put(mail_in::put_settings))

@@ -28,3 +28,12 @@
   .git-rules { grid-template-columns: minmax(0, 1fr); }
   .dev-meta { display: none; }
 }
+
+.dev-checks { display: inline-flex; flex: none; }
+.dev-checks-success { color: var(--success); }
+.dev-checks-failure { color: var(--danger); }
+.dev-checks-pending { color: var(--warning); }
+.dev-check { margin: 4px 0 8px; min-height: 28px; }
+.dev-check input { width: 16px; height: 16px; margin: 0; }
+input.dev-mono { font-family: var(--font-mono, ui-monospace, monospace); }
+.git-api { display: inline-flex; align-items: center; gap: 4px; }

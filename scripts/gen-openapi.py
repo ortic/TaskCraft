@@ -1200,7 +1200,7 @@ schemas["ProjectSettings"] = obj(
         "doneAfterDays": d(number, "stored as given (not used by the server)"),
         "permissions": d(
             {"type": "object", "additionalProperties": enum("member", "admin", "nobody")},
-            "who may: deleteIssues, moveIssues, manageSprints, manageReleases (member or admin; default member), setSecurity (member or admin; default member), moderateComments and logTimeForOthers (member, admin or nobody; default admin). Project admins may whatever members may.",
+            "who may: deleteIssues, moveIssues, manageSprints, manageReleases (member or admin; default member), setSecurity (member or admin; default member), moderateComments and logTimeForOthers (member, admin or nobody; default admin), createBranches (member, admin or nobody; default member). Project admins may whatever members may.",
         ),
         "resolutions": arr(txt, "the project's resolutions, 1–20 distinct names (default Done, Won't do, Duplicate, Cannot reproduce); the first is the default"),
         "template": {**enum("scrum", "kanban", "tracker", "business"), "readOnly": True, "description": "the template the project was created from"},
@@ -2695,6 +2695,8 @@ schemas["GitIntegration"] = obj(
         "lastEventAt": ndt(),
         "lastError": ntxt("what went wrong with the last delivery"),
         "secret": d(txt, "only in the answers that create it (connecting, a new secret): the webhook secret, shown once"),
+        "api": null(obj({"kind": enum("github", "gitlab", "gitea"), "url": ntxt("the API's address when it isn't the usual one"), "defaultBranch": ntxt()}, ["kind"]),
+                    "the server's API is connected: branches and draft pull requests can be created from issues (the token is never shown)"),
     },
     ["id", "provider", "repoUrl", "repo", "webhookUrl", "createdAt", "deliveries"],
     "A repository connected to a project.",
@@ -2757,6 +2759,10 @@ schemas["DevelopmentLink"] = obj(
         "number": null(num, "pull requests: their number"),
         "repo": ntxt("owner/name"),
         "at": dt,
+        "draft": null(boolean, "pull requests: not ready for review yet"),
+        "checks": null(enum("pending", "success", "failure"), "pull requests: checks / CI as the Git server last reported"),
+        "review": null(enum("approved", "changes_requested"), "pull requests: where the reviews stand"),
+        "reviewers": null(arr(obj({"name": txt, "state": enum("requested", "approved", "changes_requested")}, ["name", "state"])), "pull requests: who was asked and what they said"),
     },
     ["id", "kind", "title", "url", "at"],
     "A commit, branch or pull request linked to an issue by the Git integration.",
@@ -3254,7 +3260,24 @@ op("post", "/git-integrations/{id}/secret", "rotateGitSecret", "Integrations (Wi
    res=ok(S("GitIntegration"), "The integration with its new `secret` and `webhookUrl`"))
 op("get", "/issues/{key}/development", "getIssueDevelopment", "Integrations (WikiCraft, Git)", "The issue's branches, commits and pull requests",
    desc="Pull requests first, then branches, then commits (newest first, at most 300), whether the project has a repository connected, and a branch name to start work with.",
-   res=ok(obj({"links": arr(S("DevelopmentLink")), "connected": boolean, "branchName": d(txt, "e.g. web-12-short-title")}, ["links", "connected", "branchName"])))
+   res=ok(obj({"links": arr(S("DevelopmentLink")), "connected": boolean, "branchName": d(txt, "e.g. web-12-short-title"),
+               "repositories": arr(obj({"id": uuid, "repo": txt, "kind": enum("github", "gitlab", "gitea"), "defaultBranch": ntxt()}, ["id", "repo", "kind"]),
+                                   "where the caller may create a branch for the issue (POST …/branch)")}, ["links", "connected", "branchName", "repositories"])))
+op("post", "/issues/{key}/branch", "createIssueBranch", "Integrations (WikiCraft, Git)", "Create a branch for the issue on the Git server",
+   desc="Project members, as the project's `createBranches` permission says. The branch is created through the server's API from `base` and linked to the issue at once "
+        "(the project's rule for started work applies); with `pullRequest` a draft pull / merge request is opened too — on GitHub that takes an empty first commit on the branch. "
+        "When the server refuses the pull request the branch stays and `warning` says why. 409: the branch exists already.",
+   req=body(obj({"integrationId": d(uuid, "which repository, when several are connected"), "name": d(txt, "default: the suggested name"), "base": d(txt, "default: the repository's default branch"),
+                 "pullRequest": d(boolean, "also open a draft pull request")})),
+   res=created(obj({"branch": obj({"name": txt, "url": uri, "base": txt}, ["name", "url", "base"]), "pullRequest": obj({"number": null(num), "url": uri}, ["url"]),
+                    "warning": txt, "links": arr(S("DevelopmentLink"))}, ["branch", "links"])), err="409")
+op("put", "/git-integrations/{id}/api", "setGitApiAccess", "Integrations (WikiCraft, Git)", "Connect a repository's server API (project admins)",
+   desc="The token TaskCraft creates branches and draft pull requests with (write access to code and pull requests). It's tried at once — the answer names the default branch — "
+        "and never shown again. `token: null` disconnects. Requests to private addresses need TASKCRAFT_WEBHOOK_ALLOW_PRIVATE.",
+   pp={"id": (uuid, "integration id")},
+   req=body(obj({"token": ntxt("null: no API access any more"), "kind": enum("github", "gitlab", "gitea", desc="default: by the webhook's provider; gitea also for Forgejo"),
+                 "url": d(txt, "the API's address when it can't be told from the repository's (e.g. https://host/gitlab/api/v4)")}, ["token"])),
+   res=ok(S("GitIntegration")))
 
 # ---- E-mail in ----
 

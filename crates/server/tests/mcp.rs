@@ -103,6 +103,7 @@ async fn tools_work_with_the_callers_permissions() {
         "run_report",
         "link_issues",
         "timer",
+        "create_branch",
     ] {
         assert!(names.contains(&n), "missing tool {n}: {names:?}");
     }

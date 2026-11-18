@@ -19,6 +19,7 @@ pub mod extract;
 pub mod features;
 pub mod files;
 pub mod git;
+pub mod gitapi;
 pub mod i18n;
 pub mod importer;
 pub mod issues;

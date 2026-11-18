@@ -4,7 +4,7 @@
 import { t } from '../i18n'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, GitBranch, KeyRound, Plus, Server, Trash, TriangleAlert, Webhook } from 'lucide-react'
+import { Copy, GitBranch, GitBranchPlus, KeyRound, Plus, Server, Trash, TriangleAlert, Webhook } from 'lucide-react'
 import { api, ago, type Project } from '../api'
 import { Confirm, ErrorBox, Loading, Modal, useToast } from '../ui'
 import '../components/Development.css'
@@ -24,7 +24,11 @@ interface Hook {
   lastError: string | null
   /** only right after connecting or a new secret */
   secret?: string
+  /** the server's API is connected: branches can be created from issues */
+  api?: { kind: ApiKind; url: string | null; defaultBranch: string | null } | null
 }
+
+type ApiKind = 'github' | 'gitlab' | 'gitea'
 
 interface GitData {
   integrations: Hook[]
@@ -67,6 +71,7 @@ export default function GitSettings({ project }: { project: Project }) {
   const [shown, setShown] = useState<Hook | null>(null)
   const [removing, setRemoving] = useState<Hook | null>(null)
   const [rotating, setRotating] = useState<Hook | null>(null)
+  const [access, setAccess] = useState<Hook | null>(null)
   const refresh = () => qc.invalidateQueries({ queryKey: qk })
   const saveRules = async (rules: GitData['rules']) => {
     qc.setQueryData<GitData>(qk, (old) => (old ? { ...old, rules } : old))
@@ -117,7 +122,13 @@ export default function GitSettings({ project }: { project: Project }) {
                   : t('No deliveries yet')}
               </span>
               {h.lastError && <span className="error-text small"><TriangleAlert size={12} aria-hidden /> {h.lastError}</span>}
+              {h.api && <span className="faint small git-api"><GitBranchPlus size={12} aria-hidden /> {t('Branches can be created from issues (default branch: {branch})', { branch: h.api.defaultBranch ?? 'main' })}</span>}
             </div>
+            {h.provider !== 'generic' && (
+              <button className="btn btn-sm" aria-label={t('Creating branches in {repo}', { repo: h.repo })} onClick={() => setAccess(h)}>
+                <GitBranchPlus size={14} /> {h.api ? t('Token') : t('Create branches…')}
+              </button>
+            )}
             <button className="icon-btn" title={t('New secret')} aria-label={t('New secret for {repo}', { repo: h.repo })} onClick={() => setRotating(h)}><KeyRound size={15} /></button>
             <button className="icon-btn" title={t('Disconnect')} aria-label={t('Disconnect {repo}', { repo: h.repo })} onClick={() => setRemoving(h)}><Trash size={15} /></button>
           </div>
@@ -158,6 +169,7 @@ export default function GitSettings({ project }: { project: Project }) {
         />
       )}
       {shown && <SecretDialog hook={shown} projectKey={project.key} onClose={() => setShown(null)} />}
+      {access && <ApiDialog hook={access} onClose={() => setAccess(null)} onSaved={() => { setAccess(null); refresh() }} />}
       {rotating && (
         <Confirm
           title={t('New secret for {repo}?', { repo: rotating.repo })}
@@ -196,6 +208,65 @@ export default function GitSettings({ project }: { project: Project }) {
         />
       )}
     </section>
+  )
+}
+
+/** The token TaskCraft creates branches and draft pull requests with. */
+function ApiDialog({ hook, onClose, onSaved }: { hook: Hook; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast()
+  const [kind, setKind] = useState<ApiKind>(hook.api?.kind ?? (hook.provider === 'gitlab' ? 'gitlab' : 'github'))
+  const [token, setToken] = useState('')
+  const [url, setUrl] = useState(hook.api?.url ?? '')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const send = async (body: { token: string | null; kind?: ApiKind; url?: string }) => {
+    setBusy(true)
+    setErr('')
+    try {
+      const h = await api.put<Hook>(`/git-integrations/${hook.id}/api`, body)
+      toast(h.api ? t('Connected: branches start from {branch}', { branch: h.api.defaultBranch ?? 'main' }) : t('Token removed'))
+      onSaved()
+    } catch (e) {
+      setErr(errText(e))
+      setBusy(false)
+    }
+  }
+  return (
+    <Modal
+      title={t('Create branches in {repo}', { repo: hook.repo })}
+      onClose={onClose}
+      width={540}
+      footer={
+        <>
+          {hook.api && <button className="btn btn-danger" disabled={busy} onClick={() => send({ token: null })}>{t('Remove the token')}</button>}
+          <span className="spacer" />
+          <button className="btn" onClick={onClose}>{t('Cancel')}</button>
+          <button className="btn btn-primary" disabled={busy || !token.trim()} onClick={() => send({ token: token.trim(), kind, url: url.trim() || undefined })}>{t('Save')}</button>
+        </>
+      }
+    >
+      <p className="muted small ps-mt-0">
+        {t('With a token for the Git server’s API, people create an issue’s branch — and a draft pull request — from the issue, and it’s linked before the first push. The token needs write access to the repository’s code and pull requests; it’s tried when you save and never shown again.')}
+      </p>
+      {hook.provider !== 'gitlab' && (
+        <div className="field">
+          <label htmlFor="git-api-kind">{t('Server')}</label>
+          <select id="git-api-kind" className="select" value={kind} onChange={(e) => setKind(e.target.value as ApiKind)}>
+            <option value="github">GitHub</option>
+            <option value="gitea">Gitea / Forgejo</option>
+          </select>
+        </div>
+      )}
+      <div className="field">
+        <label htmlFor="git-api-token">{hook.api ? t('New token') : t('Token')}</label>
+        <input id="git-api-token" className="input" type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor="git-api-url">{t('API address (only if it isn’t the usual one)')}</label>
+        <input id="git-api-url" className="input" value={url} placeholder={kind === 'gitlab' ? 'https://git.example.com/api/v4' : kind === 'gitea' ? 'https://git.example.com/api/v1' : 'https://git.example.com/api/v3'} onChange={(e) => setUrl(e.target.value)} />
+      </div>
+      {err && <p className="error-text" role="alert">{err}</p>}
+    </Modal>
   )
 }
 

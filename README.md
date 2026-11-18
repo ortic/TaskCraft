@@ -257,6 +257,25 @@ pull request is merged*, move the linked issues to a status — as Automation, o
 workflow and, in restricted workflows, only along allowed transitions. *Branch name* on an issue
 copies `web-12-short-title` (or `git checkout -b …`).
 
+**Create the branch from the issue**: give a connected repository a token for its server's API
+(*Create branches…* next to the repository; GitHub and GitHub Enterprise, GitLab, Gitea and
+Forgejo; write access to code and pull requests — it's tried when saved, the default branch is
+read, and it's never shown again). *Create branch* on an issue then offers the suggested name
+and a base branch, creates the branch through the API and links it at once — the "work started"
+rule applies, and the first push doesn't double it. Optionally a **draft pull / merge request**
+opens with the issue's key and title (GitHub needs a commit for that: an empty first commit is
+added; a server that refuses a pull request without changes leaves the branch and says so).
+Who may do this is a project permission (*Create branches and pull requests*, members by
+default). Also `POST /api/issues/{KEY}/branch` (`name`, `base`, `integrationId`, `pullRequest`)
+and the MCP tool `create_branch`. Requests to a Git server on a private address need
+`TASKCRAFT_WEBHOOK_ALLOW_PRIVATE=true`.
+
+**Pull requests live**: next to open / merged / closed, a pull request shows whether it's a
+draft, its checks (running, passed, failed), where its reviews stand and who was asked — from
+the webhook events `pull_request`, `pull_request_review`, `check_suite`, `check_run` and
+`status` (GitHub, Gitea, Forgejo) and merge request and pipeline events (GitLab). Enable those
+events on the repository's webhook.
+
 The generic format, every part optional:
 
 ```json

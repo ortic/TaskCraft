@@ -55,6 +55,11 @@ start and due dates, and the project's custom fields.
   types or sizes, and files may be checked for viruses before they're stored.
 - **Watch** an issue to be notified of its changes (you watch what you create, are assigned or
   comment on). **Vote** for issues you'd like to see done, when the workspace uses votes.
+- **Development** (projects with a Git repository connected): the branches, commits and pull
+  requests that name the issue's key. *Create branch* makes the branch on the Git server for
+  you — named after the issue, from the default branch or one you name, with a draft pull
+  request if you tick it — and *Branch name* copies the name for the command line. A pull
+  request shows whether it's a draft, its checks and where its reviews stand.
 - **History** shows every change with who made it and when.
 - **Private issues**: a project can have security levels; an issue with one is seen only by the
   people the level names, project admins, and its reporter, creator and assignee.

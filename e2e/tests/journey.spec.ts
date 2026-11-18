@@ -468,6 +468,30 @@ test('provisioning: a token for the identity provider', async ({ page, request, 
   await expect(page.locator('.adm-person-name', { hasText: 'Paula Provisioned' })).toBeVisible()
 })
 
+test('git: a token for creating branches from issues', async ({ page }) => {
+  await login(page)
+  await page.goto('/projects/WEB/settings/integrations')
+  await page.getByRole('button', { name: 'Connect a repository' }).click()
+  let dialog = page.getByRole('dialog')
+  await dialog.getByLabel(/address/i).first().fill('http://127.0.0.1:9/acme/web')
+  await dialog.getByRole('button', { name: /^Connect/ }).click()
+  await page.getByRole('dialog').getByRole('button', { name: /Done|Close/ }).first().click()
+  // no Git server answers there: the token is tried when saved, and the dialog says so
+  await page.getByRole('button', { name: 'Creating branches in acme/web' }).click()
+  dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('button', { name: 'Save' })).toBeDisabled()
+  await dialog.getByLabel('Token').fill('ghp_example')
+  await a11y(page, '[role=dialog]')
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  await expect(dialog.getByRole('alert')).toContainText(/didn’t answer|didn't answer|private address/)
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  // the issue offers the branch name (no "Create branch" without a working token)
+  await page.goto('/issues/WEB-1')
+  await expect(page.getByRole('heading', { name: 'Development' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Branch name' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Create branch' })).toHaveCount(0)
+})
+
 test('private issues with security levels', async ({ page }) => {
   await login(page)
   await page.goto('/projects/WEB/settings/permissions')

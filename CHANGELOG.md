@@ -6,6 +6,13 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 
 ## [Unreleased]
 
+- **Branches and draft pull requests from an issue**: a connected repository can carry a token
+  for its server's API (GitHub, GitLab, Gitea, Forgejo); *Create branch* on an issue creates the
+  branch there from a base branch — optionally with a draft pull / merge request — and links it
+  before the first push. A project permission says who may; also in the REST API and as the MCP
+  tool `create_branch`. Pull requests show draft state, checks / CI, reviews and reviewers from
+  webhook events.
+
 - **SCIM provisioning** (*Administration → Provisioning*): identity providers create, update and
   deactivate people and keep groups as teams through SCIM 2.0 (`/scim/v2/Users`, `/Groups`) with
   a bearer token per provider. Existing accounts are taken over by e-mail address; people are

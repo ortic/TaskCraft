@@ -225,6 +225,20 @@ pub struct CommentArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct BranchArgs {
+    /// Issue key, e.g. WEB-12
+    pub key: String,
+    /// Branch name (default: the suggested one, e.g. web-12-short-title)
+    pub name: Option<String>,
+    /// The branch to start from (default: the repository's default branch)
+    pub base: Option<String>,
+    /// The repository as owner/name, when the project has several connected
+    pub repository: Option<String>,
+    /// Also open a draft pull / merge request
+    pub pull_request: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct TimerArgs {
     /// status, start, pause, resume or stop (stop logs the timed time on the issue)
     pub action: String,
@@ -742,6 +756,32 @@ impl TaskMcp {
         Ok(compact(&json!({"commented": key, "commentId": v["id"], "url": self.state.config.issue_url(&key)})))
     }
 
+    async fn branch(&self, user: User, a: BranchArgs) -> ApiResult<String> {
+        let key = clean_key(&a.key);
+        let integration_id = match a.repository.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
+            Some(r) => {
+                let (_, project, _) = routes::issues::issue_for(&self.state, &user, &key, Role::Member).await?;
+                let all: Vec<(Uuid, String)> = sqlx::query_as("SELECT id, repo_url FROM git_integrations WHERE project_id = $1 AND api_token IS NOT NULL")
+                    .bind(project)
+                    .fetch_all(&self.state.db)
+                    .await?;
+                let wanted = r.trim_matches('/').to_lowercase();
+                Some(all.iter().find(|(_, u)| crate::git::repo_name(u).to_lowercase() == wanted || u.to_lowercase() == wanted).map(|x| x.0).ok_or_else(
+                    || {
+                        ApiError::bad(format!(
+                            "no repository {r} is connected for creating branches; there are: {}",
+                            all.iter().map(|(_, u)| crate::git::repo_name(u)).collect::<Vec<_>>().join(", ")
+                        ))
+                    },
+                )?)
+            }
+            None => None,
+        };
+        let req = routes::git::NewBranch { integration_id, name: a.name, base: a.base, pull_request: a.pull_request.unwrap_or(false) };
+        let v = routes::git::create_branch(&self.state, &user, &key, req).await?;
+        Ok(compact(&json!({"issue": key, "branch": v["branch"], "pullRequest": v["pullRequest"], "warning": v["warning"]})))
+    }
+
     async fn timer_action(&self, user: User, a: TimerArgs) -> ApiResult<String> {
         let st = State(self.state.clone());
         match a.action.trim().to_lowercase().as_str() {
@@ -1116,6 +1156,16 @@ impl TaskMcp {
     }
 
     #[tool(
+        description = "Create a branch for an issue on the project's Git server (named after the issue unless you say otherwise), optionally with a draft pull request. It's linked to the issue right away. Needs a repository connected with a token in the project's Git settings."
+    )]
+    async fn create_branch(&self, Extension(parts): Extension<Parts>, Parameters(a): Parameters<BranchArgs>) -> ToolResult {
+        match self.writer(&parts).await {
+            Ok(u) => done(self.branch(u, a).await),
+            Err(e) => done(Err(e)),
+        }
+    }
+
+    #[tool(
         description = "The caller's timer: status, start (on an issue), pause, resume, or stop (logs the timed time on the issue, rounded as the workspace says)."
     )]
     async fn timer(&self, Extension(parts): Extension<Parts>, Parameters(a): Parameters<TimerArgs>) -> ToolResult {
@@ -1191,7 +1241,7 @@ impl ServerHandler for TaskMcp {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("taskcraft", env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "TaskCraft issue and project management. Issue keys look like WEB-12. Start with `list_projects` to learn project keys and the exact names of statuses, types and sprints; find issues with `search_issues` (TQL queries), read one with `get_issue`, and change things with `create_issue`, `update_issue`, `add_comment` and `log_work`. `get_sprint`, `get_board` and `run_report` summarize the work. You act with the permissions of the person whose token you use; with a read-only token the changing tools refuse.",
+                "TaskCraft issue and project management. Issue keys look like WEB-12. Start with `list_projects` to learn project keys and the exact names of statuses, types and sprints; find issues with `search_issues` (TQL queries), read one with `get_issue`, and change things with `create_issue`, `update_issue`, `add_comment` and `log_work`; `create_branch` starts the work on the project's Git server. `get_sprint`, `get_board` and `run_report` summarize the work. You act with the permissions of the person whose token you use; with a read-only token the changing tools refuse.",
             )
     }
 }
