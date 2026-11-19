@@ -168,6 +168,9 @@ const BUILTIN: &[&str] = &[
     "asset",
     "assets",
     "asset.type",
+    "hastests",
+    "testresult",
+    "testrun",
     "approval",
     "approver",
     "approvers",
@@ -767,6 +770,38 @@ fn compare(qb: &mut Qb, ctx: &Ctx, field: &str, op: Op, values: &[Value], _list:
                 qb.push_bind(names);
                 qb.push(")))");
             }
+        }
+        "hastests" => {
+            // a test case covers it
+            let neg = only_eq(field, op)?;
+            let want = texts(field, values)?.first().map(|s| matches!(s.to_lowercase().as_str(), "true" | "yes" | "1")).unwrap_or(true);
+            qb.push(if want != neg { "" } else { "NOT " });
+            qb.push(
+                "EXISTS (SELECT 1 FROM test_case_issues tci JOIN test_cases tc ON tc.id = tci.case_id WHERE tci.issue_id = i.id AND tc.archived_at IS NULL)",
+            );
+        }
+        "testresult" => {
+            // the latest result of a test case that covers it (untested: one that never ran)
+            let neg = only_eq(field, op)?;
+            let names: Vec<String> = texts(field, values)?.into_iter().map(|s| s.to_lowercase()).collect();
+            if let Some(n) = names.iter().find(|n| !crate::testmgmt::RESULTS.contains(&n.as_str())) {
+                return bad(format!("testResult is passed, failed, blocked, skipped or untested, not {n}"));
+            }
+            qb.push(if neg { "NOT " } else { "" });
+            qb.push("EXISTS (SELECT 1 FROM test_case_issues tci JOIN test_cases tc ON tc.id = tci.case_id WHERE tci.issue_id = i.id AND tc.archived_at IS NULL AND COALESCE((SELECT rc.result FROM test_run_cases rc WHERE rc.case_id = tci.case_id AND rc.result <> 'untested' ORDER BY rc.executed_at DESC NULLS LAST LIMIT 1), 'untested') = ANY(");
+            qb.push_bind(names);
+            qb.push("))");
+        }
+        "testrun" => {
+            // a test run (by name or key, WEB-R4) holds a test case that covers it
+            let neg = only_eq(field, op)?;
+            let names: Vec<String> = texts(field, values)?.into_iter().map(|s| s.to_lowercase()).collect();
+            qb.push(if neg { "NOT " } else { "" });
+            qb.push("EXISTS (SELECT 1 FROM test_case_issues tci JOIN test_run_cases trc ON trc.case_id = tci.case_id JOIN test_runs tr ON tr.id = trc.run_id JOIN projects trp ON trp.id = tr.project_id WHERE tci.issue_id = i.id AND (lower(tr.name) = ANY(");
+            qb.push_bind(names.clone());
+            qb.push(") OR lower(trp.key || '-R' || tr.number) = ANY(");
+            qb.push_bind(names);
+            qb.push(")))");
         }
         // not a reserved word: a custom field people called "Customer" keeps its meaning
         "customer" if !ctx.custom.contains_key("customer") => {

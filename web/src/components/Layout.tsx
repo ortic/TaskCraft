@@ -7,7 +7,7 @@ import {
   Search, House, FolderKanban, Plus, Moon, Shield, Menu, LogOut, UserCog, Bell, ListFilter, Timer, Users, Kanban, ListTodo, Table, ChartGantt, Calendar, ChartColumn,
   Package, BookOpen, Settings, Star, X, ExternalLink, LayoutDashboard, Briefcase, Megaphone, TriangleAlert, Building2,
 } from 'lucide-react'
-import { Boxes } from 'lucide-react'
+import { Boxes, FlaskConical } from 'lucide-react'
 import { api, ago, type Announcement, type Notification, type SavedView } from '../api'
 import { Avatar, BotAvatar, Logo, Popover, useFeature, useMe, useProject, useProjects, useHotkeys } from '../ui'
 import { ProjectIcon } from '../icons'
@@ -91,6 +91,7 @@ export default function Layout() {
   const timeTracking = useFeature('timeTracking')
   const portal = useFeature('portal')
   const assetsOn = useFeature('assets')
+  const testsOn = useFeature('tests')
   const starred = (projects.data ?? []).filter((p) => p.starred && !p.archivedAt)
   const p = project.data
   const pk = p?.key ?? projectKey?.toUpperCase()
@@ -147,6 +148,7 @@ export default function Layout() {
               <ProjectLink to={`/projects/${pk}/calendar`} icon={<Calendar size={16} />} label={t('Calendar')} />
               <ProjectLink to={`/projects/${pk}/reports`} icon={<ChartColumn size={16} />} label={t('Reports')} />
               <ProjectLink to={`/projects/${pk}/releases`} icon={<Package size={16} />} label={t('Releases')} />
+              {testsOn && <ProjectLink to={`/projects/${pk}/tests`} icon={<FlaskConical size={16} />} label={t('Tests')} />}
               {me.data?.wikicraft?.url && <ProjectLink to={`/projects/${pk}/docs`} icon={<BookOpen size={16} />} label={t('Docs')} />}
               {p?.role === 'admin' && <ProjectLink to={`/projects/${pk}/settings`} icon={<Settings size={16} />} label={t('Project settings')} />}
             </>

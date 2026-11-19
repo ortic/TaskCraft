@@ -33,6 +33,11 @@ One binary, PostgreSQL, optional S3. Built with the same stack as WikiCraft.
   category, day, week or month (and once more inside), filtered, with a CSV of every log; a
   **timer** per person on an issue (in the top bar on every device; pause, stop and log; the
   workspace rounds it up; stopped timers wait as private drafts; reminders, and a stop at 24 hours)
+- **Test management**: versioned test cases with steps or Given / When / Then scenarios, in
+  folders; coverage of issues; test plans (by hand or by a filter) and run templates; test runs
+  with a result, comment and files per step, shared by several testers; failure → bug in one
+  click; reports (pass rates, history, flaky cases, coverage) and release readiness; TQL
+  `hasTests`, `testResult = failed`, `testRun = "Regression"`
 - **Asset inventory**: laptops, servers, services, rooms — in sets with their own roles; asset
   types with custom fields (also references to other assets), tags like `LT-0042`, owners,
   categories; *depends on* / *installed in* relations with a graph of what's affected; issues
@@ -104,7 +109,7 @@ files, HTML and plain text (the first 100 000 characters, read in the background
 
 Fields: `project key title text description comment type status category priority assignee
 reporter creator labels sprint version affects component parent/epic points estimate spent created
-updated resolved resolution security due start remaining watcher voter votes blocked link organization customer approval approver asset asset.type` and custom fields. Operators `= != ~ !~ > >= < <=`,
+updated resolved resolution security due start remaining watcher voter votes blocked link organization customer approval approver asset asset.type hasTests testResult testRun` and custom fields. Operators `= != ~ !~ > >= < <=`,
 `in (…)`, `not in`, `is [not] empty`; `and`, `or`, `not`, parentheses; `order by`. Functions:
 `me()`, `now()`, `today()`, `startOfWeek()`, `endOfWeek()`, `startOfMonth()`, `endOfMonth()`,
 `openSprints()`, `futureSprints()`, `closedSprints()`, `releasedVersions()`,

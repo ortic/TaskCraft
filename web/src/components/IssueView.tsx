@@ -2,6 +2,7 @@
 // time logs, and every field on the side. Used in the side panel and on /issues/:key.
 import { locale, t } from '../i18n'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { ResultBadge, type TestResult } from '../pages/Tests'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -85,6 +86,7 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
   const [tab, setTab] = useState<'comments' | 'history' | 'work'>('comments')
   const timeTracking = useFeature('timeTracking')
   const assetsOn = useFeature('assets')
+  const testsOn = useFeature('tests')
   const votes = useFeature('votes')
   const ai = !!me?.workspace?.ai
   const fileRef = useRef<HTMLInputElement>(null)
@@ -354,6 +356,11 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
           <SideField label={t('Type')}>
             <TypePicker project={project} value={issue.type} disabled={!can} onChange={(id) => set({ typeId: id })} />
           </SideField>
+          {testsOn && (
+            <SideField label={t('Tests')}>
+              <IssueTests issue={issue} />
+            </SideField>
+          )}
           {assetsOn && me?.user?.role !== 'guest' && (
             <SideField label={t('Assets')}>
               <IssueAssets issue={issue} can={can} />
@@ -477,6 +484,45 @@ function IssueBody({ issue, project, onOpen, inPanel }: { issue: IssueDetail; pr
 
 /** The fields the issue's type hides (they show while they have a value). */
 const HiddenFields = createContext<string[]>([])
+
+/** The test cases that cover the issue, with their latest results. */
+function IssueTests({ issue }: { issue: IssueDetail }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const q = useQuery({ queryKey: ['issue-tests', issue.key], queryFn: () => api.get<{ canManage: boolean; tests: { id: string; key: string; title: string; lastResult: TestResult | null }[] }>(`/issues/${issue.key}/tests`) })
+  const [adding, setAdding] = useState(false)
+  const [ref, setRef] = useState('')
+  const change = async (f: () => Promise<unknown>) => {
+    try {
+      await f()
+      setRef('')
+      setAdding(false)
+    } catch (e) {
+      toast((e as Error).message)
+    }
+    qc.invalidateQueries({ queryKey: ['issue-tests', issue.key] })
+  }
+  const tests = q.data?.tests ?? []
+  return (
+    <div>
+      {tests.map((x) => (
+        <div key={x.id} className="row" style={{ gap: 6, minHeight: 26 }}>
+          <Link to={`/projects/${x.key.slice(0, x.key.lastIndexOf('-T'))}/tests?case=${x.key}`} title={x.title} className="issue-key">{x.key}</Link>
+          <ResultBadge result={x.lastResult} />
+          {q.data?.canManage && <button className="ap-chip-x" aria-label={t('Remove {name}', { name: x.key })} onClick={() => change(() => api.del(`/issues/${issue.key}/tests/${x.id}`))}>×</button>}
+        </div>
+      ))}
+      {tests.length === 0 && !adding && <span className="faint">{t('None')}</span>}
+      {q.data?.canManage && !adding && <button className="btn btn-ghost btn-sm" onClick={() => setAdding(true)}>{t('Add [[test]]')}</button>}
+      {adding && (
+        <form className="row" style={{ gap: 6 }} onSubmit={(e) => { e.preventDefault(); void change(() => api.post(`/issues/${issue.key}/tests`, { test: ref.trim() })) }}>
+          <input className="input input-sm" autoFocus placeholder={`${issue.projectKey}-T1`} aria-label={t('Key of the test case')} value={ref} onChange={(e) => setRef(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setAdding(false)} />
+          <button className="btn btn-sm" disabled={!ref.trim()}>{t('Add')}</button>
+        </form>
+      )}
+    </div>
+  )
+}
 
 /** The assets the issue is about: links to them, and a search to add more. */
 function IssueAssets({ issue, can }: { issue: IssueDetail; can: boolean }) {

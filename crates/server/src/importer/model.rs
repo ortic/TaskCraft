@@ -377,6 +377,10 @@ pub struct Model {
     pub warnings: Vec<Warning>,
     /// for the check only
     pub notes: Vec<Warning>,
+    /// a TaskCraft export's test management (crate::testmgmt::export_json): folders, test cases
+    /// with their versions and coverage, plans, and runs with their results
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tests: Option<serde_json::Value>,
 }
 
 impl Model {

@@ -174,6 +174,7 @@ def page(default, maximum=None, offset=True):
 # ---- tags (in the order the reference shows them) ------------------------------------------
 
 TAGS = [
+    ("Tests", "Test management: test cases (versioned, in folders, covering issues), test plans and run templates, test runs with results per step, files and bugs, and the reports."),
     ("Assets", "The asset inventory: sets with their own permissions, asset types with fields, categories, assets with owners and relations, the issues about them, CSV import and export, and rules."),
     ("Auth & account", "First-run setup, signing in and out with a password, invitation and password-reset links, the signed-in person and their API tokens."),
     ("Security", "Two-factor authentication (authenticator app and recovery codes), passkeys, the second step of a sign-in, sessions and the workspace's two-factor policy. Changes to sign-in methods are refused for API tokens."),
@@ -648,7 +649,7 @@ schemas["Me"] = obj(
                     "dateFormat": null(enum("dmy", "mdy", "ymd"), "how dates are written (null: as the language writes them)"),
                     "announcement": null(obj({"id": uuid, "text": txt, "tone": enum("info", "warning"), "until": null(dt, "shown until"), "at": dt}, ["id", "text", "tone"]),
                                          "the announcement for everyone while it's current"),
-                    "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean, "calendarFeeds": boolean, "agents": boolean, "assets": boolean}), "parts of TaskCraft that are on"),
+                    "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean, "calendarFeeds": boolean, "agents": boolean, "assets": boolean, "tests": boolean}), "parts of TaskCraft that are on"),
                     "ai": d(boolean, "AI assistance can be used (the server has a model and the workspace hasn't turned it off)"),
                     "aiSetup": null(obj({"provider": enum("anthropic", "openai-compatible"), "model": txt, "local": d(boolean, "the model runs in the server's own network")}), "the AI setup (admins only)"),
                     "logo": null(txt, "the logo's address (/api/workspace/logo?v=…); null: TaskCraft's mark"),
@@ -1207,7 +1208,7 @@ schemas["ProjectSettings"] = obj(
         "doneAfterDays": d(number, "stored as given (not used by the server)"),
         "permissions": d(
             {"type": "object", "additionalProperties": enum("member", "admin", "nobody")},
-            "who may: deleteIssues, moveIssues, manageSprints, manageReleases (member or admin; default member), setSecurity (member or admin; default member), moderateComments and logTimeForOthers (member, admin or nobody; default admin), createBranches (member, admin or nobody; default member). Project admins may whatever members may.",
+            "who may: deleteIssues, moveIssues, manageSprints, manageReleases (member or admin; default member), setSecurity (member or admin; default member), moderateComments and logTimeForOthers (member, admin or nobody; default admin), createBranches (member, admin or nobody; default member), executeTests and manageTests (member or admin; default member). Project admins may whatever members may.",
         ),
         "resolutions": arr(txt, "the project's resolutions, 1–20 distinct names (default Done, Won't do, Duplicate, Cannot reproduce); the first is the default"),
         "template": {**enum("scrum", "kanban", "tracker", "business"), "readOnly": True, "description": "the template the project was created from"},
@@ -1275,7 +1276,7 @@ schemas["Schedule"] = obj(
 )
 schemas["AutomationTrigger"] = obj(
     {
-        "event": enum("created", "status", "assigned", "field", "commented", "approved", "rejected", "schedule", desc="approved / rejected: an approval request of the issue was decided"),
+        "event": enum("created", "status", "assigned", "field", "commented", "approved", "rejected", "testFailed", "testRunFinished", "schedule", desc="approved / rejected: an approval request of the issue was decided; testFailed: a test case that covers the issue failed in a run; testRunFinished: a run with a test case that covers the issue was finished"),
         "fromStatusId": d(uuid, "status: only moves from this status"),
         "toStatusId": d(uuid, "status: only moves to this status"),
         "toCategory": d(S("StatusCategory"), "status: only moves into this category"),
@@ -3424,7 +3425,7 @@ op("put", "/admin/workspace", "updateWorkspace", "Administration", "Rename the w
        "dateFormat": null(enum("auto", "dmy", "mdy", "ymd"), "how dates are written (auto or null: as the language writes them)"),
        "announcement": null(obj({"text": d(txt, "up to 500 characters (empty: taken down)"), "tone": enum("info", "warning"), "until": null(dt, "shown until (null: until taken down)")}, ["text"]),
                             "a message at the top of every page (null: taken down)"),
-       "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean, "calendarFeeds": boolean, "agents": boolean, "assets": boolean}),
+       "features": d(obj({"timeTracking": boolean, "votes": boolean, "portal": boolean, "automation": boolean, "sharing": boolean, "ai": boolean, "calendarFeeds": boolean, "agents": boolean, "assets": boolean, "tests": boolean}),
                      "false turns a part off: it's hidden and the API refuses it (400; the portal answers 404); left out: on"),
        "uploads": obj(
            {
@@ -3444,6 +3445,120 @@ op("delete", "/admin/workspace/logo", "deleteWorkspaceLogo", "Administration", "
    desc="Workspace admins, in the browser.", auth="session", res=NO)
 op("get", "/workspace/logo", "getWorkspaceLogo", "Administration", "The workspace's logo",
    desc="Anyone in the workspace (404 without one).", res=raw("image/png", "the image (or JPEG, GIF, WebP)"))
+# ---- test management ----
+T_RESULT = enum("untested", "passed", "failed", "blocked", "skipped")
+T_PRIORITY = enum("low", "medium", "high", "critical")
+T_STEP = obj({"action": d(txt, "what to do (Markdown)"), "expected": d(txt, "what should happen (Markdown)")}, ["action"])
+T_ISSUE = obj({"id": uuid, "key": txt, "title": txt, "status": obj({"name": txt, "category": txt}, ["name", "category"])}, ["id", "key", "title"])
+schemas["TestCaseSummary"] = obj(
+    {"id": uuid, "key": d(txt, "e.g. WEB-T12"), "title": txt, "folderId": nuuid(), "priority": T_PRIORITY, "labels": arr(txt), "version": d(num, "counts up when the title, the preconditions, the steps or the scenario change"),
+     "kind": enum("steps", "scenario"), "archived": boolean, "updatedAt": dt, "issueCount": d(num, "issues it covers"), "lastResult": null(T_RESULT, "its latest result in any run"), "lastRunAt": null(dt)},
+    ["id", "key", "title", "priority", "labels", "version", "kind", "archived"],
+    "A test case of a project.",
+)
+T_COUNTS = obj({"total": num, "passed": num, "failed": num, "blocked": num, "skipped": num, "untested": num}, ["total", "passed", "failed", "blocked", "skipped", "untested"])
+schemas["TestRunSummary"] = obj(
+    {"id": uuid, "key": d(txt, "e.g. WEB-R4"), "number": num, "name": txt, "projectKey": txt, "plan": null(S("Named")), "version": null(S("Named"), "the release it checks"), "environment": ntxt(),
+     "testerIds": arr(uuid), "createdAt": dt, "finishedAt": null(dt, "set: closed for results"), "counts": T_COUNTS, "passRate": null(num, "in reports: passed in % of passed, failed and blocked")},
+    ["id", "key", "name", "counts"],
+    "A test run with how far it is.",
+)
+schemas["TestReport"] = obj(
+    {"runs": arr(S("TestRunSummary"), "newest first, at most 30"),
+     "history": arr(obj({"date": date, "passed": num, "failed": num, "blocked": num, "skipped": num}, ["date", "passed", "failed", "blocked", "skipped"]), "replayed from the stored results: where the test cases stood at the end of each day"),
+     "flaky": arr(obj({"case": S("Named"), "flips": num, "results": arr(txt)}, ["case", "flips", "results"]), "test cases that went back and forth between passed and failed at least twice in their last ten results"),
+     "failures": arr(obj({"case": anyobj, "result": T_RESULT, "run": anyobj, "bugs": arr(T_ISSUE)}, ["result", "run", "bugs"]), "test cases whose latest result is failed or blocked"),
+     "coverage": obj({"issues": num, "covered": num, "passing": d(num, "issues whose test cases all passed"), "withoutTestsCount": num, "failingCount": num,
+                      "withoutTests": arr(anyobj, "at most 200"), "failing": arr(anyobj, "at most 200")}, ["issues", "covered", "passing", "withoutTests", "failing"]),
+     "ready": d(boolean, "there are runs, everything in them passed or was skipped, and no failure stands open")},
+    ["runs", "history", "flaky", "failures", "coverage", "ready"],
+)
+T_CASE_IN = {"title": txt, "preconditions": ntxt("Markdown"), "kind": enum("steps", "scenario", desc="default: scenario when only a scenario is given"), "steps": arr(T_STEP, "at most 100"),
+             "scenario": ntxt("Given / When / Then lines; each such line is a step in a run"), "priority": T_PRIORITY, "labels": arr(txt), "folderId": nuuid(),
+             "issues": arr(txt, "the issues it covers (ids or keys); replaces the list")}
+D_TESTS = "When the workspace uses test management (400 otherwise). "
+PP_TEST = {"id": (txt, "the test case's id or key (WEB-T12)")}
+op("get", "/projects/{key}/tests", "listTestCases", "Tests", "A project's test cases and folders", desc=D_TESTS + "Project viewers.",
+   query=[q("folder", "a folder, with the ones below it", uuid), q("label", "labels, comma-separated: any of them"), q("priority", "low, medium, high or critical"), q("q", "text in the title, the key or the steps"), q("archived", "also archived cases", boolean)],
+   res=ok(obj({"canManage": boolean, "canExecute": boolean, "folders": arr(obj({"id": uuid, "parentId": nuuid(), "name": txt}, ["id", "name"])), "cases": arr(S("TestCaseSummary"))}, ["canManage", "canExecute", "folders", "cases"])))
+op("post", "/projects/{key}/tests", "createTestCase", "Tests", "Add a test case", desc="Who the project's `manageTests` permission names.",
+   req=body(obj(T_CASE_IN, ["title"])), res=created(obj({"id": uuid, "key": txt}, ["id", "key"])))
+op("get", "/tests/{id}", "getTestCase", "Tests", "A test case with its steps, coverage, versions and results", pp=PP_TEST,
+   res=ok({"allOf": [S("TestCaseSummary"), obj({
+       "projectKey": txt, "preconditions": ntxt(), "steps": arr(T_STEP), "scenario": ntxt(), "rendered": d(anyobj, "the preconditions and steps as rich text, for showing"), "canManage": boolean,
+       "issues": arr(T_ISSUE, "the issues it covers that the caller sees"), "versions": arr(obj({"version": num, "at": dt, "by": ntxt()}, ["version", "at"])),
+       "results": arr(obj({"run": anyobj, "result": T_RESULT, "version": num, "at": null(dt), "by": ntxt()}, ["run", "result", "version"]), "its last 30 results")})]}))
+op("patch", "/tests/{id}", "updateTestCase", "Tests", "Change a test case", pp=PP_TEST,
+   desc="A change of the title, the preconditions, the steps or the scenario makes a new version; runs keep the version they executed. `archived` hides it from lists and plans and keeps its results.",
+   req=body(obj({**T_CASE_IN, "archived": boolean})), res=ok(obj({"version": num}, ["version"])))
+op("delete", "/tests/{id}", "deleteTestCase", "Tests", "Delete a test case with its results", pp=PP_TEST, res=NO)
+op("get", "/tests/{id}/versions/{version}", "getTestCaseVersion", "Tests", "What a test case said at a version", pp={**PP_TEST, "version": (num, "the version")},
+   res=ok(obj({"version": num, "title": txt, "preconditions": ntxt(), "kind": txt, "steps": arr(T_STEP), "scenario": ntxt(), "at": dt}, ["version", "title", "kind", "steps"])))
+op("post", "/projects/{key}/test-folders", "createTestFolder", "Tests", "Add a folder for test cases", req=body(obj({"name": txt, "parentId": nuuid()}, ["name"])), res=created(B_ID))
+op("patch", "/test-folders/{id}", "renameTestFolder", "Tests", "Rename a folder", req=body(obj({"name": txt}, ["name"])), res=NO)
+op("delete", "/test-folders/{id}", "deleteTestFolder", "Tests", "Delete a folder and the ones below it", desc="Their test cases stay, without a folder.", res=NO)
+op("get", "/issues/{key}/tests", "listIssueTests", "Tests", "The test cases that cover an issue, with their latest results",
+   res=ok(obj({"canManage": boolean, "tests": arr(obj({"id": uuid, "key": txt, "title": txt, "priority": T_PRIORITY, "lastResult": null(T_RESULT), "lastRunAt": null(dt), "lastRun": null(S("Named"))}, ["id", "key", "title"]))}, ["canManage", "tests"])))
+op("post", "/issues/{key}/tests", "coverIssue", "Tests", "A test case covers the issue", req=body(obj({"test": d(txt, "the test case's id or key")}, ["test"])), res=NO)
+op("delete", "/issues/{key}/tests/{test}", "uncoverIssue", "Tests", "A test case no longer covers the issue", pp={"test": (txt, "the test case's id or key")}, res=NO)
+T_FILTER = obj({"folderId": uuid, "labels": arr(txt), "priority": T_PRIORITY, "text": txt}, desc="cases that match when a run starts are part of it")
+T_PLAN = {"id": uuid, "name": txt, "description": ntxt(), "version": null(S("Named"), "the release it checks"), "filter": null(T_FILTER), "caseCount": num, "createdAt": dt}
+T_PLAN_IN = {"name": txt, "description": ntxt(), "versionId": nuuid(), "caseIds": arr(txt, "picked by hand, in this order (ids or keys)"), "filter": null(T_FILTER)}
+op("get", "/projects/{key}/test-plans", "listTestPlans", "Tests", "A project's test plans and run templates",
+   res=ok(obj({"plans": arr(obj(T_PLAN, ["id", "name", "caseCount"])),
+               "templates": arr(obj({"id": uuid, "name": txt, "plan": S("Named"), "environment": ntxt(), "testerIds": arr(uuid)}, ["id", "name", "plan"]))}, ["plans", "templates"])))
+op("post", "/projects/{key}/test-plans", "createTestPlan", "Tests", "Add a test plan", desc="A named set of test cases: picked by hand, by a filter, or both.", req=body(obj(T_PLAN_IN, ["name"])), res=created(B_ID), err="409")
+op("get", "/test-plans/{id}", "getTestPlan", "Tests", "A test plan with its test cases",
+   res=ok(obj({**T_PLAN, "caseIds": arr(uuid, "the ones picked by hand"), "cases": arr(S("TestCaseSummary"), "by hand first, then by the filter")}, ["id", "name", "cases"])))
+op("patch", "/test-plans/{id}", "updateTestPlan", "Tests", "Change a test plan", req=body(obj(T_PLAN_IN)), res=NO, err="409")
+op("delete", "/test-plans/{id}", "deleteTestPlan", "Tests", "Delete a test plan", desc="Its runs stay.", res=NO)
+op("post", "/projects/{key}/test-run-templates", "createTestRunTemplate", "Tests", "Add a run template", desc="A plan with an environment and testers, to start runs from.",
+   req=body(obj({"name": txt, "planId": uuid, "environment": ntxt(), "testerIds": arr(uuid)}, ["name", "planId"])), res=created(B_ID), err="409")
+op("delete", "/test-run-templates/{id}", "deleteTestRunTemplate", "Tests", "Delete a run template", res=NO)
+op("get", "/projects/{key}/test-runs", "listTestRuns", "Tests", "A project's test runs, newest first", query=[q("version", "only the runs of a release", uuid)], res=ok(arr(S("TestRunSummary"))))
+op("post", "/projects/{key}/test-runs", "createTestRun", "Tests", "Start a test run",
+   desc="Of a plan's cases, a run template's, or the given ones — each at its current version. Who the project's `executeTests` permission names.",
+   req=body(obj({"name": d(txt, "default: the plan and today's date"), "planId": uuid, "templateId": uuid, "caseIds": arr(txt), "environment": ntxt(), "versionId": nuuid("default: the plan's release"), "testerIds": arr(uuid)})),
+   res=created(obj({"id": uuid, "key": txt, "name": txt}, ["id", "key", "name"])))
+T_RUN_CASE = obj({
+    "id": d(uuid, "of this case in this run"), "case": obj({"id": uuid, "key": txt, "title": d(txt, "as it was at the executed version"), "priority": T_PRIORITY}, ["id", "key", "title"]),
+    "version": d(num, "the version of the case this run executes"), "outdated": d(boolean, "the case has changed since"), "preconditions": ntxt(), "kind": txt, "scenario": ntxt(),
+    "assignee": null(S("Named")), "result": T_RESULT, "comment": ntxt(),
+    "steps": arr(obj({"action": txt, "expected": txt, "result": T_RESULT, "comment": ntxt()}, ["action", "result"])), "rendered": anyobj, "executedBy": ntxt(), "executedAt": null(dt),
+    "files": arr(obj({"id": uuid, "step": null(num, "the step it belongs to"), "name": txt, "mime": txt, "size": num, "url": txt}, ["id", "name", "url"])),
+    "bugs": arr(T_ISSUE, "the bugs created from it")}, ["id", "case", "version", "result", "steps", "files", "bugs"])
+op("get", "/test-runs/{id}", "getTestRun", "Tests", "A test run with its cases, results, files and bugs",
+   res=ok({"allOf": [S("TestRunSummary"), obj({"testers": arr(S("Named")), "canExecute": boolean, "canManage": boolean, "cases": arr(T_RUN_CASE)}, ["cases"])]}))
+op("patch", "/test-runs/{id}", "updateTestRun", "Tests", "Change, finish or reopen a test run",
+   desc="`finished: true` closes the run for results and runs the project's *test run finished* automation rules on the issues its test cases cover; `false` reopens it.",
+   req=body(obj({"name": txt, "environment": ntxt(), "testerIds": arr(uuid), "versionId": nuuid(), "finished": boolean})), res=NO)
+op("delete", "/test-runs/{id}", "deleteTestRun", "Tests", "Delete a test run with its results", res=NO)
+op("put", "/test-run-cases/{id}", "recordTestResult", "Tests", "Record how a test case went in a run",
+   desc="Without `result` the steps decide: a failed step fails the case, a blocked one blocks it, and it passes when every step passed or was skipped. A `result` of passed or skipped alone "
+        "marks the open steps the same way. Every change of the result is kept as history; a failure runs the project's *test failed* automation rules on the issues the case covers. 409 once the run is finished.",
+   req=body(obj({"result": T_RESULT, "comment": ntxt(), "steps": arr(obj({"result": T_RESULT, "comment": ntxt()}, ["result"]), "all steps, in order"),
+                 "step": obj({"index": d(num, "from 1"), "result": T_RESULT, "comment": ntxt()}, ["index"], "one step"), "assigneeId": nuuid()})),
+   res=ok(obj({"result": T_RESULT, "steps": arr(obj({"result": T_RESULT, "comment": ntxt()}, ["result"]))}, ["result", "steps"])), err="409")
+op("post", "/test-run-cases/{id}/files", "uploadTestFiles", "Tests", "Attach screenshots or other files to a result", query=[q("step", "the step they belong to (from 1)", num)],
+   req=multipart({"file": d(arr(binary), "one or more files")}, ["file"]), res=created(arr(anyobj)), err="413")
+op("get", "/test-files/{id}", "downloadTestFile", "Tests", "A file of a test result", res=raw("application/octet-stream", "The file"))
+op("delete", "/test-files/{id}", "deleteTestFile", "Tests", "Remove a file from a test result", res=NO, err="409")
+op("post", "/test-run-cases/{id}/bug", "createBugFromTest", "Tests", "Create a bug from a failure",
+   desc="An issue (of the type Bug, when the project has one) filled in with the test case and its version, the run, the environment, the steps, the failing step with expected and actual, "
+        "and the files of that step; it relates to the issues the test case covers and shows on the run.",
+   req=body(obj({"title": d(txt, "default: the test case's key and title"), "step": d(num, "the failing step (default: the first failed one)")})),
+   res=created(obj({"id": uuid, "key": txt, "title": txt}, ["id", "key", "title"])))
+op("get", "/projects/{key}/test-report", "getTestReport", "Tests", "Test reports of a project",
+   desc="Runs with their pass rates, the history of results by day, flaky test cases, open failures and the coverage of issues — the release's with `version`, else the project's open ones.",
+   query=[q("version", "a release: its runs and its issues", uuid), q("days", "how far the history goes back (default 30, at most 365)", num)], res=ok(S("TestReport")))
+op("get", "/versions/{id}/tests", "getReleaseTests", "Tests", "Whether a release is ready, as far as its tests say", desc="Its test runs, the failures that stand open, and which of its issues have no tests or failing ones.", res=ok(S("TestReport")))
+op("get", "/projects/{key}/tests/export.csv", "exportTestCases", "Tests", "A project's test cases as CSV",
+   desc="Key, Title, Folder, Priority, Labels, Preconditions, Steps (one per line, `action => expected`), Scenario, Covers.", res=raw("text/csv", "The file"))
+op("post", "/projects/{key}/tests/import", "importTestCases", "Tests", "Import test cases from CSV",
+   desc="The columns of the export, by their headers; only Title is needed. A row whose Key names a test case of the project updates it; folders are made as needed. `dryRun` checks without changing anything. At most 5000 rows.",
+   req=body(obj({"csv": d(txt, "the file's text"), "dryRun": boolean}, ["csv"])),
+   res=ok(obj({"dryRun": boolean, "created": num, "updated": num, "errors": arr(obj({"row": num, "message": txt}, ["row", "message"]))}, ["created", "updated", "errors"])), err="413")
+
 # ---- asset inventory ----
 A_STATUS = enum("in_use", "in_stock", "maintenance", "retired")
 A_FIELD = obj({"id": d(uuid, "kept across changes, so values stay with their field"), "name": txt,

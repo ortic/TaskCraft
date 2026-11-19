@@ -49,6 +49,7 @@ pub mod share;
 pub mod site_backup;
 pub mod sla;
 pub mod sso;
+pub mod testmgmt;
 pub mod timers;
 pub mod web_assets;
 pub mod webauthn;

@@ -484,6 +484,7 @@ function FeaturesForm({ me }: { me: Me }) {
     { id: 'automation', label: () => t('Automation'), hint: () => t('Rules that act on changes and on schedules. Existing rules are kept, but don’t run.') },
     { id: 'sharing', label: () => t('Sharing with links'), hint: () => t('Read-only pages projects share by link (status pages, roadmaps). Turned off, every link stops working.') },
     { id: 'calendarFeeds', label: () => t('Calendar feeds'), hint: () => t('Secret addresses calendar apps subscribe to (due dates, sprints, releases). Turned off, every feed stops.') },
+    { id: 'tests', label: () => t('Test management'), hint: () => t('Test cases, test plans and test runs in projects, with coverage of issues and release readiness.') },
     { id: 'assets', label: () => t('Asset inventory'), hint: () => t('Devices, services and other things issues are about, in sets with their own permissions.') },
     { id: 'agents', label: () => t('AI coding agents'), hint: () => t('Agents that prepare pull requests for issues assigned to them. Turned off, no agent starts and runners get no work.') },
     { id: 'ai', label: () => t('AI assistance'), hint: () => `${t('Summaries of long threads and searching in plain words. Only what the person asking may read is sent, and only when they ask.')} ${aiSetupText(me)}` },

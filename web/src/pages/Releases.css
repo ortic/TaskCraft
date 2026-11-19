@@ -58,3 +58,5 @@
   .rel-date-fields { grid-template-columns: 1fr; gap: 0; }
   .rel-pct { margin-inline-start: 0; }
 }
+.rel-tests { padding: 10px 16px 14px; border-top: 1px solid var(--border); }
+.rel-tests-h { font-size: 14px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }

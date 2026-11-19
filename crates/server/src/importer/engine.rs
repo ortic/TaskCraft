@@ -1827,6 +1827,12 @@ impl<'a> Run<'a> {
             .bind(p.id)
             .execute(&mut **tx)
             .await?;
+            // a TaskCraft export's test cases, plans and runs (once: not into a project that has some)
+            if let Some(tests) = &m.tests {
+                let issues: HashMap<String, Uuid> = self.targets.iter().map(|(k, t)| (k.clone(), t.id)).collect();
+                let versions: HashMap<String, Uuid> = p.versions.iter().map(|(k, v)| (k.clone(), v.0)).collect();
+                crate::testmgmt::import_json(tx, p.id, tests, &issues, &versions).await?;
+            }
             reports.push(p.report);
         }
         self.connect(tx, &mut reports, &project_of).await?;

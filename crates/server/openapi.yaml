@@ -64,6 +64,9 @@ security:
 - token: []
 - session: []
 tags:
+- name: Tests
+  description: 'Test management: test cases (versioned, in folders, covering issues), test plans and run templates, test runs
+    with results per step, files and bugs, and the reports.'
 - name: Assets
   description: 'The asset inventory: sets with their own permissions, asset types with fields, categories, assets with owners
     and relations, the issues about them, CSV import and export, and rules.'
@@ -124,6 +127,2069 @@ tags:
 - name: Operations
   description: Health, readiness, Prometheus metrics, live updates and this document.
 paths:
+  /projects/{key}/tests:
+    get:
+      tags:
+      - Tests
+      summary: A project's test cases and folders
+      operationId: listTestCases
+      description: When the workspace uses test management (400 otherwise). Project viewers.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: project key (former keys keep working) or project id
+        schema:
+          type: string
+      - name: folder
+        in: query
+        required: false
+        description: a folder, with the ones below it
+        schema:
+          type: string
+          format: uuid
+      - name: label
+        in: query
+        required: false
+        description: 'labels, comma-separated: any of them'
+        schema:
+          type: string
+      - name: priority
+        in: query
+        required: false
+        description: low, medium, high or critical
+        schema:
+          type: string
+      - name: q
+        in: query
+        required: false
+        description: text in the title, the key or the steps
+        schema:
+          type: string
+      - name: archived
+        in: query
+        required: false
+        description: also archived cases
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  canManage:
+                    type: boolean
+                  canExecute:
+                    type: boolean
+                  folders:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        parentId:
+                          type:
+                          - string
+                          - 'null'
+                          format: uuid
+                        name:
+                          type: string
+                      required:
+                      - id
+                      - name
+                  cases:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TestCaseSummary'
+                required:
+                - canManage
+                - canExecute
+                - folders
+                - cases
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - Tests
+      summary: Add a test case
+      operationId: createTestCase
+      description: Who the project's `manageTests` permission names.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: project key (former keys keep working) or project id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                preconditions:
+                  type:
+                  - string
+                  - 'null'
+                  description: Markdown
+                kind:
+                  type: string
+                  enum:
+                  - steps
+                  - scenario
+                  description: 'default: scenario when only a scenario is given'
+                steps:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      action:
+                        type: string
+                        description: what to do (Markdown)
+                      expected:
+                        type: string
+                        description: what should happen (Markdown)
+                    required:
+                    - action
+                  description: at most 100
+                scenario:
+                  type:
+                  - string
+                  - 'null'
+                  description: Given / When / Then lines; each such line is a step in a run
+                priority:
+                  type: string
+                  enum:
+                  - low
+                  - medium
+                  - high
+                  - critical
+                labels:
+                  type: array
+                  items:
+                    type: string
+                folderId:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+                issues:
+                  type: array
+                  items:
+                    type: string
+                  description: the issues it covers (ids or keys); replaces the list
+              required:
+              - title
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  key:
+                    type: string
+                required:
+                - id
+                - key
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tests/{id}:
+    get:
+      tags:
+      - Tests
+      summary: A test case with its steps, coverage, versions and results
+      operationId: getTestCase
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: the test case's id or key (WEB-T12)
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/TestCaseSummary'
+                - type: object
+                  properties:
+                    projectKey:
+                      type: string
+                    preconditions:
+                      type:
+                      - string
+                      - 'null'
+                    steps:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          action:
+                            type: string
+                            description: what to do (Markdown)
+                          expected:
+                            type: string
+                            description: what should happen (Markdown)
+                        required:
+                        - action
+                    scenario:
+                      type:
+                      - string
+                      - 'null'
+                    rendered:
+                      type: object
+                      additionalProperties: true
+                      description: the preconditions and steps as rich text, for showing
+                    canManage:
+                      type: boolean
+                    issues:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                            format: uuid
+                          key:
+                            type: string
+                          title:
+                            type: string
+                          status:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              category:
+                                type: string
+                            required:
+                            - name
+                            - category
+                        required:
+                        - id
+                        - key
+                        - title
+                      description: the issues it covers that the caller sees
+                    versions:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          version:
+                            type: integer
+                          at:
+                            type: string
+                            format: date-time
+                          by:
+                            type:
+                            - string
+                            - 'null'
+                        required:
+                        - version
+                        - at
+                    results:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          run:
+                            type: object
+                            additionalProperties: true
+                          result:
+                            type: string
+                            enum:
+                            - untested
+                            - passed
+                            - failed
+                            - blocked
+                            - skipped
+                          version:
+                            type: integer
+                          at:
+                            type:
+                            - string
+                            - 'null'
+                            format: date-time
+                          by:
+                            type:
+                            - string
+                            - 'null'
+                        required:
+                        - run
+                        - result
+                        - version
+                      description: its last 30 results
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Tests
+      summary: Change a test case
+      operationId: updateTestCase
+      description: A change of the title, the preconditions, the steps or the scenario makes a new version; runs keep the
+        version they executed. `archived` hides it from lists and plans and keeps its results.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: the test case's id or key (WEB-T12)
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                preconditions:
+                  type:
+                  - string
+                  - 'null'
+                  description: Markdown
+                kind:
+                  type: string
+                  enum:
+                  - steps
+                  - scenario
+                  description: 'default: scenario when only a scenario is given'
+                steps:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      action:
+                        type: string
+                        description: what to do (Markdown)
+                      expected:
+                        type: string
+                        description: what should happen (Markdown)
+                    required:
+                    - action
+                  description: at most 100
+                scenario:
+                  type:
+                  - string
+                  - 'null'
+                  description: Given / When / Then lines; each such line is a step in a run
+                priority:
+                  type: string
+                  enum:
+                  - low
+                  - medium
+                  - high
+                  - critical
+                labels:
+                  type: array
+                  items:
+                    type: string
+                folderId:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+                issues:
+                  type: array
+                  items:
+                    type: string
+                  description: the issues it covers (ids or keys); replaces the list
+                archived:
+                  type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: integer
+                required:
+                - version
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+      - Tests
+      summary: Delete a test case with its results
+      operationId: deleteTestCase
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: the test case's id or key (WEB-T12)
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tests/{id}/versions/{version}:
+    get:
+      tags:
+      - Tests
+      summary: What a test case said at a version
+      operationId: getTestCaseVersion
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: the test case's id or key (WEB-T12)
+        schema:
+          type: string
+      - name: version
+        in: path
+        required: true
+        description: the version
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: integer
+                  title:
+                    type: string
+                  preconditions:
+                    type:
+                    - string
+                    - 'null'
+                  kind:
+                    type: string
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        action:
+                          type: string
+                          description: what to do (Markdown)
+                        expected:
+                          type: string
+                          description: what should happen (Markdown)
+                      required:
+                      - action
+                  scenario:
+                    type:
+                    - string
+                    - 'null'
+                  at:
+                    type: string
+                    format: date-time
+                required:
+                - version
+                - title
+                - kind
+                - steps
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /projects/{key}/test-folders:
+    post:
+      tags:
+      - Tests
+      summary: Add a folder for test cases
+      operationId: createTestFolder
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: project key (former keys keep working) or project id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                parentId:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+              required:
+              - name
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                required:
+                - id
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /test-folders/{id}:
+    patch:
+      tags:
+      - Tests
+      summary: Rename a folder
+      operationId: renameTestFolder
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+              required:
+              - name
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+      - Tests
+      summary: Delete a folder and the ones below it
+      operationId: deleteTestFolder
+      description: Their test cases stay, without a folder.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /issues/{key}/tests:
+    get:
+      tags:
+      - Tests
+      summary: The test cases that cover an issue, with their latest results
+      operationId: listIssueTests
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: issue key (e.g. WEB-12; former keys keep working) or issue id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  canManage:
+                    type: boolean
+                  tests:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        key:
+                          type: string
+                        title:
+                          type: string
+                        priority:
+                          type: string
+                          enum:
+                          - low
+                          - medium
+                          - high
+                          - critical
+                        lastResult:
+                          type:
+                          - string
+                          - 'null'
+                          enum:
+                          - untested
+                          - passed
+                          - failed
+                          - blocked
+                          - skipped
+                          - null
+                        lastRunAt:
+                          type:
+                          - string
+                          - 'null'
+                          format: date-time
+                        lastRun:
+                          anyOf:
+                          - $ref: '#/components/schemas/Named'
+                          - type: 'null'
+                      required:
+                      - id
+                      - key
+                      - title
+                required:
+                - canManage
+                - tests
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - Tests
+      summary: A test case covers the issue
+      operationId: coverIssue
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: issue key (e.g. WEB-12; former keys keep working) or issue id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                test:
+                  type: string
+                  description: the test case's id or key
+              required:
+              - test
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /issues/{key}/tests/{test}:
+    delete:
+      tags:
+      - Tests
+      summary: A test case no longer covers the issue
+      operationId: uncoverIssue
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: issue key (e.g. WEB-12; former keys keep working) or issue id
+        schema:
+          type: string
+      - name: test
+        in: path
+        required: true
+        description: the test case's id or key
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /projects/{key}/test-plans:
+    get:
+      tags:
+      - Tests
+      summary: A project's test plans and run templates
+      operationId: listTestPlans
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: project key (former keys keep working) or project id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plans:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+                        description:
+                          type:
+                          - string
+                          - 'null'
+                        version:
+                          anyOf:
+                          - $ref: '#/components/schemas/Named'
+                          - type: 'null'
+                          description: the release it checks
+                        filter:
+                          type:
+                          - object
+                          - 'null'
+                          properties:
+                            folderId:
+                              type: string
+                              format: uuid
+                            labels:
+                              type: array
+                              items:
+                                type: string
+                            priority:
+                              type: string
+                              enum:
+                              - low
+                              - medium
+                              - high
+                              - critical
+                            text:
+                              type: string
+                          description: cases that match when a run starts are part of it
+                        caseCount:
+                          type: integer
+                        createdAt:
+                          type: string
+                          format: date-time
+                      required:
+                      - id
+                      - name
+                      - caseCount
+                  templates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+                        plan:
+                          $ref: '#/components/schemas/Named'
+                        environment:
+                          type:
+                          - string
+                          - 'null'
+                        testerIds:
+                          type: array
+                          items:
+                            type: string
+                            format: uuid
+                      required:
+                      - id
+                      - name
+                      - plan
+                required:
+                - plans
+                - templates
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - Tests
+      summary: Add a test plan
+      operationId: createTestPlan
+      description: 'A named set of test cases: picked by hand, by a filter, or both.'
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: project key (former keys keep working) or project id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type:
+                  - string
+                  - 'null'
+                versionId:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+                caseIds:
+                  type: array
+                  items:
+                    type: string
+                  description: picked by hand, in this order (ids or keys)
+                filter:
+                  type:
+                  - object
+                  - 'null'
+                  properties:
+                    folderId:
+                      type: string
+                      format: uuid
+                    labels:
+                      type: array
+                      items:
+                        type: string
+                    priority:
+                      type: string
+                      enum:
+                      - low
+                      - medium
+                      - high
+                      - critical
+                    text:
+                      type: string
+                  description: cases that match when a run starts are part of it
+              required:
+              - name
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                required:
+                - id
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /test-plans/{id}:
+    get:
+      tags:
+      - Tests
+      summary: A test plan with its test cases
+      operationId: getTestPlan
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                  description:
+                    type:
+                    - string
+                    - 'null'
+                  version:
+                    anyOf:
+                    - $ref: '#/components/schemas/Named'
+                    - type: 'null'
+                    description: the release it checks
+                  filter:
+                    type:
+                    - object
+                    - 'null'
+                    properties:
+                      folderId:
+                        type: string
+                        format: uuid
+                      labels:
+                        type: array
+                        items:
+                          type: string
+                      priority:
+                        type: string
+                        enum:
+                        - low
+                        - medium
+                        - high
+                        - critical
+                      text:
+                        type: string
+                    description: cases that match when a run starts are part of it
+                  caseCount:
+                    type: integer
+                  createdAt:
+                    type: string
+                    format: date-time
+                  caseIds:
+                    type: array
+                    items:
+                      type: string
+                      format: uuid
+                    description: the ones picked by hand
+                  cases:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TestCaseSummary'
+                    description: by hand first, then by the filter
+                required:
+                - id
+                - name
+                - cases
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Tests
+      summary: Change a test plan
+      operationId: updateTestPlan
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type:
+                  - string
+                  - 'null'
+                versionId:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+                caseIds:
+                  type: array
+                  items:
+                    type: string
+                  description: picked by hand, in this order (ids or keys)
+                filter:
+                  type:
+                  - object
+                  - 'null'
+                  properties:
+                    folderId:
+                      type: string
+                      format: uuid
+                    labels:
+                      type: array
+                      items:
+                        type: string
+                    priority:
+                      type: string
+                      enum:
+                      - low
+                      - medium
+                      - high
+                      - critical
+                    text:
+                      type: string
+                  description: cases that match when a run starts are part of it
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags:
+      - Tests
+      summary: Delete a test plan
+      operationId: deleteTestPlan
+      description: Its runs stay.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /projects/{key}/test-run-templates:
+    post:
+      tags:
+      - Tests
+      summary: Add a run template
+      operationId: createTestRunTemplate
+      description: A plan with an environment and testers, to start runs from.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: project key (former keys keep working) or project id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                planId:
+                  type: string
+                  format: uuid
+                environment:
+                  type:
+                  - string
+                  - 'null'
+                testerIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+              required:
+              - name
+              - planId
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                required:
+                - id
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /test-run-templates/{id}:
+    delete:
+      tags:
+      - Tests
+      summary: Delete a run template
+      operationId: deleteTestRunTemplate
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /projects/{key}/test-runs:
+    get:
+      tags:
+      - Tests
+      summary: A project's test runs, newest first
+      operationId: listTestRuns
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: project key (former keys keep working) or project id
+        schema:
+          type: string
+      - name: version
+        in: query
+        required: false
+        description: only the runs of a release
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TestRunSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - Tests
+      summary: Start a test run
+      operationId: createTestRun
+      description: Of a plan's cases, a run template's, or the given ones — each at its current version. Who the project's
+        `executeTests` permission names.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: project key (former keys keep working) or project id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: 'default: the plan and today''s date'
+                planId:
+                  type: string
+                  format: uuid
+                templateId:
+                  type: string
+                  format: uuid
+                caseIds:
+                  type: array
+                  items:
+                    type: string
+                environment:
+                  type:
+                  - string
+                  - 'null'
+                versionId:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+                  description: 'default: the plan''s release'
+                testerIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  key:
+                    type: string
+                  name:
+                    type: string
+                required:
+                - id
+                - key
+                - name
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /test-runs/{id}:
+    get:
+      tags:
+      - Tests
+      summary: A test run with its cases, results, files and bugs
+      operationId: getTestRun
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/TestRunSummary'
+                - type: object
+                  properties:
+                    testers:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/Named'
+                    canExecute:
+                      type: boolean
+                    canManage:
+                      type: boolean
+                    cases:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                            format: uuid
+                            description: of this case in this run
+                          case:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                                format: uuid
+                              key:
+                                type: string
+                              title:
+                                type: string
+                                description: as it was at the executed version
+                              priority:
+                                type: string
+                                enum:
+                                - low
+                                - medium
+                                - high
+                                - critical
+                            required:
+                            - id
+                            - key
+                            - title
+                          version:
+                            type: integer
+                            description: the version of the case this run executes
+                          outdated:
+                            type: boolean
+                            description: the case has changed since
+                          preconditions:
+                            type:
+                            - string
+                            - 'null'
+                          kind:
+                            type: string
+                          scenario:
+                            type:
+                            - string
+                            - 'null'
+                          assignee:
+                            anyOf:
+                            - $ref: '#/components/schemas/Named'
+                            - type: 'null'
+                          result:
+                            type: string
+                            enum:
+                            - untested
+                            - passed
+                            - failed
+                            - blocked
+                            - skipped
+                          comment:
+                            type:
+                            - string
+                            - 'null'
+                          steps:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                action:
+                                  type: string
+                                expected:
+                                  type: string
+                                result:
+                                  type: string
+                                  enum:
+                                  - untested
+                                  - passed
+                                  - failed
+                                  - blocked
+                                  - skipped
+                                comment:
+                                  type:
+                                  - string
+                                  - 'null'
+                              required:
+                              - action
+                              - result
+                          rendered:
+                            type: object
+                            additionalProperties: true
+                          executedBy:
+                            type:
+                            - string
+                            - 'null'
+                          executedAt:
+                            type:
+                            - string
+                            - 'null'
+                            format: date-time
+                          files:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                  format: uuid
+                                step:
+                                  type:
+                                  - integer
+                                  - 'null'
+                                  description: the step it belongs to
+                                name:
+                                  type: string
+                                mime:
+                                  type: string
+                                size:
+                                  type: integer
+                                url:
+                                  type: string
+                              required:
+                              - id
+                              - name
+                              - url
+                          bugs:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                  format: uuid
+                                key:
+                                  type: string
+                                title:
+                                  type: string
+                                status:
+                                  type: object
+                                  properties:
+                                    name:
+                                      type: string
+                                    category:
+                                      type: string
+                                  required:
+                                  - name
+                                  - category
+                              required:
+                              - id
+                              - key
+                              - title
+                            description: the bugs created from it
+                        required:
+                        - id
+                        - case
+                        - version
+                        - result
+                        - steps
+                        - files
+                        - bugs
+                  required:
+                  - cases
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Tests
+      summary: Change, finish or reopen a test run
+      operationId: updateTestRun
+      description: '`finished: true` closes the run for results and runs the project''s *test run finished* automation rules
+        on the issues its test cases cover; `false` reopens it.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                environment:
+                  type:
+                  - string
+                  - 'null'
+                testerIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                versionId:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+                finished:
+                  type: boolean
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+      - Tests
+      summary: Delete a test run with its results
+      operationId: deleteTestRun
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /test-run-cases/{id}:
+    put:
+      tags:
+      - Tests
+      summary: Record how a test case went in a run
+      operationId: recordTestResult
+      description: 'Without `result` the steps decide: a failed step fails the case, a blocked one blocks it, and it passes
+        when every step passed or was skipped. A `result` of passed or skipped alone marks the open steps the same way. Every
+        change of the result is kept as history; a failure runs the project''s *test failed* automation rules on the issues
+        the case covers. 409 once the run is finished.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                result:
+                  type: string
+                  enum:
+                  - untested
+                  - passed
+                  - failed
+                  - blocked
+                  - skipped
+                comment:
+                  type:
+                  - string
+                  - 'null'
+                steps:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      result:
+                        type: string
+                        enum:
+                        - untested
+                        - passed
+                        - failed
+                        - blocked
+                        - skipped
+                      comment:
+                        type:
+                        - string
+                        - 'null'
+                    required:
+                    - result
+                  description: all steps, in order
+                step:
+                  type: object
+                  properties:
+                    index:
+                      type: integer
+                      description: from 1
+                    result:
+                      type: string
+                      enum:
+                      - untested
+                      - passed
+                      - failed
+                      - blocked
+                      - skipped
+                    comment:
+                      type:
+                      - string
+                      - 'null'
+                  required:
+                  - index
+                  description: one step
+                assigneeId:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: string
+                    enum:
+                    - untested
+                    - passed
+                    - failed
+                    - blocked
+                    - skipped
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        result:
+                          type: string
+                          enum:
+                          - untested
+                          - passed
+                          - failed
+                          - blocked
+                          - skipped
+                        comment:
+                          type:
+                          - string
+                          - 'null'
+                      required:
+                      - result
+                required:
+                - result
+                - steps
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /test-run-cases/{id}/files:
+    post:
+      tags:
+      - Tests
+      summary: Attach screenshots or other files to a result
+      operationId: uploadTestFiles
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      - name: step
+        in: query
+        required: false
+        description: the step they belong to (from 1)
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: one or more files
+              required:
+              - file
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+  /test-files/{id}:
+    get:
+      tags:
+      - Tests
+      summary: A file of a test result
+      operationId: downloadTestFile
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+      - Tests
+      summary: Remove a file from a test result
+      operationId: deleteTestFile
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Done (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /test-run-cases/{id}/bug:
+    post:
+      tags:
+      - Tests
+      summary: Create a bug from a failure
+      operationId: createBugFromTest
+      description: An issue (of the type Bug, when the project has one) filled in with the test case and its version, the
+        run, the environment, the steps, the failing step with expected and actual, and the files of that step; it relates
+        to the issues the test case covers and shows on the run.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: 'default: the test case''s key and title'
+                step:
+                  type: integer
+                  description: 'the failing step (default: the first failed one)'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  key:
+                    type: string
+                  title:
+                    type: string
+                required:
+                - id
+                - key
+                - title
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /projects/{key}/test-report:
+    get:
+      tags:
+      - Tests
+      summary: Test reports of a project
+      operationId: getTestReport
+      description: Runs with their pass rates, the history of results by day, flaky test cases, open failures and the coverage
+        of issues — the release's with `version`, else the project's open ones.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: project key (former keys keep working) or project id
+        schema:
+          type: string
+      - name: version
+        in: query
+        required: false
+        description: 'a release: its runs and its issues'
+        schema:
+          type: string
+          format: uuid
+      - name: days
+        in: query
+        required: false
+        description: how far the history goes back (default 30, at most 365)
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /versions/{id}/tests:
+    get:
+      tags:
+      - Tests
+      summary: Whether a release is ready, as far as its tests say
+      operationId: getReleaseTests
+      description: Its test runs, the failures that stand open, and which of its issues have no tests or failing ones.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: id
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /projects/{key}/tests/export.csv:
+    get:
+      tags:
+      - Tests
+      summary: A project's test cases as CSV
+      operationId: exportTestCases
+      description: Key, Title, Folder, Priority, Labels, Preconditions, Steps (one per line, `action => expected`), Scenario,
+        Covers.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: project key (former keys keep working) or project id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The file
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /projects/{key}/tests/import:
+    post:
+      tags:
+      - Tests
+      summary: Import test cases from CSV
+      operationId: importTestCases
+      description: The columns of the export, by their headers; only Title is needed. A row whose Key names a test case of
+        the project updates it; folders are made as needed. `dryRun` checks without changing anything. At most 5000 rows.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        description: project key (former keys keep working) or project id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                csv:
+                  type: string
+                  description: the file's text
+                dryRun:
+                  type: boolean
+              required:
+              - csv
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dryRun:
+                    type: boolean
+                  created:
+                    type: integer
+                  updated:
+                    type: integer
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        row:
+                          type: integer
+                        message:
+                          type: string
+                      required:
+                      - row
+                      - message
+                required:
+                - created
+                - updated
+                - errors
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/TooLarge'
   /asset-sets:
     get:
       tags:
@@ -13821,6 +15887,8 @@ paths:
                       type: boolean
                     assets:
                       type: boolean
+                    tests:
+                      type: boolean
                   description: 'false turns a part off: it''s hidden and the API refuses it (400; the portal answers 404);
                     left out: on'
                 uploads:
@@ -17162,6 +19230,8 @@ components:
                   type: boolean
                 assets:
                   type: boolean
+                tests:
+                  type: boolean
               description: parts of TaskCraft that are on
             ai:
               type: boolean
@@ -18164,8 +20234,8 @@ components:
             - nobody
           description: 'who may: deleteIssues, moveIssues, manageSprints, manageReleases (member or admin; default member),
             setSecurity (member or admin; default member), moderateComments and logTimeForOthers (member, admin or nobody;
-            default admin), createBranches (member, admin or nobody; default member). Project admins may whatever members
-            may.'
+            default admin), createBranches (member, admin or nobody; default member), executeTests and manageTests (member
+            or admin; default member). Project admins may whatever members may.'
         resolutions:
           type: array
           items:
@@ -18388,8 +20458,11 @@ components:
           - commented
           - approved
           - rejected
+          - testFailed
+          - testRunFinished
           - schedule
-          description: 'approved / rejected: an approval request of the issue was decided'
+          description: 'approved / rejected: an approval request of the issue was decided; testFailed: a test case that covers
+            the issue failed in a run; testRunFinished: a run with a test case that covers the issue was finished'
         fromStatusId:
           type: string
           format: uuid
@@ -22124,6 +24197,293 @@ components:
       - finishedAt
       - expiresAt
       description: An upload of another tracker's XML site backup, or a connection to its API, and the import.
+    TestCaseSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+          description: e.g. WEB-T12
+        title:
+          type: string
+        folderId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        priority:
+          type: string
+          enum:
+          - low
+          - medium
+          - high
+          - critical
+        labels:
+          type: array
+          items:
+            type: string
+        version:
+          type: integer
+          description: counts up when the title, the preconditions, the steps or the scenario change
+        kind:
+          type: string
+          enum:
+          - steps
+          - scenario
+        archived:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+        issueCount:
+          type: integer
+          description: issues it covers
+        lastResult:
+          type:
+          - string
+          - 'null'
+          enum:
+          - untested
+          - passed
+          - failed
+          - blocked
+          - skipped
+          - null
+          description: its latest result in any run
+        lastRunAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - key
+      - title
+      - priority
+      - labels
+      - version
+      - kind
+      - archived
+      description: A test case of a project.
+    TestRunSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+          description: e.g. WEB-R4
+        number:
+          type: integer
+        name:
+          type: string
+        projectKey:
+          type: string
+        plan:
+          anyOf:
+          - $ref: '#/components/schemas/Named'
+          - type: 'null'
+        version:
+          anyOf:
+          - $ref: '#/components/schemas/Named'
+          - type: 'null'
+          description: the release it checks
+        environment:
+          type:
+          - string
+          - 'null'
+        testerIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: 'set: closed for results'
+        counts:
+          type: object
+          properties:
+            total:
+              type: integer
+            passed:
+              type: integer
+            failed:
+              type: integer
+            blocked:
+              type: integer
+            skipped:
+              type: integer
+            untested:
+              type: integer
+          required:
+          - total
+          - passed
+          - failed
+          - blocked
+          - skipped
+          - untested
+        passRate:
+          type:
+          - integer
+          - 'null'
+          description: 'in reports: passed in % of passed, failed and blocked'
+      required:
+      - id
+      - key
+      - name
+      - counts
+      description: A test run with how far it is.
+    TestReport:
+      type: object
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TestRunSummary'
+          description: newest first, at most 30
+        history:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+                description: YYYY-MM-DD
+              passed:
+                type: integer
+              failed:
+                type: integer
+              blocked:
+                type: integer
+              skipped:
+                type: integer
+            required:
+            - date
+            - passed
+            - failed
+            - blocked
+            - skipped
+          description: 'replayed from the stored results: where the test cases stood at the end of each day'
+        flaky:
+          type: array
+          items:
+            type: object
+            properties:
+              case:
+                $ref: '#/components/schemas/Named'
+              flips:
+                type: integer
+              results:
+                type: array
+                items:
+                  type: string
+            required:
+            - case
+            - flips
+            - results
+          description: test cases that went back and forth between passed and failed at least twice in their last ten results
+        failures:
+          type: array
+          items:
+            type: object
+            properties:
+              case:
+                type: object
+                additionalProperties: true
+              result:
+                type: string
+                enum:
+                - untested
+                - passed
+                - failed
+                - blocked
+                - skipped
+              run:
+                type: object
+                additionalProperties: true
+              bugs:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                    key:
+                      type: string
+                    title:
+                      type: string
+                    status:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        category:
+                          type: string
+                      required:
+                      - name
+                      - category
+                  required:
+                  - id
+                  - key
+                  - title
+            required:
+            - result
+            - run
+            - bugs
+          description: test cases whose latest result is failed or blocked
+        coverage:
+          type: object
+          properties:
+            issues:
+              type: integer
+            covered:
+              type: integer
+            passing:
+              type: integer
+              description: issues whose test cases all passed
+            withoutTestsCount:
+              type: integer
+            failingCount:
+              type: integer
+            withoutTests:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+              description: at most 200
+            failing:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+              description: at most 200
+          required:
+          - issues
+          - covered
+          - passing
+          - withoutTests
+          - failing
+        ready:
+          type: boolean
+          description: there are runs, everything in them passed or was skipped, and no failure stands open
+      required:
+      - runs
+      - history
+      - flaky
+      - failures
+      - coverage
+      - ready
     AssetSummary:
       type: object
       properties:

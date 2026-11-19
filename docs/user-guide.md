@@ -183,6 +183,31 @@ with `organization = "Acme"`. An organization's service-level goals can be a sha
 project's (50% = twice as fast). In the portal, a requester shares a request with their whole
 organization or with chosen colleagues, who then follow and answer it (resolving stays theirs).
 
+## Tests
+
+When the workspace uses test management, a project has **Tests** in its sidebar.
+
+- **Test cases** (`WEB-T12`) say how to check something: preconditions, then numbered steps with
+  what you expect at each — or a scenario of *Given / When / Then* lines. Give them a priority
+  and labels, sort them into folders, and say which issues they **cover**. Markdown works in the
+  texts. Changing what a tester does makes a new version; the case's page lists its versions and
+  its last results. Import many from a CSV file, or export them.
+- **Test plans** are named sets of cases — picked by hand, by a filter (folder, labels,
+  priority), or both — optionally for a release. *Start a run* from a plan, with an environment
+  and testers; keep that combination as a **run template** to start the next one in one click.
+- In a **test run**, pick a case and mark each step *Passed*, *Failed*, *Blocked* or *Skipped*,
+  note what happened and attach screenshots. The steps decide the case's result; several
+  testers can work in the same run. On a failure, *Create a bug* writes the issue for you: the
+  case, the failing step, expected and actual, the environment and the files, related to the
+  covered issues. *Finish the run* closes it for results (it can be reopened).
+- **Coverage and reports** shows which issues have tests, which have failing ones, the failures
+  that stand open, the pass rate of each run, where the cases stood day by day, and cases that
+  keep flipping between passed and failed. Choose a release to see only its issues and runs.
+
+An issue lists its test cases with their latest results under *Tests*; a release shows its test
+runs and open failures next to its issues. Search with `hasTests = false`,
+`testResult = failed` or `testRun = "Regression"`.
+
 ## Assets
 
 When the workspace keeps an inventory, **Assets** in the sidebar lists the devices, services and

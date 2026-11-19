@@ -399,6 +399,7 @@ pub async fn model(state: &AppState, project: Uuid) -> anyhow::Result<(Model, Ve
     {
         m.people.insert(id.to_string(), model::Person { name, email, active: status == "active" });
     }
+    m.tests = crate::testmgmt::export_json(db, project).await?;
     Ok((m, files))
 }
 

@@ -53,7 +53,7 @@ impl Role {
 
 /// Project actions whose minimum role each project chooses (`settings.permissions`): the action,
 /// its default, whether "nobody" is allowed, and how a refusal reads.
-pub const ACTIONS: [(&str, Role, bool, &str); 8] = [
+pub const ACTIONS: [(&str, Role, bool, &str); 10] = [
     ("deleteIssues", Role::Member, false, "delete issues"),
     ("moveIssues", Role::Member, false, "move issues to another project"),
     ("manageSprints", Role::Member, false, "plan, start and complete sprints"),
@@ -62,6 +62,8 @@ pub const ACTIONS: [(&str, Role, bool, &str); 8] = [
     ("logTimeForOthers", Role::Admin, true, "log or change time for other people"),
     ("setSecurity", Role::Member, false, "change who sees an issue"),
     ("createBranches", Role::Member, true, "create branches on the Git server"),
+    ("executeTests", Role::Member, false, "start test runs and record results"),
+    ("manageTests", Role::Member, false, "change test cases, test plans and test runs"),
 ];
 
 /// Checks a project's `permissions` setting: known actions, member / admin (or nobody where allowed).

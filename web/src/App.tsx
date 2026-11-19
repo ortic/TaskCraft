@@ -36,6 +36,8 @@ const Portfolio = lazy(() => import('./pages/Portfolio'))
 const ApiReference = lazy(() => import('./pages/ApiReference'))
 const CliAuthorize = lazy(() => import('./pages/CliAuthorize'))
 const Assets = lazy(() => import('./pages/Assets'))
+const Tests = lazy(() => import('./pages/Tests'))
+const TestRun = lazy(() => import('./pages/TestRun'))
 
 export default function App() {
   const setup = useQuery({ queryKey: ['setup'], queryFn: () => api.get<{ needsSetup: boolean }>('/setup') })
@@ -82,6 +84,8 @@ export default function App() {
             <Route path="/projects/:key/calendar" element={<Calendar />} />
             <Route path="/projects/:key/reports" element={<Reports />} />
             <Route path="/projects/:key/releases" element={<Releases />} />
+            <Route path="/projects/:key/tests" element={<Tests />} />
+            <Route path="/projects/:key/tests/runs/:id" element={<TestRun />} />
             <Route path="/projects/:key/docs" element={<ProjectDocs />} />
             <Route path="/projects/:key/queue" element={<Queue />} />
             <Route path="/projects/:key/settings/*" element={<ProjectSettings />} />

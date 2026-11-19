@@ -33,7 +33,7 @@ import './ProjectSettings.css'
 type Grant = { subjectType: 'user' | 'team'; subjectId: string; role: Role; name: string | null }
 type MembersData = { defaultRole: Role; grants: Grant[]; people: { id: string; name: string; role: Role }[] }
 type Team = { id: string; name: string; memberIds: string[]; color?: string | null }
-type TriggerEvent = 'created' | 'status' | 'assigned' | 'field' | 'commented' | 'approved' | 'rejected' | 'schedule'
+type TriggerEvent = 'created' | 'status' | 'assigned' | 'field' | 'commented' | 'approved' | 'rejected' | 'testFailed' | 'testRunFinished' | 'schedule'
 type Trigger = { event: TriggerEvent; toStatusId?: string; fromStatusId?: string; toCategory?: Category; field?: string; schedule?: Schedule }
 type ActionKind = 'setStatus' | 'assign' | 'setPriority' | 'addLabel' | 'removeLabel' | 'setSprint' | 'comment' | 'notify' | 'chat' | 'script' | 'extension'
 type ExtensionAction = { extension: string; extensionTitle: string; name: string; label: string }
@@ -1198,6 +1198,8 @@ const ACTION_LABELS: Record<ProjectAction, () => string> = {
   logTimeForOthers: () => t('Log and change time for other people'),
   setSecurity: () => t('Change who sees an issue (security level)'),
   createBranches: () => t('Create branches and pull requests on the Git server'),
+  executeTests: () => t('Start test runs and record results'),
+  manageTests: () => t('Change test cases, test plans and test runs'),
 }
 
 /** Who may do the sensitive things in this project. */
@@ -2521,6 +2523,8 @@ const EVENTS: { id: TriggerEvent; label: () => string }[] = [
   { id: 'commented', label: () => t('someone comments') },
   { id: 'approved', label: () => t('an approval is given') },
   { id: 'rejected', label: () => t('an approval is rejected') },
+  { id: 'testFailed', label: () => t('a test that covers the issue fails') },
+  { id: 'testRunFinished', label: () => t('a test run with a test of the issue is finished') },
   { id: 'schedule', label: () => t('on a schedule') },
 ]
 const TRIGGER_FIELDS: { id: string; label: () => string }[] = [
@@ -2569,6 +2573,10 @@ function describeTrigger(tr: Trigger, project: Project): string {
       return t('an approval is given')
     case 'rejected':
       return t('an approval is rejected')
+    case 'testFailed':
+      return t('a test that covers the issue fails')
+    case 'testRunFinished':
+      return t('a test run with a test of the issue is finished')
     case 'schedule':
       return describeSchedule(tr.schedule)
     case 'field':

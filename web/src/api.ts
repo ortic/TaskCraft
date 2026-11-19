@@ -512,7 +512,7 @@ export function userColor(seed: string): string {
 }
 
 /** Parts of TaskCraft a workspace can turn off. */
-export type Feature = 'timeTracking' | 'votes' | 'portal' | 'automation' | 'sharing' | 'ai' | 'calendarFeeds' | 'agents' | 'assets'
+export type Feature = 'timeTracking' | 'votes' | 'portal' | 'automation' | 'sharing' | 'ai' | 'calendarFeeds' | 'agents' | 'assets' | 'tests'
 export type DateFormat = 'dmy' | 'mdy' | 'ymd'
 export interface Announcement {
   id: string
@@ -631,6 +631,8 @@ export const PROJECT_ACTIONS = {
   logTimeForOthers: { default: 'admin', nobody: true },
   setSecurity: { default: 'member', nobody: false },
   createBranches: { default: 'member', nobody: true },
+  executeTests: { default: 'member', nobody: false },
+  manageTests: { default: 'member', nobody: false },
 } as const
 export type ProjectAction = keyof typeof PROJECT_ACTIONS
 

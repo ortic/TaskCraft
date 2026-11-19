@@ -6,6 +6,21 @@ All notable changes. Versions follow [Semantic Versioning](https://semver.org/);
 
 ## [Unreleased]
 
+- **Test management**: projects get **test cases** (`WEB-T12`) with preconditions, numbered
+  steps and an expected result each — or a Given / When / Then scenario —, a priority, labels
+  and folders. Cases are **versioned**; a run records the version it executed. A case **covers**
+  issues, and an issue shows its test cases with their latest results. **Test plans** pick cases
+  by hand or by a filter, optionally for a release; **run templates** add an environment and
+  testers. In a **test run** every step gets passed / failed / blocked / skipped with a comment
+  and files, and a failure becomes a **bug** in one click — filled in with the case, the failing
+  step, expected and actual, the environment and the files, and related to the covered issues.
+  **Reports**: progress and pass rate of runs, where the cases stood day by day (replayed from
+  the stored results), flaky cases, and coverage — issues without tests or with failing ones; a
+  **release** shows its runs and open failures. TQL `hasTests`, `testResult = failed`,
+  `testRun = "Regression"`; project permissions *execute tests* and *manage tests*; automation
+  triggers *a test fails* and *a test run is finished*; CSV import and export; REST, the MCP
+  tools `test_cases` and `create_test_case`; part of backups and project exports; a feature
+  switch. (#1)
 - **Asset inventory**: the devices, services and other things issues are about. Assets live in
   **sets** (Hardware, Services, …) with their own roles — viewer, editor, admin, for people,
   teams or everyone — and have a **type** with its own fields (text, number, date, choice,

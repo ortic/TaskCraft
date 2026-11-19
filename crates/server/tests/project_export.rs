@@ -74,6 +74,18 @@ async fn a_project_moves_to_another_taskcraft() {
     ]});
     patch(&c, a.url("/issues/WEB-2"), json!({"description": description})).await;
 
+    // test management travels along: a case that covers an issue, a plan, a run with a result
+    post(
+        &c,
+        a.url("/projects/WEB/tests"),
+        json!({"title": "Card payment", "steps": [{"action": "Pay", "expected": "A receipt"}], "labels": ["smoke"], "issues": ["WEB-2"]}),
+    )
+    .await;
+    let plan = post(&c, a.url("/projects/WEB/test-plans"), json!({"name": "Regression", "caseIds": ["WEB-T1"]})).await;
+    let run = post(&c, a.url("/projects/WEB/test-runs"), json!({"planId": plan["id"], "environment": "Staging"})).await;
+    let rc = get(&c, a.url(&format!("/test-runs/{}", run["id"].as_str().unwrap()))).await["cases"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(send(&c, Method::PUT, a.url(&format!("/test-run-cases/{rc}")), json!({"result": "passed"})).await.0, 200);
+
     // only workspace admins export (private issues, restricted comments, e-mail addresses)
     let (member, _) = a.user(&c, "Mia", "mia@example.com", "member").await;
     assert_eq!(member.get(a.url("/projects/WEB/export")).send().await.unwrap().status(), 403);
@@ -105,6 +117,11 @@ async fn a_project_moves_to_another_taskcraft() {
 
     let pay = get(&o, b.url("/issues/SITE-2")).await;
     assert_eq!(pay["title"], "Pay by card");
+    let tests = get(&o, b.url("/issues/SITE-2/tests")).await;
+    assert_eq!((tests["tests"][0]["key"].as_str(), tests["tests"][0]["lastResult"].as_str()), (Some("SITE-T1"), Some("passed")), "{tests}");
+    assert_eq!(get(&o, b.url("/projects/SITE/test-plans")).await["plans"][0]["caseCount"], 1);
+    let runs = get(&o, b.url("/projects/SITE/test-runs")).await;
+    assert_eq!((runs[0]["environment"].as_str(), runs[0]["counts"]["passed"].as_i64()), (Some("Staging"), Some(1)));
     assert_eq!(get(&o, b.url("/issues/WEB-2")).await["key"], "SITE-2", "the old key works");
     assert_eq!(pay["priority"], "high");
     assert_eq!(get(&o, b.url("/issues/SITE-1")).await["priority"], "none");

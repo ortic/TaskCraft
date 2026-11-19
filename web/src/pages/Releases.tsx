@@ -8,10 +8,11 @@ import {
   Package, Plus, ChevronDown, ChevronRight, Rocket, Ellipsis, Pencil, Archive, ArchiveArrowUp, Trash, BookOpen, Undo2, CalendarDays, TriangleExclamationPoint,
 } from 'lucide-react'
 import { api, daysUntil, qs, shortDate, type Issue, type Project, type Version } from '../api'
-import { Avatar, Confirm, Empty, ErrorBox, Loading, Lozenge, Modal, PopButton, Unassigned, useMe, useProject, useToast } from '../ui'
+import { Avatar, Confirm, Empty, ErrorBox, Loading, Lozenge, Modal, PopButton, Unassigned, useFeature, useMe, useProject, useToast } from '../ui'
 import { TypeIcon } from '../icons'
 import { useOpenIssue } from '../components/Layout'
 import { refreshIssues } from '../components/IssueView'
+import { CoverageSummary, RunTable, type TestReport } from './Tests'
 import './Releases.css'
 
 type SearchResult = { total: number; issues: Issue[] }
@@ -206,6 +207,7 @@ function VersionCard({ project, version: v, canEdit, onEdit, onRelease, onDelete
     }
   }
 
+  const testsOn = useFeature('tests')
   const sorted = [...(issues.data?.issues ?? [])].sort((a, b) => (CATEGORY_ORDER[a.status.category] ?? 1) - (CATEGORY_ORDER[b.status.category] ?? 1))
   const listId = `rel-issues-${v.id}`
 
@@ -309,6 +311,7 @@ function VersionCard({ project, version: v, canEdit, onEdit, onRelease, onDelete
         </div>
       </div>
 
+      {open && testsOn && <ReleaseTests projectKey={project.key} version={v} />}
       {open && (
         <div className="rel-issues" id={listId}>
           {issues.isLoading && <Loading />}
@@ -481,5 +484,20 @@ function ReleaseDialog({ project, version, onClose }: { project: Project; versio
       )}
       {err && <p className="error-text">{err}</p>}
     </Modal>
+  )
+}
+
+/** What the tests say about a release: its runs, open failures and the coverage of its issues. */
+function ReleaseTests({ projectKey, version }: { projectKey: string; version: Version }) {
+  const q = useQuery({ queryKey: ['tests', projectKey, 'release', version.id], queryFn: () => api.get<TestReport>(`/versions/${version.id}/tests`) })
+  if (!q.data || (q.data.runs.length === 0 && q.data.coverage.covered === 0)) return null
+  return (
+    <section className="rel-tests" aria-label={t('Tests of {name}', { name: version.name })}>
+      <h3 className="rel-tests-h">
+        {t('Tests')} {q.data.ready ? <span className="badge badge-accent">{t('All tests passed')}</span> : <span className="badge badge-warning">{t('Not ready')}</span>}
+      </h3>
+      <CoverageSummary report={q.data} projectKey={projectKey} />
+      {q.data.runs.length > 0 && <RunTable projectKey={projectKey} runs={q.data.runs} />}
+    </section>
   )
 }

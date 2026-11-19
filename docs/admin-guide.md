@@ -123,6 +123,18 @@ billable time (workspace admins only). When a month is billed, set *Time is clos
 last day: from then on only admins add, change or delete time in it. Invoices themselves are
 written elsewhere; the CSV has everything they need.
 
+## Test management
+
+Test management is a feature switch (*Workspace → Features*). Per project, *Project settings →
+Permissions* says who may **start test runs and record results** and who may **change test
+cases, test plans and test runs** — members by default; everyone who sees the project reads
+them. Automation rules can react to tests: *a test that covers the issue fails* and *a test run
+with a test of the issue is finished* run on the covered issues (label them, reopen them,
+comment). Test cases, plans, runs and results are part of backups and of project exports (files
+attached to results are in backups only). The REST API is under `/api/projects/{key}/tests`,
+`/test-plans`, `/test-runs`; assistants use the MCP tools `test_cases` and `create_test_case`
+to read coverage and draft test cases from an issue.
+
 ## Asset inventory
 
 Under **Assets**, workspace admins create **sets** — Hardware, Services, Locations — and each

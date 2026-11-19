@@ -239,6 +239,44 @@ pub struct BranchArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct TestsArgs {
+    /// A test case's key (WEB-T12) to read it in full; or leave out and give `issue` or `project`
+    pub test: Option<String>,
+    /// An issue key: the test cases that cover it, with their latest results
+    pub issue: Option<String>,
+    /// A project key: its test cases (with `query`) and the coverage of its open issues
+    pub project: Option<String>,
+    /// Text in the title, the key or the steps
+    pub query: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct TestStepArg {
+    /// What the tester does
+    pub action: String,
+    /// What should happen
+    pub expected: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct NewTestArgs {
+    /// The project's key
+    pub project: String,
+    pub title: String,
+    /// What must be true before the test starts (Markdown)
+    pub preconditions: Option<String>,
+    /// Numbered steps with an expected result each
+    pub steps: Option<Vec<TestStepArg>>,
+    /// Instead of steps: a scenario of Given / When / Then lines
+    pub scenario: Option<String>,
+    /// low, medium, high or critical
+    pub priority: Option<String>,
+    pub labels: Option<Vec<String>>,
+    /// Keys of the issues (stories, requirements) it covers
+    pub covers: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct AssetsArgs {
     /// Text in the asset's tag, name or fields (e.g. a serial number); or an exact tag like LT-0042 to read one asset in full
     pub query: Option<String>,
@@ -792,6 +830,58 @@ impl TaskMcp {
         Ok(compact(&json!({"issue": key, "branch": v["branch"], "pullRequest": v["pullRequest"], "warning": v["warning"]})))
     }
 
+    async fn tests(&self, user: User, a: TestsArgs) -> ApiResult<String> {
+        let st = State(self.state.clone());
+        if let Some(t) = a.test.as_deref().filter(|t| !t.trim().is_empty()) {
+            let AxJson(v) = crate::testmgmt::get(st, CurrentUser(user), Path(t.trim().to_string())).await?;
+            return Ok(compact(&json!({
+                "key": v["key"], "title": v["title"], "version": v["version"], "priority": v["priority"], "labels": v["labels"], "preconditions": v["preconditions"],
+                "steps": v["steps"], "scenario": v["scenario"], "lastResult": v["lastResult"],
+                "covers": v["issues"].as_array().into_iter().flatten().map(|i| json!({"key": i["key"], "title": i["title"]})).collect::<Vec<_>>(),
+                "results": v["results"].as_array().into_iter().flatten().take(10).map(|r| json!({"run": r["run"]["name"], "result": r["result"], "at": r["at"]})).collect::<Vec<_>>(),
+            })));
+        }
+        if let Some(i) = a.issue.as_deref().filter(|t| !t.trim().is_empty()) {
+            let AxJson(v) = crate::testmgmt::issue_tests(st, CurrentUser(user), Path(i.trim().to_string())).await?;
+            return Ok(compact(&json!({"issue": i, "tests": v["tests"]})));
+        }
+        let Some(p) = a.project.as_deref().filter(|t| !t.trim().is_empty()) else { return bad("give a test case, an issue or a project") };
+        let filter = crate::testmgmt::CaseFilter { q: a.query, ..Default::default() };
+        let AxJson(list) = crate::testmgmt::list(st.clone(), CurrentUser(user.clone()), Path(p.to_string()), axum::extract::Query(filter)).await?;
+        let AxJson(rep) = crate::testmgmt::project_report(st, CurrentUser(user), Path(p.to_string()), axum::extract::Query(Default::default())).await?;
+        Ok(compact(&json!({
+            "tests": list["cases"].as_array().into_iter().flatten().take(200).map(|c| json!({"key": c["key"], "title": c["title"], "priority": c["priority"], "covers": c["issueCount"], "lastResult": c["lastResult"]})).collect::<Vec<_>>(),
+            "coverage": {"openIssues": rep["coverage"]["issues"], "withTests": rep["coverage"]["covered"],
+                         "withoutTests": rep["coverage"]["withoutTests"].as_array().into_iter().flatten().take(50).map(|i| json!({"key": i["key"], "title": i["title"]})).collect::<Vec<_>>(),
+                         "withFailingTests": rep["coverage"]["failing"].as_array().into_iter().flatten().take(50).map(|i| json!({"key": i["key"], "title": i["title"]})).collect::<Vec<_>>()},
+        })))
+    }
+
+    async fn new_test(&self, user: User, a: NewTestArgs) -> ApiResult<String> {
+        let mut body = serde_json::Map::new();
+        body.insert("title".into(), json!(a.title));
+        if let Some(p) = a.preconditions {
+            body.insert("preconditions".into(), json!(p));
+        }
+        if let Some(steps) = a.steps {
+            body.insert("steps".into(), json!(steps.into_iter().map(|s| json!({"action": s.action, "expected": s.expected})).collect::<Vec<_>>()));
+        }
+        if let Some(s) = a.scenario {
+            body.insert("scenario".into(), json!(s));
+        }
+        if let Some(p) = a.priority {
+            body.insert("priority".into(), json!(p));
+        }
+        if let Some(l) = a.labels {
+            body.insert("labels".into(), json!(l));
+        }
+        if let Some(c) = a.covers {
+            body.insert("issues".into(), json!(c));
+        }
+        let (_, AxJson(v)) = crate::testmgmt::create(State(self.state.clone()), CurrentUser(user), Path(a.project), AxJson(body)).await?;
+        Ok(compact(&v))
+    }
+
     async fn assets(&self, user: User, a: AssetsArgs) -> ApiResult<String> {
         // an exact tag: the asset with its fields, relations and issues
         if let Some(tag) = a.query.as_deref().map(str::trim).filter(|q| !q.is_empty() && !q.contains(' '))
@@ -1187,6 +1277,26 @@ impl TaskMcp {
     async fn add_comment(&self, Extension(parts): Extension<Parts>, Parameters(a): Parameters<CommentArgs>) -> ToolResult {
         match self.writer(&parts).await {
             Ok(u) => done(self.comment(u, a).await),
+            Err(e) => done(Err(e)),
+        }
+    }
+
+    #[tool(
+        description = "Test management, reading: one test case in full (`test`: WEB-T12, with steps, the issues it covers and its last results), the test cases that cover an issue with their latest results (`issue`), or a project's test cases and its coverage — open issues without tests and with failing tests (`project`). TQL finds issues by tests: `hasTests = false`, `testResult = failed`, `testRun = \"Regression\"`."
+    )]
+    async fn test_cases(&self, Extension(parts): Extension<Parts>, Parameters(a): Parameters<TestsArgs>) -> ToolResult {
+        match self.reader(&parts).await {
+            Ok(u) => done(self.tests(u, a).await),
+            Err(e) => done(Err(e)),
+        }
+    }
+
+    #[tool(
+        description = "Create a test case in a project: a title, optional preconditions, and either numbered steps with an expected result each or a Given / When / Then scenario; `covers` names the issues it checks. Read the issue first and write one test case per behaviour worth checking."
+    )]
+    async fn create_test_case(&self, Extension(parts): Extension<Parts>, Parameters(a): Parameters<NewTestArgs>) -> ToolResult {
+        match self.writer(&parts).await {
+            Ok(u) => done(self.new_test(u, a).await),
             Err(e) => done(Err(e)),
         }
     }

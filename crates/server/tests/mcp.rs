@@ -105,6 +105,8 @@ async fn tools_work_with_the_callers_permissions() {
         "timer",
         "create_branch",
         "find_assets",
+        "test_cases",
+        "create_test_case",
     ] {
         assert!(names.contains(&n), "missing tool {n}: {names:?}");
     }

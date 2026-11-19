@@ -1591,8 +1591,13 @@ fn next_run(trigger: &Value, enabled: bool) -> Option<chrono::DateTime<chrono::U
 }
 
 fn check_rule(req: &Value) -> ApiResult<()> {
-    if !matches!(req["trigger"]["event"].as_str(), Some("created" | "status" | "assigned" | "field" | "commented" | "approved" | "rejected" | "schedule")) {
-        return Err(ApiError::bad("trigger.event must be created, status, assigned, field, commented, approved, rejected or schedule"));
+    if !matches!(
+        req["trigger"]["event"].as_str(),
+        Some("created" | "status" | "assigned" | "field" | "commented" | "approved" | "rejected" | "testFailed" | "testRunFinished" | "schedule")
+    ) {
+        return Err(ApiError::bad(
+            "trigger.event must be created, status, assigned, field, commented, approved, rejected, testFailed, testRunFinished or schedule",
+        ));
     }
     if req["trigger"]["event"] == "schedule" {
         crate::schedule::parse(&req["trigger"]["schedule"]).map_err(ApiError::BadRequest)?;
